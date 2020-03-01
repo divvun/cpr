@@ -128,7 +128,7 @@ peg::parser! { pub(crate) grammar parser() for str {
 }}
 
 #[derive(Debug, Clone)]
-enum Directive {
+pub(crate) enum Directive {
     If(Expression),
     Else,
     ElseIf(Expression),
@@ -150,7 +150,7 @@ fn workaround_braceless_defined(value: &str) -> String {
     regex2.replace_all(&v, "").to_string()
 }
 
-fn parse_directive(line: &str) -> Option<Directive> {
+pub(crate) fn parse_directive(line: &str) -> Option<Directive> {
     let regex = Regex::new(r"^\s*#\s*([^\s]+?)(?:\s(.*?))?\s*(?:\s*//?.*)?$")
         .expect("regex must always be valid");
     let captures = match regex.captures(line) {

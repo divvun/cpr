@@ -11,6 +11,8 @@ use hashbrown::{HashMap, HashSet};
 use lang_c::ast::Expression;
 use regex::Regex;
 
+use directive::Directive;
+
 fn strip_all_escaped_newlines<R: BufRead>(reader: R) -> String {
     reader
         .lines()
@@ -379,7 +381,7 @@ impl Parser {
         let mut last_ifs = vec![];
 
         for line in source.lines() {
-            if let Some(directive) = parse_directive(line) {
+            if let Some(directive) = directive::parse_directive(line) {
                 // self.handle_directive(directive)
                 log::debug!("{:?}", &directive);
 
