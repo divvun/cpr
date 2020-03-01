@@ -122,7 +122,11 @@ peg::parser! { pub(crate) grammar parser() for str {
         = e:$((!['\n'][_])+) {?
             match lang_c::parser::constant_expression(e, &mut env()) {
                 Ok(v) => Ok(v.node),
-                Err(e) => { dbg!(e); Err("constant expression") }
+                Err(err) => {
+                    log::error!("{}", err);
+                    log::info!("{:?}", e);
+                    Err("constant expression")
+                }
             }
         }
 }}
@@ -151,7 +155,7 @@ fn workaround_braceless_defined(value: &str) -> String {
 }
 
 pub(crate) fn parse_directive(line: &str) -> Option<Directive> {
-    let regex = Regex::new(r"^\s*#\s*([^\s]+?)(?:\s(.*?))?\s*(?:\s*//?.*)?$")
+    let regex = Regex::new(r"^\s*#\s*([^\s]+?)(?:\s(.*?))?\s*(?:\s*//.*)?$")
         .expect("regex must always be valid");
     let captures = match regex.captures(line) {
         Some(v) => v,
