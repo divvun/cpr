@@ -27,8 +27,8 @@ peg::parser! { pub(crate) grammar parser() for str {
         = quiet!{[' ' | '\t']+}
     rule H(name: &str)
         = ("#" _ ##parse_string_literal(name))
-    pub rule group()
-        = group_part()*
+    // pub rule group()
+    //     = group_part()*
     rule group_part()
         = if_section()
         / control_line()
@@ -225,34 +225,4 @@ pub(crate) fn parse_directive(line: &str) -> Option<Directive> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test1() {
-        println!("{:?}", parser::group("#if 42 == 42\n#endif\n"));
-        println!("{:?}", parser::group("#if 23\n#elif 32 == 42\n#endif\n"));
-    }
-
-    #[test]
-    fn test_call() {
-        let x = "#if EXTERNAL_REQ(VAL1 | VAL2)\n";
-        println!("{:?}", parser::group(x));
-    }
-
-    #[test]
-    fn test_call2() {
-        let x = "#if EXTERNAL_REQ(VAL2) || EXTERNAL_REQ2(VAL1) && lowercase_req(val3)\n";
-        println!("{:?}", parser::group(x));
-    }
-
-    #[test]
-    fn test_include1() {
-        let x = "#include <lol.h>\n";
-        println!("{:?}", parser::group(x));
-    }
-
-    #[test]
-    fn test_include2() {
-        let x = "#include \"lol.h\"\n";
-        println!("{:?}", parser::group(x));
-    }
 }
