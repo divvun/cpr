@@ -2,7 +2,6 @@ mod directive;
 
 use std::collections::BTreeMap;
 use std::collections::VecDeque;
-use std::convert::TryFrom;
 use std::fs::File;
 use std::io::{self, BufRead, BufReader};
 use std::ops::{BitAnd, BitOr, Deref, Not, Range};
@@ -220,108 +219,6 @@ impl Include {
 pub enum Error {
     Io(io::Error),
     NotFound(Include),
-}
-
-#[derive(Debug, Clone)]
-enum Directive {
-    If(Expression),
-    Else,
-    ElseIf(Expression),
-    EndIf,
-    IfDefined(String),
-    IfNotDefined(String),
-    Include(Include),
-    Define(Define),
-    Undefine(String),
-    Error(String),
-    Pragma(String),
-    Unknown(String, String),
-}
-
-fn env() -> lang_c::env::Env {
-    let mut env = lang_c::env::Env::with_core();
-    env.ignore_reserved(true);
-    env.reserved.insert("defined");
-    // env.single_line_mode(true);
-    env
-}
-
-fn workaround_braceless_defined(value: &str) -> String {
-    let regex = Regex::new(r"defined ([^\s]+)").unwrap();
-    let regex2 = Regex::new("// .*$").unwrap();
-    let v = regex.replace_all(value, "defined($1)");
-    regex2.replace_all(&v, "").to_string()
-}
-
-fn parse_directive(line: &str) -> Option<Directive> {
-    let regex = Regex::new(r"^\s*#\s*([^\s]+?)(?:\s(.*?))?\s*(?:\s*//?.*)?$")
-        .expect("regex must always be valid");
-    let captures = match regex.captures(line) {
-        Some(v) => v,
-        None => return None,
-    };
-
-    let key = match captures.get(1).map(|x| x.as_str()) {
-        Some(v) => v,
-        None => return None,
-    };
-
-    let value = match captures.get(2).map(|x| x.as_str()) {
-        Some(v) => v.to_string(),
-        None => "".to_string(),
-    };
-
-    use Directive::*;
-    match key {
-        "if" => {
-            let value = workaround_braceless_defined(&value);
-            match lang_c::parser::constant_expression(&value, &mut env()) {
-                Ok(v) => match Expression::try_from(v.node) {
-                    Ok(expr) => Some(If(expr)),
-                    Err(e) => {
-                        dbg!(e);
-                        panic!(e)
-                    }
-                },
-                Err(e) => {
-                    dbg!(e);
-                    panic!("if constant expression: {:?}", value)
-                }
-            }
-        }
-        "elif" => {
-            let value = workaround_braceless_defined(&value);
-            match lang_c::parser::constant_expression(&value, &mut env()) {
-                Ok(v) => match Expression::try_from(v.node) {
-                    Ok(expr) => Some(ElseIf(expr)),
-                    Err(e) => {
-                        dbg!(e);
-                        panic!(e)
-                    }
-                },
-                Err(e) => {
-                    dbg!(e);
-                    panic!("elif constant expression: {:?}", value)
-                }
-            }
-        }
-        "else" => Some(Else),
-        "endif" => Some(EndIf),
-        "ifdef" => Some(IfDefined(value)),
-        "ifndef" => Some(IfNotDefined(value)),
-        "include" => directive::parser::include_line(&format!("#include {}", &value))
-            .map(Include)
-            .map_err(|_| ())
-            .ok(),
-        "define" => directive::parser::define_line(&value)
-            .map(Define)
-            .map_err(|_| ())
-            .ok(),
-        "undef" => Some(Undefine(value)),
-        "error" => Some(Error(value)),
-        "pragma" => Some(Pragma(value)),
-        _ => Some(Unknown(key.to_string(), value)),
-    }
 }
 
 #[derive(Debug)]
