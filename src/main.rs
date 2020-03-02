@@ -1,5 +1,6 @@
 mod directive;
 
+use crate::directive::PreprocessorIdent;
 use std::collections::BTreeMap;
 use std::collections::VecDeque;
 use std::fs::File;
@@ -61,6 +62,24 @@ enum Defined {
     NotAny(Vec<Defined>),
     And(Box<Defined>, Box<Defined>),
     Or(Box<Defined>, Box<Defined>),
+}
+
+impl PreprocessorIdent for Defined {
+    fn ident(&self) -> Vec<String> {
+        use Defined::*;
+
+        match self {
+            Value(x) | NotValue(x) => vec![x.clone()],
+            Expr(x) | NotExpr(x) => x.ident(),
+            Any(x) | NotAny(x) => x.iter().map(|x| x.ident()).flatten().collect(),
+            And(x, y) | Or(x, y) => {
+                let mut x = x.ident();
+                x.append(&mut y.ident());
+                x
+            }
+            _ => vec![]
+        }
+    }
 }
 
 impl Defined {
@@ -236,9 +255,9 @@ pub struct RangeSet<K: Default> {
     vec: BTreeMap<usize, K>,
 }
 
-impl<
-        K: Default + Clone + PartialEq + Eq + std::hash::Hash + BitAnd<Output = K> + BitOr<Output = K>,
-    > RangeSet<K>
+impl<K> RangeSet<K>
+where
+    K: Default + Clone + PartialEq + Eq + std::hash::Hash + BitAnd<Output = K> + BitOr<Output = K>,
 {
     fn new() -> RangeSet<K> {
         let mut set = RangeSet {
@@ -392,7 +411,6 @@ impl Parser {
                             def_ranges.iter().map(|x| x.1.clone()).collect::<Vec<_>>(),
                         );
                     }
-                    // Directive::Define(ref x) => { defines.insert(x); },
                     Directive::If(expr) => {
                         def_ranges.push(n, Defined::Expr(expr.clone()));
                     }
@@ -486,8 +504,22 @@ impl Parser {
         Ok(())
     }
 
+    fn ohno(&self) -> HashSet<String> {
+        let mut set = HashSet::new();
+
+        for (k, mm) in self.sources.iter() {
+            println!("{:?}: {:?}", k, mm.def_ranges.iter()
+                .map(|x| x.1.ident())
+                .flatten()
+                .collect::<HashSet<_>>());
+        }
+
+        set
+    }
+
     pub fn parse(mut self) -> Result<String, Error> {
         self.recurse_includes()?;
+        self.ohno();
 
         println!("{:#?}", &self.sources.keys());
 

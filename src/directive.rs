@@ -148,15 +148,22 @@ pub(crate) enum Directive {
 }
 
 fn workaround_braceless_defined(value: &str) -> String {
-    let regex = Regex::new(r"defined ([^\s]+)").unwrap();
-    let regex2 = Regex::new("// .*$").unwrap();
+    lazy_static::lazy_static! {
+        static ref regex: Regex = Regex::new(r"defined ([^\s]+)").unwrap();
+        static ref regex2: Regex = Regex::new("// .*$").unwrap();
+        static ref regex3: Regex = Regex::new(r"/\*.*?\*/").unwrap();
+    }
     let v = regex.replace_all(value, "defined($1)");
-    regex2.replace_all(&v, "").to_string()
+    let v = regex2.replace_all(&v, "");
+    regex3.replace_all(&v, "").to_string()
 }
 
 pub(crate) fn parse_directive(line: &str) -> Option<Directive> {
-    let regex = Regex::new(r"^\s*#\s*([^\s]+?)(?:\s(.*?))?\s*(?:\s*//.*)?$")
-        .expect("regex must always be valid");
+    lazy_static::lazy_static! {
+        static ref regex: Regex = Regex::new(r"^\s*#\s*([^\s]+?)(?:\s(.*?))?\s*(?:\s*//.*)?$")
+            .expect("regex must always be valid");
+    }
+    
     let captures = match regex.captures(line) {
         Some(v) => v,
         None => return None,
@@ -168,14 +175,13 @@ pub(crate) fn parse_directive(line: &str) -> Option<Directive> {
     };
 
     let value = match captures.get(2).map(|x| x.as_str()) {
-        Some(v) => v.to_string(),
+        Some(v) => workaround_braceless_defined(&v).trim().to_string(),
         None => "".to_string(),
     };
 
     use Directive::*;
     match key {
         "if" => {
-            let value = workaround_braceless_defined(&value);
             match lang_c::parser::constant_expression(&value, &mut env()) {
                 Ok(v) => match Expression::try_from(v.node) {
                     Ok(expr) => Some(If(expr)),
@@ -191,7 +197,6 @@ pub(crate) fn parse_directive(line: &str) -> Option<Directive> {
             }
         }
         "elif" => {
-            let value = workaround_braceless_defined(&value);
             match lang_c::parser::constant_expression(&value, &mut env()) {
                 Ok(v) => match Expression::try_from(v.node) {
                     Ok(expr) => Some(ElseIf(expr)),
@@ -225,4 +230,69 @@ pub(crate) fn parse_directive(line: &str) -> Option<Directive> {
 #[cfg(test)]
 mod tests {
     use super::*;
+}
+
+pub trait PreprocessorIdent {
+    fn ident(&self) -> Vec<String>;
+}
+
+impl<T: PreprocessorIdent> PreprocessorIdent for lang_c::span::Node<T> {
+    fn ident(&self) -> Vec<String> {
+        self.node.ident()
+    }
+}
+
+impl PreprocessorIdent for lang_c::ast::Identifier {
+    fn ident(&self) -> Vec<String> {
+        vec![self.name.clone()]
+    }
+}
+
+impl PreprocessorIdent for lang_c::ast::UnaryOperatorExpression {
+    fn ident(&self) -> Vec<String> {
+        self.operand.ident()
+    }
+}
+
+impl PreprocessorIdent for lang_c::ast::BinaryOperatorExpression {
+    fn ident(&self) -> Vec<String> {
+        let mut vec = vec![];
+        vec.append(&mut self.lhs.ident());
+        vec.append(&mut self.rhs.ident());
+        vec
+    }
+}
+
+impl PreprocessorIdent for lang_c::ast::ConditionalExpression {
+    fn ident(&self) -> Vec<String> {
+        let mut vec = vec![];
+        vec.append(&mut self.condition.ident());
+        vec.append(&mut self.then_expression.ident());
+        vec.append(&mut self.else_expression.ident());
+        vec
+    }
+}
+
+
+impl PreprocessorIdent for lang_c::ast::CallExpression {
+    fn ident(&self) -> Vec<String> {
+        let mut vec = vec![];
+        // vec.append(&mut self.callee.ident());
+        vec.append(&mut self.arguments.iter().map(|x| x.ident()).flatten().collect());
+        vec
+    }
+}
+
+impl PreprocessorIdent for lang_c::ast::Expression {
+    fn ident(&self) -> Vec<String> {
+        use lang_c::ast::Expression::*;
+        match self {
+            Identifier(x) => x.ident(),
+            Call(x) => x.ident(),
+            UnaryOperator(x) => x.ident(),
+            BinaryOperator(x) => x.ident(),
+            Conditional(x) => x.ident(),
+            _ => vec![],
+        }
+    }
 }

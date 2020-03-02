@@ -68,6 +68,7 @@ dependencies = [
  "env_logger",
  "hashbrown",
  "lang-c",
+ "lazy_static",
  "log",
  "peg",
  "regex",
