@@ -1,2 +1,3 @@
 
-ssize_t fseek(int whence, ssize_t off);
+ssize_t seek(int whence, ssize_t off);
+void test();

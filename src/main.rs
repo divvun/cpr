@@ -335,9 +335,11 @@ impl ParsedUnit {
         let mut out: Vec<String> = vec![];
         for (range, key) in self.def_ranges.iter() {
             if !key.satisfies(defines) {
+                log::debug!("Skipping key {:?}", key);
                 continue;
             }
 
+            out.push(format!("// start key: {:?}", key));
             out.push(
                 self.source
                     .lines()
@@ -347,6 +349,7 @@ impl ParsedUnit {
                     .collect::<Vec<_>>()
                     .join("\n"),
             );
+            out.push(format!("// end key: {:?}", key));
         }
 
         return out.join("\n");
@@ -520,12 +523,40 @@ impl Parser {
         }
     }
 
-    fn ohyes(&self) {}
+    pub fn dump_big_header(&self, defines: &[Define]) {
+        let mut set = HashSet::new();
+        for (k, _mm) in self.sources.iter() {
+            set.insert(k);
+        }
+        log::debug!("{} in set", set.len());
 
-    pub fn parse(mut self) -> Result<String, Error> {
+        while !set.is_empty() {
+            let mut next_set = HashSet::new();
+            for &k in &set {
+                let mm = self.sources.get(k).unwrap();
+                let all_deps_ready = !mm
+                    .dependencies
+                    .iter()
+                    .filter(|(_k, deps)| !deps.iter().any(|d| !d.satisfies(defines)))
+                    .any(|(k, _deps)| set.contains(k));
+                if all_deps_ready {
+                    next_set.insert(k);
+                }
+            }
+            log::debug!("{} in next_set", next_set.len());
+
+            for k in next_set {
+                // FIXME: ugly
+                set.remove(k);
+
+                let mm = self.sources.get(k).unwrap();
+                println!("{}", mm.source(&[]));
+            }
+        }
+    }
+
+    pub fn parse(&mut self) -> Result<String, Error> {
         self.recurse_includes()?;
-        // self.ohno();
-        self.ohyes();
 
         println!("{:#?}", &self.sources.keys());
 
@@ -567,7 +598,7 @@ fn main() {
         .or(devenv::get_msvc_path())
         .expect("MSVC include path should be autodetected or specified with --msvc-path");
 
-    Parser::new(
+    let mut parser = Parser::new(
         args.file,
         vec![
             kits.join("ucrt"),
@@ -579,7 +610,9 @@ fn main() {
         ],
         vec![],
     )
-    .unwrap()
-    .parse()
     .unwrap();
+    parser.parse().unwrap();
+
+    let defines = &[];
+    parser.dump_big_header(defines);
 }
