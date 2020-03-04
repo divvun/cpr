@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 mod directive;
 
 use crate::directive::PreprocessorIdent;
@@ -93,10 +95,10 @@ impl Defined {
             Defined::NotAny(v) => v.iter().all(|d| !d.satisfies(defines)),
             Defined::Value(v) => defines.iter().map(|x| x.name()).any(|n| n == v),
             Defined::NotValue(v) => !defines.iter().map(|x| x.name()).any(|n| n == v),
-            Defined::Expr(e) => {
+            Defined::Expr(_e) => {
                 false // TODO!
             }
-            Defined::NotExpr(e) => false,
+            Defined::NotExpr(_e) => false,
             Defined::And(a, b) => a.satisfies(defines) && b.satisfies(defines),
             Defined::Or(a, b) => a.satisfies(defines) || b.satisfies(defines),
         }
@@ -517,9 +519,12 @@ impl Parser {
         }
     }
 
+    fn ohyes(&self) {}
+
     pub fn parse(mut self) -> Result<String, Error> {
         self.recurse_includes()?;
-        self.ohno();
+        // self.ohno();
+        self.ohyes();
 
         println!("{:#?}", &self.sources.keys());
 
