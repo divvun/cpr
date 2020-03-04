@@ -149,22 +149,22 @@ pub(crate) enum Directive {
 
 fn workaround_braceless_defined(value: &str) -> String {
     lazy_static::lazy_static! {
-        static ref regex: Regex = Regex::new(r"defined ([^\s]+)").unwrap();
-        static ref regex2: Regex = Regex::new("// .*$").unwrap();
-        static ref regex3: Regex = Regex::new(r"/\*.*?\*/").unwrap();
+        static ref BRACELESS_DEFINED: Regex = Regex::new(r"defined ([^\s]+)").unwrap();
+        static ref DOUBLESLASH_COMMENT: Regex = Regex::new("// .*$").unwrap();
+        static ref SLASHSTAR_COMMENT: Regex = Regex::new(r"/\*.*?\*/").unwrap();
     }
-    let v = regex.replace_all(value, "defined($1)");
-    let v = regex2.replace_all(&v, "");
-    regex3.replace_all(&v, "").to_string()
+    let v = BRACELESS_DEFINED.replace_all(value, "defined($1)");
+    let v = DOUBLESLASH_COMMENT.replace_all(&v, "");
+    SLASHSTAR_COMMENT.replace_all(&v, "").to_string()
 }
 
 pub(crate) fn parse_directive(line: &str) -> Option<Directive> {
     lazy_static::lazy_static! {
-        static ref regex: Regex = Regex::new(r"^\s*#\s*([^\s]+?)(?:\s(.*?))?\s*(?:\s*//.*)?$")
+        static ref DIRECTIVE_PATTERN: Regex = Regex::new(r"^\s*#\s*([^\s]+?)(?:\s(.*?))?\s*(?:\s*//.*)?$")
             .expect("regex must always be valid");
     }
-    
-    let captures = match regex.captures(line) {
+
+    let captures = match DIRECTIVE_PATTERN.captures(line) {
         Some(v) => v,
         None => return None,
     };
@@ -181,36 +181,32 @@ pub(crate) fn parse_directive(line: &str) -> Option<Directive> {
 
     use Directive::*;
     match key {
-        "if" => {
-            match lang_c::parser::constant_expression(&value, &mut env()) {
-                Ok(v) => match Expression::try_from(v.node) {
-                    Ok(expr) => Some(If(expr)),
-                    Err(e) => {
-                        dbg!(e);
-                        panic!(e)
-                    }
-                },
+        "if" => match lang_c::parser::constant_expression(&value, &mut env()) {
+            Ok(v) => match Expression::try_from(v.node) {
+                Ok(expr) => Some(If(expr)),
                 Err(e) => {
                     dbg!(e);
-                    panic!("if constant expression: {:?}", value)
+                    panic!(e)
                 }
+            },
+            Err(e) => {
+                dbg!(e);
+                panic!("if constant expression: {:?}", value)
             }
-        }
-        "elif" => {
-            match lang_c::parser::constant_expression(&value, &mut env()) {
-                Ok(v) => match Expression::try_from(v.node) {
-                    Ok(expr) => Some(ElseIf(expr)),
-                    Err(e) => {
-                        dbg!(e);
-                        panic!(e)
-                    }
-                },
+        },
+        "elif" => match lang_c::parser::constant_expression(&value, &mut env()) {
+            Ok(v) => match Expression::try_from(v.node) {
+                Ok(expr) => Some(ElseIf(expr)),
                 Err(e) => {
                     dbg!(e);
-                    panic!("elif constant expression: {:?}", value)
+                    panic!(e)
                 }
+            },
+            Err(e) => {
+                dbg!(e);
+                panic!("elif constant expression: {:?}", value)
             }
-        }
+        },
         "else" => Some(Else),
         "endif" => Some(EndIf),
         "ifdef" => Some(IfDefined(value)),
@@ -272,7 +268,6 @@ impl PreprocessorIdent for lang_c::ast::ConditionalExpression {
         vec
     }
 }
-
 
 impl PreprocessorIdent for lang_c::ast::CallExpression {
     fn ident(&self) -> Vec<String> {
