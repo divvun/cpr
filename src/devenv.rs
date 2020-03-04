@@ -1,9 +1,9 @@
-use std::io;
 use std::path::PathBuf;
 
 pub(crate) fn get_kits_path() -> Option<PathBuf> {
     #[cfg(windows)]
     {
+        use std::io;
         use winreg::enums::*;
         use winreg::RegKey;
 
@@ -58,6 +58,8 @@ pub(crate) fn get_kits_path() -> Option<PathBuf> {
 pub(crate) fn get_msvc_path() -> Option<PathBuf> {
     #[cfg(windows)]
     {
+        use std::io;
+
         let pf86 = match std::env::var("ProgramFiles(x86)") {
             Ok(res) => PathBuf::from(res),
             Err(_) => {
