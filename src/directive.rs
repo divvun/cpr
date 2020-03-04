@@ -225,6 +225,7 @@ pub(crate) fn parse_directive(line: &str) -> Option<Directive> {
 
 #[cfg(test)]
 mod tests {
+    #[allow(unused_imports)]
     use super::*;
 }
 

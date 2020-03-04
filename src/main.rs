@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 
 mod directive;
+mod winkits;
 
 use crate::directive::PreprocessorIdent;
 use std::collections::BTreeMap;
@@ -540,13 +541,21 @@ struct Args {
     /// A C header file to parse
     #[argh(positional)]
     file: PathBuf,
+
+    /// windows 10 Kit include dir, something like:
+    /// 'C:\Program Files (x86)\Windows Kits\10\Include\10.0.18362.0'
+    #[argh(option)]
+    winkit: Option<PathBuf>,
 }
 
 fn main() {
     env_logger::init();
     let args: Args = argh::from_env();
 
-    let kits = PathBuf::from(r"C:\Program Files (x86)\Windows Kits\10\Include\10.0.18362.0");
+    let kits = args
+        .winkit
+        .or(winkits::detect_path())
+        .expect("Windows 10 Kit include path should be autodetected or specified with --winkit");
 
     Parser::new(args.file, vec![
         kits.join("ucrt"),
