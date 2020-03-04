@@ -527,11 +527,23 @@ impl Parser {
     }
 }
 
+use argh::*;
+
+#[derive(FromArgs)]
+/// Parse a C header file and its includes and dump info about it
+struct Args {
+    /// A C header file to parse
+    #[argh(positional)]
+    file: PathBuf,
+}
+
 fn main() {
     env_logger::init();
+    let args: Args = argh::from_env();
+
     let kits = PathBuf::from(r"C:\Program Files (x86)\Windows Kits\10\Include\10.0.18362.0");
 
-    Parser::new(PathBuf::from("./test.h"), vec![
+    Parser::new(args.file, vec![
         kits.join("ucrt"),
         kits.join("shared"),
         kits.join("um"),
