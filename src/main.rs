@@ -5,12 +5,11 @@ use std::collections::BTreeMap;
 use std::collections::VecDeque;
 use std::fs::File;
 use std::io::{self, BufRead, BufReader};
-use std::ops::{BitAnd, BitOr, Deref, Not, Range};
+use std::ops::{BitAnd, BitOr, Not, Range};
 use std::path::{Path, PathBuf};
 
 use hashbrown::{HashMap, HashSet};
 use lang_c::ast::Expression;
-use regex::Regex;
 
 use directive::Directive;
 
@@ -77,7 +76,7 @@ impl PreprocessorIdent for Defined {
                 x.append(&mut y.ident());
                 x
             }
-            _ => vec![]
+            _ => vec![],
         }
     }
 }
@@ -504,17 +503,18 @@ impl Parser {
         Ok(())
     }
 
-    fn ohno(&self) -> HashSet<String> {
-        let mut set = HashSet::new();
-
+    fn ohno(&self) {
         for (k, mm) in self.sources.iter() {
-            println!("{:?}: {:?}", k, mm.def_ranges.iter()
-                .map(|x| x.1.ident())
-                .flatten()
-                .collect::<HashSet<_>>());
+            println!(
+                "{:?}: {:?}",
+                k,
+                mm.def_ranges
+                    .iter()
+                    .map(|x| x.1.ident())
+                    .flatten()
+                    .collect::<HashSet<_>>()
+            );
         }
-
-        set
     }
 
     pub fn parse(mut self) -> Result<String, Error> {
@@ -537,6 +537,7 @@ fn main() {
         kits.join("um"),
         kits.join("km"),
         PathBuf::from(r"C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\VC\Tools\MSVC\14.24.28314\include"),
+        PathBuf::from(r"D:\Programs\Microsoft Visual Studio\2019\Community\VC\Tools\MSVC\14.23.28105\include"),
         PathBuf::from(r".")
     ], vec![])
         .unwrap()
