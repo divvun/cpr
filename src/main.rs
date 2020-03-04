@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
+mod devenv;
 mod directive;
-mod winkits;
 
 use crate::directive::PreprocessorIdent;
 use std::collections::BTreeMap;
@@ -545,7 +545,12 @@ struct Args {
     /// windows 10 Kit include dir, something like:
     /// 'C:\Program Files (x86)\Windows Kits\10\Include\10.0.18362.0'
     #[argh(option)]
-    winkit: Option<PathBuf>,
+    kits_path: Option<PathBuf>,
+
+    /// msvc include dir, something like:
+    /// 'C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\VC\Tools\MSVC\14.23.28105\include'
+    #[argh(option)]
+    msvc_path: Option<PathBuf>,
 }
 
 fn main() {
@@ -553,20 +558,28 @@ fn main() {
     let args: Args = argh::from_env();
 
     let kits = args
-        .winkit
-        .or(winkits::detect_path())
-        .expect("Windows 10 Kit include path should be autodetected or specified with --winkit");
+        .kits_path
+        .or(devenv::get_kits_path())
+        .expect("Windows 10 Kit include path should be autodetected or specified with --kits-path");
 
-    Parser::new(args.file, vec![
-        kits.join("ucrt"),
-        kits.join("shared"),
-        kits.join("um"),
-        kits.join("km"),
-        PathBuf::from(r"C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\VC\Tools\MSVC\14.24.28314\include"),
-        PathBuf::from(r"D:\Programs\Microsoft Visual Studio\2019\Community\VC\Tools\MSVC\14.23.28105\include"),
-        PathBuf::from(r".")
-    ], vec![])
-        .unwrap()
-        .parse()
-        .unwrap();
+    let msvc_path = args
+        .msvc_path
+        .or(devenv::get_msvc_path())
+        .expect("MSVC include path should be autodetected or specified with --msvc-path");
+
+    Parser::new(
+        args.file,
+        vec![
+            kits.join("ucrt"),
+            kits.join("shared"),
+            kits.join("um"),
+            kits.join("km"),
+            msvc_path,
+            PathBuf::from(r"."),
+        ],
+        vec![],
+    )
+    .unwrap()
+    .parse()
+    .unwrap();
 }
