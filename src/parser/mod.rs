@@ -6,7 +6,10 @@ use std::collections::VecDeque;
 use std::fs::File;
 use std::io::{self, BufRead, BufReader};
 use std::ops::{BitAnd, BitOr, Not, Range};
-use std::path::{Path, PathBuf};
+use std::{
+    fmt,
+    path::{Path, PathBuf},
+};
 
 use hashbrown::{HashMap, HashSet};
 use lang_c::ast::Expression;
@@ -50,15 +53,29 @@ impl Define {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 enum Defined {
     True,
     Value(String),
     Expr(Expression),
-    Any(Vec<Defined>),
     And(Box<Defined>, Box<Defined>),
     Or(Box<Defined>, Box<Defined>),
     Not(Box<Defined>),
+}
+
+impl fmt::Debug for Defined {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        use Defined::*;
+
+        match self {
+            True => write!(f, "true"),
+            Value(s) => write!(f, "defined({})", s),
+            Expr(e) => write!(f, "(expr({:?}))", e),
+            And(l, r) => write!(f, "({:?} && {:?})", l, r),
+            Or(l, r) => write!(f, "({:?} || {:?})", l, r),
+            Not(v) => write!(f, "(!{:?})", v),
+        }
+    }
 }
 
 impl PreprocessorIdent for Defined {
@@ -68,7 +85,6 @@ impl PreprocessorIdent for Defined {
         match self {
             Value(x) => vec![x.clone()],
             Expr(x) => x.ident(),
-            Any(x) => x.iter().map(|x| x.ident()).flatten().collect(),
             And(x, y) | Or(x, y) => {
                 let mut x = x.ident();
                 x.append(&mut y.ident());
@@ -87,13 +103,21 @@ impl Defined {
     fn satisfies(&self, defines: &[Define]) -> bool {
         match self {
             Defined::True => true,
-            Defined::Any(v) => v.iter().any(|d| d.satisfies(defines)),
             Defined::Value(v) => defines.iter().map(|x| x.name()).any(|n| n == v),
             Defined::And(a, b) => a.satisfies(defines) && b.satisfies(defines),
             Defined::Or(a, b) => a.satisfies(defines) || b.satisfies(defines),
             Defined::Not(a) => !a.satisfies(defines),
             Defined::Expr(_e) => unimplemented!(),
         }
+    }
+}
+
+impl<T> From<T> for Defined
+where
+    T: AsRef<str>,
+{
+    fn from(v: T) -> Self {
+        Defined::Value(v.as_ref().into())
     }
 }
 
@@ -314,6 +338,66 @@ impl<'a, K: Default> Iterator for Iter<'a, K> {
 }
 
 impl ParsedUnit {
+    /// Go through each line of a source file, handling preprocessor directives
+    /// like #if, #ifdef, #include, etc.
+    fn parse(source: String) -> Result<ParsedUnit, Error> {
+        let mut dependencies = HashMap::new();
+        let mut def_ranges = RangeSet::<Defined>::new();
+        let mut n = 0usize;
+        let mut last_if: Option<Defined> = None;
+
+        for line in source.lines() {
+            if let Some(directive) = directive::parse_directive(line) {
+                log::debug!("{:?}", &directive);
+
+                match directive {
+                    Directive::Include(include) => {
+                        dependencies.insert(include, def_ranges.last().1.clone());
+                    }
+                    Directive::If(expr) => {
+                        let pred = Defined::Expr(expr);
+                        def_ranges.push(n, pred);
+                    }
+                    Directive::IfDefined(name) => {
+                        let pred = Defined::Value(name);
+                        last_if = Some(pred.clone());
+                        def_ranges.push(n, pred);
+                    }
+                    Directive::IfNotDefined(name) => {
+                        let pred = !Defined::Value(name);
+                        last_if = Some(pred.clone());
+                        def_ranges.push(n, pred);
+                    }
+                    Directive::ElseIf(value) => {
+                        def_ranges.pop(n);
+                        let pred = Defined::Expr(value);
+                        last_if = Some(pred.clone());
+                        def_ranges.push(n, pred);
+                    }
+                    Directive::Else => {
+                        def_ranges.pop(n);
+                        def_ranges.push(n, !last_if.clone().expect("else without last_if"));
+                    }
+                    Directive::EndIf => {
+                        def_ranges.pop(n);
+                        last_if = None;
+                    }
+                    _ => unimplemented!(),
+                }
+                log::trace!("STACK: {:?}", def_ranges.last());
+            }
+            n += 1;
+        }
+
+        def_ranges.pop(n);
+
+        Ok(ParsedUnit {
+            source,
+            def_ranges,
+            dependencies,
+        })
+    }
+
     fn source(&self, defines: &[Define]) -> String {
         // log::trace!("SOURCE: {:?}", rules);
 
@@ -377,66 +461,6 @@ impl Parser {
         Ok(parser)
     }
 
-    /// Go through each line of a source file, handling preprocessor directives
-    /// like #if, #ifdef, #include, etc.
-    fn parse_work_unit(&mut self, source: String) -> Result<ParsedUnit, Error> {
-        let mut dependencies = HashMap::new();
-        let mut def_ranges = RangeSet::<Defined>::new();
-        let mut n = 0usize;
-        let mut last_if: Option<Defined> = None;
-
-        for line in source.lines() {
-            if let Some(directive) = directive::parse_directive(line) {
-                log::debug!("{:?}", &directive);
-
-                match directive {
-                    Directive::Include(include) => {
-                        dependencies.insert(include, def_ranges.last().1.clone());
-                    }
-                    Directive::If(expr) => {
-                        let pred = Defined::Expr(expr);
-                        def_ranges.push(n, pred);
-                    }
-                    Directive::IfDefined(name) => {
-                        let pred = Defined::Value(name);
-                        last_if = Some(pred.clone());
-                        def_ranges.push(n, pred);
-                    }
-                    Directive::IfNotDefined(name) => {
-                        let pred = !Defined::Value(name);
-                        last_if = Some(pred.clone());
-                        def_ranges.push(n, pred);
-                    }
-                    Directive::ElseIf(value) => {
-                        def_ranges.pop(n);
-                        let pred = Defined::Expr(value);
-                        last_if = Some(pred.clone());
-                        def_ranges.push(n, pred);
-                    }
-                    Directive::Else => {
-                        def_ranges.pop(n);
-                        def_ranges.push(n, !last_if.clone().expect("else without last_if"));
-                    }
-                    Directive::EndIf => {
-                        def_ranges.pop(n);
-                        last_if = None;
-                    }
-                    _ => {}
-                }
-                log::trace!("STACK: {:?}", def_ranges.last());
-            }
-            n += 1;
-        }
-
-        def_ranges.pop(n);
-
-        Ok(ParsedUnit {
-            source,
-            def_ranges,
-            dependencies,
-        })
-    }
-
     /// Find a file on disk corresponding to an `Include`, read it
     /// to String, strip escaped newlines.
     fn read_include(&self, include: &Include) -> Result<String, Error> {
@@ -470,7 +494,7 @@ impl Parser {
             }
 
             let source = self.read_include(&work_unit)?;
-            let parsed_unit = self.parse_work_unit(source)?;
+            let parsed_unit = ParsedUnit::parse(source)?;
 
             log::trace!("{:?}", &parsed_unit);
 
@@ -522,4 +546,100 @@ impl Parser {
             println!("{}", mm.source(defines));
         }
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn def(s: &str) -> Defined {
+        Defined::from(s)
+    }
+
+    fn parse(source: &str) -> ParsedUnit {
+        ParsedUnit::parse(source.into()).expect("unit should parse")
+    }
+
+    fn test_single(source: &str, expected: Defined) {
+        let u = parse(source);
+        let (_, actual) = u.dependencies.iter().next().unwrap();
+        assert_eq!(*actual, expected);
+    }
+
+    #[test]
+    fn test_true() {
+        test_single(
+            "
+#include <stdio.h>
+            ",
+            Defined::True,
+        );
+    }
+
+    #[test]
+    fn test_one_ifdef() {
+        test_single(
+            "
+#ifdef FOO
+#include <stdio.h>
+#endif
+            ",
+            def("FOO"),
+        );
+    }
+
+    #[test]
+    fn test_two_ifdefs() {
+        test_single(
+            "
+#ifdef FOO
+#ifdef BAR
+#include <stdio.h>
+#endif
+#endif
+            ",
+            def("BAR") & def("FOO"),
+        );
+    }
+
+    #[test]
+    fn test_else() {
+        test_single(
+            "
+#ifdef FOO
+// nothing
+#else
+#include <stdio.h>
+#endif
+            ",
+            !def("FOO"),
+        )
+    }
+
+    #[test]
+    fn test_nested_else() {
+        test_single(
+            "
+#ifdef FOO
+#ifdef BAR
+#else
+#include <stdio.h>
+#endif
+#endif
+            ",
+            !def("BAR") & def("FOO"),
+        )
+    }
+
+    // #[test]
+    // fn test_single_if_defined() {
+    //     test_single(
+    //         "
+    // #if defined(FOO)
+    // #include <stdio.h>
+    // #endif
+    //                 ",
+    //         def("FOO"),
+    //     );
+    // }
 }
