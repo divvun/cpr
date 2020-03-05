@@ -8,7 +8,7 @@ use std::io::{self, BufRead, BufReader};
 use std::ops::{BitAnd, BitOr, Deref, Not, Range};
 use std::path::{Path, PathBuf};
 
-use hashbrown::{HashMap, HashSet};
+use hashbrown::{HashSet};
 use lang_c::ast::Expression;
 use regex::Regex;
 
@@ -169,14 +169,20 @@ pub enum Include {
 
 impl PartialOrd for Include {
     fn partial_cmp(&self, other: &Include) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Include {
+    fn cmp(&self, other: &Include) -> std::cmp::Ordering {
         match (self, other) {
-            (Include::System(ref x), Include::System(ref y)) => x.partial_cmp(y),
-            (Include::Quoted(ref x), Include::Quoted(ref y)) => x.partial_cmp(y),
-            (Include::System(_), Include::Quoted(_)) => Some(std::cmp::Ordering::Greater),
-            (Include::Quoted(_), Include::System(_)) => Some(std::cmp::Ordering::Less),
-            (Include::Expression(_), Include::Expression(_)) => Some(std::cmp::Ordering::Equal),
-            (_, Include::Expression(_)) => Some(std::cmp::Ordering::Greater),
-            (Include::Expression(_), _) => Some(std::cmp::Ordering::Less),
+            (Include::System(ref x), Include::System(ref y)) => x.cmp(y),
+            (Include::Quoted(ref x), Include::Quoted(ref y)) => x.cmp(y),
+            (Include::System(_), Include::Quoted(_)) => std::cmp::Ordering::Greater,
+            (Include::Quoted(_), Include::System(_)) => std::cmp::Ordering::Less,
+            (Include::Expression(_), Include::Expression(_)) => std::cmp::Ordering::Equal,
+            (_, Include::Expression(_)) => std::cmp::Ordering::Greater,
+            (Include::Expression(_), _) => std::cmp::Ordering::Less,
         }
     }
 }
@@ -215,7 +221,7 @@ impl Include {
         None
     }
 
-    fn resolve(
+    pub fn resolve(
         &self,
         system_paths: &[PathBuf],
         quoted_paths: &[PathBuf],
@@ -234,6 +240,13 @@ impl Include {
             }
         }
     }
+
+    pub fn path(&self) -> Option<&Path> {
+        match self {
+            Include::System(p) | Include::Quoted(p) => Some(&p),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -245,8 +258,9 @@ pub enum Error {
 #[derive(Debug)]
 pub struct ParsedUnit {
     source: String,
+    flattened_source: String,
     def_ranges: RangeSet<Defined>,
-    dependencies: HashMap<Include, Vec<Defined>>,
+    dependencies: BTreeMap<Include, Vec<Defined>>,
 }
 
 #[derive(Debug)]
@@ -356,7 +370,7 @@ pub struct Parser {
     system_paths: Vec<PathBuf>,
     quoted_paths: Vec<PathBuf>,
     working_path: PathBuf,
-    sources: HashMap<Include, ParsedUnit>,
+    sources: BTreeMap<Include, ParsedUnit>,
     unit_queue: VecDeque<Include>,
 }
 
@@ -381,7 +395,7 @@ impl Parser {
             system_paths,
             quoted_paths,
             working_path,
-            sources: HashMap::new(),
+            sources: BTreeMap::new(),
             unit_queue: VecDeque::new(),
         };
 
@@ -392,13 +406,14 @@ impl Parser {
         Ok(parser)
     }
 
-    fn parse_work_unit(&mut self, source: String) -> Result<ParsedUnit, Error> {
+    fn parse_work_unit(&mut self, include: &Include, source: String) -> Result<ParsedUnit, Error> {
         // let mut defines = HashSet::new();
-        let mut dependencies = HashMap::new();
+        let mut dependencies = BTreeMap::new();
         let mut def_ranges = RangeSet::<Defined>::new();
         let mut n = 0usize;
         let mut last_ifs = vec![];
 
+        // First pass: collect all the context
         for line in source.lines() {
             if let Some(directive) = directive::parse_directive(line) {
                 // self.handle_directive(directive)
@@ -444,8 +459,27 @@ impl Parser {
 
         def_ranges.pop(n);
 
+        // Second pass: generate a not-quite-minimum set of rules for handling the entire file
+
+        // - Catch <, >, =>, <=, and other operator conditionals
+        // - Catch dumb checks for existence
+
+        let keys = def_ranges.keys();
+
+        use std::fmt::Write;
+
+        // Final pass: flatten the document
+        let mut f = String::with_capacity(source.len());
+        writeln!(&mut f, "# rust mod {:?}", self.resolve_include(include));
+
+        for expr in keys {
+            writeln!(&mut f, "# rust features {:?}", expr).unwrap();
+            writeln!(&mut f, )
+        }
+
         Ok(ParsedUnit {
             source,
+            flattened_source: f,
             def_ranges,
             dependencies,
         })
@@ -465,6 +499,7 @@ impl Parser {
         let file = File::open(path).map_err(Error::Io)?;
         let file = BufReader::new(file);
         let file = strip_all_escaped_newlines(file);
+        
         Ok(file)
     }
 
@@ -477,7 +512,7 @@ impl Parser {
             }
 
             let source = self.parse_include(&work_unit)?;
-            let parsed_unit = self.parse_work_unit(source)?;
+            let parsed_unit = self.parse_work_unit(&work_unit, source)?;
 
             // log::trace!("==============");
             // log::trace!("RANGES:");
@@ -517,11 +552,67 @@ impl Parser {
         set
     }
 
+    fn print_graphviz(&self, font_name: &str) {
+        println!(r#"digraph {{
+            node [shape=box, fontname="{}"]
+            graph [pad="0.5", nodesep="0.5", ranksep="0.5"];
+        "#, font_name);
+
+        const COLORS: [&'static str; 5] = ["red", "blue", "darkgreen", "purple", "orange"];
+        let mut i = 5usize;
+
+        for (include, unit) in self.sources.iter() {
+            if let Some(path) = include.path() {
+                i = (i + 1) % 5;
+                println!("edge [color={}]", COLORS[i]);
+                println!("  \"{}\" -> {{", path.display());
+
+                for x in unit.dependencies.keys() {
+                    if let Some(path) = x.path() {
+                        println!("    \"{}\"", path.display())
+                    }
+                }
+
+                println!("  }};");
+            }
+
+        }
+
+        println!("}}");
+    }
+
+    #[inline]
+    fn resolve_include(&self, include: &Include) -> Option<PathBuf> {
+        include.resolve(&*self.system_paths, &self.quoted_paths, &self.working_path)
+    }
+
+    fn generate_output(&self) {
+        for (include, unit) in self.sources.iter() {
+            if let Some(path) = self.resolve_include(include) {
+                // TODO: includes should include a "resolve mod" for Rust
+                println!("# rust mod {}", path.display());
+
+                println!("  \"{}\" -> {{", path.display());
+
+                for x in unit.dependencies.keys() {
+                    if let Some(path) = x.path() {
+                        println!("    \"{}\"", path.display())
+                    }
+                }
+
+                println!("  }};");
+            }
+
+        }
+    }
+
     pub fn parse(mut self) -> Result<String, Error> {
         self.recurse_includes()?;
-        self.ohno();
 
-        println!("{:#?}", &self.sources.keys());
+        // self.ohno();
+
+        // println!("{:#?}", &self.sources.keys());
+        // self.print_graphviz("JetBrains Mono");
 
         Ok("TODO".into())
     }
@@ -529,15 +620,16 @@ impl Parser {
 
 fn main() {
     env_logger::init();
-    let kits = PathBuf::from(r"C:\Program Files (x86)\Windows Kits\10\Include\10.0.18362.0");
+    let kits = PathBuf::from("./winsdk"); //PathBuf::from(r"C:\Program Files (x86)\Windows Kits\10\Include\10.0.18362.0");
 
     Parser::new(PathBuf::from("./test.h"), vec![
         kits.join("ucrt"),
         kits.join("shared"),
         kits.join("um"),
-        kits.join("km"),
-        PathBuf::from(r"C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\VC\Tools\MSVC\14.24.28314\include"),
-        PathBuf::from(r".")
+        // kits.join("km"),
+        // PathBuf::from(r"C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\VC\Tools\MSVC\14.24.28314\include"),
+        PathBuf::from("./msvc"),
+        PathBuf::from("./stubs")
     ], vec![])
         .unwrap()
         .parse()
