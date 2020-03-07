@@ -15,6 +15,7 @@ use hashbrown::{HashMap, HashSet};
 use lang_c::ast::Expression;
 
 use directive::Directive;
+use regex::Regex;
 
 fn strip_all_escaped_newlines<R: BufRead>(reader: R) -> String {
     reader
@@ -401,27 +402,36 @@ impl ParsedUnit {
     fn source(&self, defines: &[Define]) -> String {
         // log::trace!("SOURCE: {:?}", rules);
 
-        let mut out: Vec<String> = vec![];
+        let lines = self.source.lines().collect::<Vec<&str>>();
+        let directive_pattern = Regex::new(r"\s*#").unwrap();
+
+        let mut out = String::new();
+        let mut last_was_whitespace = false;
+        let mut write = |s: &str| {
+            let is_whitespace = s.chars().all(char::is_whitespace);
+            if is_whitespace && last_was_whitespace {
+                // don't write anything
+            } else {
+                out.push_str(s);
+                out.push('\n');
+            }
+            last_was_whitespace = is_whitespace;
+        };
+
         for (range, key) in self.def_ranges.iter() {
             if !key.satisfies(defines) {
                 log::debug!("Skipping key {:?}", key);
                 continue;
             }
 
-            out.push(format!("// start key: {:?}", key));
-            out.push(
-                self.source
-                    .lines()
-                    .skip(range.start + 1)
-                    .take(range.end - range.start - 1)
-                    .filter(|x| !x.trim().starts_with("#"))
-                    .collect::<Vec<_>>()
-                    .join("\n"),
-            );
-            out.push(format!("// end key: {:?}", key));
+            for line in &lines[range] {
+                if directive_pattern.is_match(line) {
+                    continue;
+                }
+                write(line);
+            }
         }
-
-        return out.join("\n");
+        out
     }
 }
 

@@ -23,6 +23,10 @@ struct Args {
     /// 'C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\VC\Tools\MSVC\14.23.28105\include'
     #[argh(option)]
     msvc_path: Option<PathBuf>,
+
+    /// predefine a name
+    #[argh(option, short = 'D')]
+    defines: Vec<String>,
 }
 
 fn main() {
