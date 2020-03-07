@@ -1,7 +1,8 @@
 mod directive;
+mod emit;
 
 use directive::PreprocessorIdent;
-use lang_c::{ast, driver};
+use lang_c::driver;
 use std::collections::BTreeMap;
 use std::collections::VecDeque;
 use std::fs::File;
@@ -574,37 +575,11 @@ impl Parser {
                     let unit = res.unit;
                     println!("\n====== traversing AST");
 
-                    for decl in &unit.0 {
-                        match &decl.node {
-                            ast::ExternalDeclaration::Declaration(ref decl) => {
-                                println!("\n=== found decl {:#?}", decl.node);
-                                for spec in &decl.node.specifiers {
-                                    match &spec.node {
-                                        ast::DeclarationSpecifier::TypeSpecifier(ts) => {
-                                            println!("type specifier {:?}", ts.node);
-                                        }
-                                        _ => {}
-                                    }
-                                }
+                    let mut out = Vec::<u8>::new();
+                    emit::walk_ast(&mut out, &unit).unwrap();
 
-                                for tor in &decl.node.declarators {
-                                    let tor = &tor.node.declarator;
-                                    // println!("decltor {:#?}", &tor.node);
-                                    match &tor.node.kind.node {
-                                        ast::DeclaratorKind::Identifier(id) => {
-                                            println!("Identifier {:?}", id.node.name);
-                                        }
-                                        _ => {}
-                                    }
-
-                                    for der in &tor.node.derived {
-                                        println!("derived {:?}", der.node)
-                                    }
-                                }
-                            }
-                            _ => {}
-                        }
-                    }
+                    println!("========= Result ===========");
+                    println!("{}", std::str::from_utf8(&out).unwrap());
                 }
                 Err(e) => println!("Failed: {:#?}", e),
             }
