@@ -1,6 +1,7 @@
 mod directive;
 
 use directive::PreprocessorIdent;
+use lang_c::{ast, driver};
 use std::collections::BTreeMap;
 use std::collections::VecDeque;
 use std::fs::File;
@@ -408,17 +409,18 @@ impl ParsedUnit {
                 continue;
             }
 
-            out.push(format!("// start key: {:?}", key));
             out.push(
                 self.source
                     .lines()
                     .skip(range.start + 1)
                     .take(range.end - range.start - 1)
-                    .filter(|x| !x.trim().starts_with("#"))
+                    .filter(|x| {
+                        let trimmed = x.trim();
+                        !(trimmed.starts_with("#") || trimmed.starts_with("//"))
+                    })
                     .collect::<Vec<_>>()
                     .join("\n"),
             );
-            out.push(format!("// end key: {:?}", key));
         }
 
         return out.join("\n");
@@ -543,103 +545,59 @@ impl Parser {
             log::debug!("Processing {:?}", k);
 
             let mm = self.sources.get(k).unwrap();
-            println!("{}", mm.source(defines));
+
+            let source = mm.source(defines);
+            println!("{}", source);
+
+            match driver::parse_preprocessed(
+                &driver::Config {
+                    cpp_command: "<none>".into(),
+                    cpp_options: Default::default(),
+                    flavor: driver::Flavor::MsvcC11,
+                },
+                source.clone(),
+            ) {
+                Ok(res) => {
+                    let unit = res.unit;
+                    println!("\n====== traversing AST");
+
+                    for decl in &unit.0 {
+                        match &decl.node {
+                            ast::ExternalDeclaration::Declaration(ref decl) => {
+                                println!("\n=== found decl {:#?}", decl.node);
+                                for spec in &decl.node.specifiers {
+                                    match &spec.node {
+                                        ast::DeclarationSpecifier::TypeSpecifier(ts) => {
+                                            println!("type specifier {:?}", ts.node);
+                                        }
+                                        _ => {}
+                                    }
+                                }
+
+                                for tor in &decl.node.declarators {
+                                    let tor = &tor.node.declarator;
+                                    // println!("decltor {:#?}", &tor.node);
+                                    match &tor.node.kind.node {
+                                        ast::DeclaratorKind::Identifier(id) => {
+                                            println!("Identifier {:?}", id.node.name);
+                                        }
+                                        _ => {}
+                                    }
+
+                                    for der in &tor.node.derived {
+                                        println!("derived {:?}", der.node)
+                                    }
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                Err(e) => println!("Failed: {:#?}", e),
+            }
         }
     }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn def(s: &str) -> Defined {
-        Defined::from(s)
-    }
-
-    fn parse(source: &str) -> ParsedUnit {
-        ParsedUnit::parse(source.into()).expect("unit should parse")
-    }
-
-    fn test_single(source: &str, expected: Defined) {
-        let u = parse(source);
-        let (_, actual) = u.dependencies.iter().next().unwrap();
-        assert_eq!(*actual, expected);
-    }
-
-    #[test]
-    fn test_true() {
-        test_single(
-            "
-#include <stdio.h>
-            ",
-            Defined::True,
-        );
-    }
-
-    #[test]
-    fn test_one_ifdef() {
-        test_single(
-            "
-#ifdef FOO
-#include <stdio.h>
-#endif
-            ",
-            def("FOO"),
-        );
-    }
-
-    #[test]
-    fn test_two_ifdefs() {
-        test_single(
-            "
-#ifdef FOO
-#ifdef BAR
-#include <stdio.h>
-#endif
-#endif
-            ",
-            def("BAR") & def("FOO"),
-        );
-    }
-
-    #[test]
-    fn test_else() {
-        test_single(
-            "
-#ifdef FOO
-// nothing
-#else
-#include <stdio.h>
-#endif
-            ",
-            !def("FOO"),
-        )
-    }
-
-    #[test]
-    fn test_nested_else() {
-        test_single(
-            "
-#ifdef FOO
-#ifdef BAR
-#else
-#include <stdio.h>
-#endif
-#endif
-            ",
-            !def("BAR") & def("FOO"),
-        )
-    }
-
-    // #[test]
-    // fn test_single_if_defined() {
-    //     test_single(
-    //         "
-    // #if defined(FOO)
-    // #include <stdio.h>
-    // #endif
-    //                 ",
-    //         def("FOO"),
-    //     );
-    // }
-}
+mod tests;
