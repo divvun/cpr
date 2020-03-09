@@ -43,19 +43,16 @@ fn main() {
         .or(devenv::get_msvc_path())
         .expect("MSVC include path should be autodetected or specified with --msvc-path");
 
-    let parser = Parser::new(
-        args.file,
-        vec![
-            kits.join("ucrt"),
-            kits.join("shared"),
-            kits.join("um"),
-            kits.join("km"),
-            msvc_path,
-            PathBuf::from(r"."),
-        ],
-        vec![],
-    )
-    .unwrap();
+    let system_paths = vec![
+        kits.join("ucrt"),
+        kits.join("shared"),
+        kits.join("um"),
+        kits.join("km"),
+        msvc_path,
+        PathBuf::from(r"."),
+    ];
+    log::debug!("System paths: {:#?}", system_paths);
+    let parser = Parser::new(args.file, system_paths, vec![]).unwrap();
 
     let defines = &[];
     parser.emit_header(defines);

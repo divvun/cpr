@@ -480,7 +480,7 @@ impl Parser {
     /// Find a file on disk corresponding to an `Include`, read it
     /// to String, strip escaped newlines.
     fn read_include(&self, include: &Include) -> Result<String, Error> {
-        log::trace!("=== {:?} ===", include);
+        log::debug!("=== {:?} ===", include);
 
         let path =
             match include.resolve(&*self.system_paths, &self.quoted_paths, &self.working_path) {
@@ -488,7 +488,7 @@ impl Parser {
                 None => return Err(Error::NotFound(include.clone())),
             };
 
-        log::trace!("=== {:?} ===", &path);
+        log::debug!("=== {:?} ===", &path);
 
         let file = File::open(path).map_err(Error::Io)?;
         let file = BufReader::new(file);
@@ -536,13 +536,13 @@ impl Parser {
             k: &Include,
         ) {
             let mm = sources.get(k).unwrap();
-            log::debug!("[>] Visiting {:?}", k);
+            log::trace!("[>] Visiting {:?}", k);
             for (kk, cons) in &mm.dependencies {
                 if cons.satisfies(defines) {
-                    log::debug!("[v] Descending into {:?} ({:?})", kk, cons);
+                    log::trace!("[v] Descending into {:?} ({:?})", kk, cons);
                     visit(sources, set, defines, kk)
                 } else {
-                    log::debug!("[x] Skipping {:?} (cons {:?})", kk, cons);
+                    log::trace!("[x] Skipping {:?} (cons {:?})", kk, cons);
                 }
             }
 
@@ -551,9 +551,9 @@ impl Parser {
                 set.push(k.clone());
             }
         }
-        log::debug!("=========== emit graph traversal start =============");
+        log::trace!("=========== emit graph traversal start =============");
         visit(&self.sources, &mut set, defines, &self.root);
-        log::debug!("=========== emit graph traversal end ===============");
+        log::trace!("=========== emit graph traversal end ===============");
 
         for k in &set {
             log::debug!("Processing {:?}", k);
@@ -580,6 +580,11 @@ impl Parser {
 
                     println!("========= Result ===========");
                     println!("{}", std::str::from_utf8(&out).unwrap());
+
+                    std::fs::create_dir_all("out").unwrap();
+                    let path = "out/out.rs";
+                    std::fs::write(path, out).unwrap();
+                    println!("(Also written to {:?})", path);
                 }
                 Err(e) => println!("Failed: {:#?}", e),
             }

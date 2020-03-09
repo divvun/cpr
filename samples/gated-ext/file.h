@@ -1,6 +1,22 @@
 
+// =====================
+// Group
+// =====================
+
 // int open(const char *path);
 // int close(int fd);
+
+// =====================
+// Group
+// =====================
+
+typedef const char *const_first;
+typedef char const *const_last;
+typedef char *not_const;
+
+// =====================
+// Group
+// =====================
 
 typedef int myint;
 typedef char *mystring;
@@ -15,6 +31,12 @@ int takes_const(const char *which_string);
 
 typedef int *a, **b;
 
-// typedef const char *const_first;
-// typedef char const *const_last;
-// typedef char *not_const;
+// =====================
+// Group
+// =====================
+
+typedef struct node_s {
+    int offset;
+    char *name;
+} node;
+
