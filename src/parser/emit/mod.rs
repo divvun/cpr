@@ -6,6 +6,7 @@ mod utils;
 use utils::*;
 
 struct Writer<'a> {
+    indent: usize,
     w: &'a mut dyn Write,
 }
 
@@ -33,7 +34,6 @@ impl<'a> Writer<'a> {
                     for init_declarator in nodes(&declaration.declarators[..]) {
                         let declarator = &init_declarator.declarator.node;
                         self.emit_declarator(declaration, declarator)?;
-                        writeln!(self, ";")?;
                     }
                 }
             } else {
@@ -49,6 +49,7 @@ impl<'a> Writer<'a> {
             match tyspec {
                 ast::TypeSpecifier::Struct(Node { node: struty, .. }) => {
                     self.emit_struct(struty)?;
+                    self.end_statement()?;
                 }
                 _ => {}
             }
@@ -64,6 +65,8 @@ impl<'a> Writer<'a> {
         };
 
         writeln!(self, "pub struct {} {{", id.name)?;
+        self.indent += 1;
+
         if let Some(declarations) = &struty.declarations {
             for dtion in nodes(&declarations[..]) {
                 match dtion {
@@ -74,7 +77,7 @@ impl<'a> Writer<'a> {
                             if let Some(Node { node: dtor, .. }) = dtor.declarator.as_ref() {
                                 log::debug!("{:?} {:?}", specifiers, dtor);
 
-                                let id = match get_identifier(dtor) {
+                                let id = match dtor.get_identifier() {
                                     Some(x) => x,
                                     None => continue,
                                 };
@@ -89,7 +92,8 @@ impl<'a> Writer<'a> {
             }
         }
 
-        writeln!(self, "}}")?;
+        self.indent -= 1;
+        write!(self, "}}")?;
 
         Ok(())
     }
@@ -99,7 +103,7 @@ impl<'a> Writer<'a> {
         dtion: &ast::Declaration,
         dtor: &ast::Declarator,
     ) -> io::Result<()> {
-        let id = match get_identifier(dtor) {
+        let id = match dtor.get_identifier() {
             None => {
                 log::debug!(
                     "emit_declarator: dtor without identifier {:#?} {:#?}",
@@ -113,13 +117,14 @@ impl<'a> Writer<'a> {
 
         log::debug!("emit_declarator: {}", id.name);
 
-        if let Some(ast::StorageClassSpecifier::Typedef) = get_storage_class(dtion) {
+        if let Some(ast::StorageClassSpecifier::Typedef) = dtion.get_storage_class() {
             // typedef
             write!(self, "type {} = ", id.name)?;
             self.emit_type(&dtion.specifiers, &dtor.derived)?;
-        } else if let Some(function_declarator) = get_function(dtor) {
+            self.end_statement()?;
+        } else if let Some(fdecl) = dtor.get_function() {
             // non-typedef
-            self.emit_fdecl(dtion, id, dtor, function_declarator)?;
+            self.emit_fdecl(dtion, id, dtor, fdecl)?;
         } else {
             log::debug!(
                 "emit_declarator: unsure what to do with {:#?} {:#?}",
@@ -139,7 +144,10 @@ impl<'a> Writer<'a> {
         fdecl: &ast::FunctionDeclarator,
     ) -> io::Result<()> {
         writeln!(self, "extern {c:?} {{", c = "C")?;
-        write!(self, "    fn {name}(", name = id.name)?;
+        self.indent += 1;
+        write!(self, "fn {name}(", name = id.name)?;
+
+        if fdecl.takes_void() {}
 
         for (i, param) in nodes(&fdecl.parameters[..]).enumerate() {
             if i > 0 {
@@ -148,7 +156,7 @@ impl<'a> Writer<'a> {
 
             let declarator = param.declarator.as_ref().map(borrow_node);
             let name = declarator
-                .and_then(get_identifier)
+                .and_then(|dtor| dtor.get_identifier())
                 .map(|id| id.name.clone())
                 .unwrap_or_else(|| format!("__arg{}", i));
             write!(self, "{}: ", name)?;
@@ -160,7 +168,10 @@ impl<'a> Writer<'a> {
         write!(self, ") -> ")?;
         self.emit_type(&dtion.specifiers[..], &dtor.derived[..])?;
         writeln!(self, ";")?;
+
+        self.indent += 1;
         writeln!(self, "}} // extern {c:?}", c = "C")?;
+        writeln!(self)?;
 
         Ok(())
     }
@@ -200,7 +211,7 @@ impl<'a> Writer<'a> {
             .filter_map(AsSpecifierQualifier::as_specqual)
             .collect::<Vec<ast::SpecifierQualifier>>();
 
-        let is_const = specifiers.iter().any(IsConst::is_const);
+        let is_const = specifiers.iter().any(|s| s.is_const());
         for derived in nodes(derived) {
             match derived {
                 ast::DerivedDeclarator::Pointer(_qualifiers) => {
@@ -225,9 +236,15 @@ impl<'a> Writer<'a> {
 
         Ok(())
     }
+
+    fn end_statement(&mut self) -> io::Result<()> {
+        writeln!(self, ";")?;
+        writeln!(self)?;
+        Ok(())
+    }
 }
 
 pub fn emit_unit(w: &mut dyn io::Write, unit: &ast::TranslationUnit) -> io::Result<()> {
-    let mut w = Writer { w };
+    let mut w = Writer { indent: 0, w };
     w.emit_unit(unit)
 }

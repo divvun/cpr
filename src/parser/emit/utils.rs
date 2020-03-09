@@ -1,5 +1,6 @@
 use lang_c::ast;
 use lang_c::span::Node;
+use matches::matches;
 
 pub(crate) fn nodes<'a, T>(nodes: &'a [Node<T>]) -> impl Iterator<Item = &'a T> + 'a
 where
@@ -32,49 +33,100 @@ impl AsSpecifierQualifier for ast::DeclarationSpecifier {
     }
 }
 
-pub(crate) trait IsConst {
+pub(crate) trait SpecifierQualifierExt {
     fn is_const(&self) -> bool;
 }
 
-impl IsConst for ast::SpecifierQualifier {
+impl SpecifierQualifierExt for ast::SpecifierQualifier {
     fn is_const(&self) -> bool {
-        if let Self::TypeQualifier(Node {
-            node: ast::TypeQualifier::Const,
-            ..
-        }) = self
-        {
-            return true;
-        }
-        false
+        matches!(
+            self,
+            Self::TypeQualifier(Node {
+                node: ast::TypeQualifier::Const,
+                ..
+            })
+        )
     }
 }
 
-pub(crate) fn get_storage_class(d: &ast::Declaration) -> Option<&ast::StorageClassSpecifier> {
-    for s in &d.specifiers {
-        match &s.node {
-            ast::DeclarationSpecifier::StorageClass(sc) => return Some(&sc.node),
-            _ => {}
-        }
-    }
-    None
+pub(crate) trait DeclarationExt {
+    fn get_storage_class(&self) -> Option<&ast::StorageClassSpecifier>;
 }
 
-pub(crate) fn get_function(declarator: &ast::Declarator) -> Option<&ast::FunctionDeclarator> {
-    for derived_node in &declarator.derived {
-        let derived = &derived_node.node;
-        match derived {
-            ast::DerivedDeclarator::Function(fd) => return Some(&fd.node),
-            _ => {}
+impl DeclarationExt for ast::Declaration {
+    fn get_storage_class(&self) -> Option<&ast::StorageClassSpecifier> {
+        for dspec in nodes(&self.specifiers[..]) {
+            if let ast::DeclarationSpecifier::StorageClass(sc) = dspec {
+                return Some(&sc.node);
+            }
         }
-    }
-
-    None
-}
-
-pub(crate) fn get_identifier(declarator: &ast::Declarator) -> Option<&ast::Identifier> {
-    if let ast::DeclaratorKind::Identifier(Node { node: id, .. }) = &declarator.kind.node {
-        Some(id)
-    } else {
         None
+    }
+}
+
+pub(crate) trait DeclaratorExt {
+    fn has_pointer(&self) -> bool;
+    fn get_function(&self) -> Option<&ast::FunctionDeclarator>;
+    fn get_identifier(&self) -> Option<&ast::Identifier>;
+}
+
+impl DeclaratorExt for ast::Declarator {
+    fn has_pointer(&self) -> bool {
+        nodes(&self.derived[..]).any(|der| matches!(der, ast::DerivedDeclarator::Pointer(_)))
+    }
+
+    fn get_function(&self) -> Option<&ast::FunctionDeclarator> {
+        for derived in nodes(&self.derived[..]) {
+            if let ast::DerivedDeclarator::Function(fd) = derived {
+                return Some(&fd.node);
+            }
+        }
+
+        None
+    }
+
+    fn get_identifier(&self) -> Option<&ast::Identifier> {
+        if let ast::DeclaratorKind::Identifier(Node { node: id, .. }) = &self.kind.node {
+            Some(id)
+        } else {
+            None
+        }
+    }
+}
+
+pub(crate) trait VoidExt {
+    fn takes_void(&self) -> bool;
+    fn returns_void(&self) -> bool;
+}
+
+impl VoidExt for ast::FunctionDeclarator {
+    fn takes_void(&self) -> bool {
+        if self.parameters.len() != 1 {
+            return false;
+        }
+
+        let Node { node: param, .. } = &self.parameters[0];
+
+        let is_pointer = param
+            .declarator
+            .as_ref()
+            .map(|d| d.node.has_pointer())
+            .unwrap_or_default();
+
+        let has_void = nodes(&param.specifiers[..]).any(|spec| {
+            matches!(
+                spec,
+                ast::DeclarationSpecifier::TypeSpecifier(Node {
+                    node: ast::TypeSpecifier::Void,
+                    ..
+                })
+            )
+        });
+
+        has_void && !is_pointer
+    }
+
+    fn returns_void(&self) -> bool {
+        unimplemented!()
     }
 }
