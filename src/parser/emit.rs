@@ -2,15 +2,46 @@ use lang_c::ast;
 use lang_c::span::Node;
 use std::io;
 
-fn write_specifiers(
+fn nodes<'a, T>(nodes: &'a [Node<T>]) -> impl Iterator<Item = &'a T> + 'a
+where
+    T: 'a,
+{
+    nodes.iter().map(borrow_node)
+}
+
+fn borrow_node<T>(node: &Node<T>) -> &T {
+    &node.node
+}
+
+fn emit_type(
     w: &mut dyn io::Write,
     specifiers: &[Node<ast::DeclarationSpecifier>],
+    derived: &[Node<ast::DerivedDeclarator>],
 ) -> io::Result<()> {
-    for specifier_node in specifiers {
-        let specifier = &specifier_node.node;
+    for derived in nodes(derived) {
+        match derived {
+            ast::DerivedDeclarator::Pointer(qualifiers) => {
+                let is_const = nodes(&qualifiers[..]).any(|qual| {
+                    if let ast::PointerQualifier::TypeQualifier(Node {
+                        node: ast::TypeQualifier::Const,
+                        ..
+                    }) = qual
+                    {
+                        return true;
+                    }
+                    false
+                });
+
+                // TODO: qualifiers
+                write!(w, "mut *")?;
+            }
+            _ => {}
+        }
+    }
+    for specifier in nodes(specifiers) {
         match specifier {
-            ast::DeclarationSpecifier::TypeSpecifier(ts) => {
-                write_type(w, &ts.node)?;
+            ast::DeclarationSpecifier::TypeSpecifier(Node { node: ts, .. }) => {
+                emit_typespec(w, ts)?;
             }
             _ => {}
         }
@@ -19,7 +50,7 @@ fn write_specifiers(
     Ok(())
 }
 
-fn write_type(w: &mut dyn io::Write, ts: &ast::TypeSpecifier) -> io::Result<()> {
+fn emit_typespec(w: &mut dyn io::Write, ts: &ast::TypeSpecifier) -> io::Result<()> {
     match ts {
         ast::TypeSpecifier::Int => write!(w, "i32"),
         ast::TypeSpecifier::Short => write!(w, "i16"),
@@ -52,72 +83,81 @@ fn get_function(declarator: &ast::Declarator) -> Option<&ast::FunctionDeclarator
     None
 }
 
-pub fn walk_ast(w: &mut dyn io::Write, unit: &ast::TranslationUnit) -> io::Result<()> {
-    for decl in &unit.0 {
-        match &decl.node {
-            ast::ExternalDeclaration::Declaration(ref declaration_node) => {
-                let declaration = &declaration_node.node;
-                for init_declarator_node in &declaration.declarators {
-                    let declarator = &init_declarator_node.node.declarator.node;
-                    match &declarator.kind.node {
-                        ast::DeclaratorKind::Identifier(id) => {
-                            println!("Identifier {:?}", id.node.name);
+pub fn get_identifier(declarator: &ast::Declarator) -> Option<&ast::Identifier> {
+    if let ast::DeclaratorKind::Identifier(Node { node: id, .. }) = &declarator.kind.node {
+        Some(id)
+    } else {
+        None
+    }
+}
 
-                            match get_storage_class(&declaration) {
-                                Some(ast::StorageClassSpecifier::Typedef) => {
-                                    write!(w, "type {} = ", id.node.name)?;
+pub fn emit_fdecl(
+    w: &mut dyn io::Write,
+    dtion: &ast::Declaration,
+    id: &ast::Identifier,
+    dtor: &ast::Declarator,
+    fdecl: &ast::FunctionDeclarator,
+) -> io::Result<()> {
+    writeln!(w, "extern {c:?} {{", c = "C")?;
+    write!(w, "    fn {name}(", name = id.name)?;
 
-                                    for der in &declarator.derived {
-                                        println!("derived {:?}", der.node);
-                                        match der.node {
-                                            ast::DerivedDeclarator::Pointer(_) => {
-                                                write!(w, "*mut ")?;
-                                            }
-                                            _ => {}
-                                        }
-                                    }
+    for (i, param) in nodes(&fdecl.parameters[..]).enumerate() {
+        if i > 0 {
+            write!(w, ", ")?;
+        }
 
-                                    write_specifiers(w, &declaration.specifiers)?;
-                                    writeln!(w, ";")?;
-                                }
-                                _ => {
-                                    if let Some(function_declarator) = get_function(declarator) {
-                                        // writeln!(w, "/* Function {:#?} */", function_declarator)?;
-                                        writeln!(w, "extern {c:?} {{", c = "C")?;
-                                        write!(w, "    fn {name}(", name = id.node.name)?;
+        let declarator = param.declarator.as_ref().map(borrow_node);
+        let name = declarator
+            .and_then(get_identifier)
+            .map(|id| id.name.clone())
+            .unwrap_or_else(|| format!("__arg{}", i));
+        write!(w, "{}: ", name)?;
 
-                                        for (i, parameter_declaration_node) in
-                                            function_declarator.parameters.iter().enumerate()
-                                        {
-                                            let parameter_declaration =
-                                                &parameter_declaration_node.node;
+        let derived = declarator.map(|dtor| &dtor.derived[..]).unwrap_or_default();
+        emit_type(w, &param.specifiers[..], derived)?;
+    }
 
-                                            if i > 0 {
-                                                write!(w, ", ")?;
-                                            }
+    write!(w, ") -> ")?;
+    emit_type(w, &dtion.specifiers[..], &dtor.derived[..])?;
+    writeln!(w, ";")?;
+    writeln!(w, "}} // extern {c:?}", c = "C")?;
 
-                                            write_specifiers(w, &parameter_declaration.specifiers)?;
-                                        }
+    Ok(())
+}
 
-                                        write!(w, ") -> ")?;
-                                        write_specifiers(w, &declaration.specifiers)?;
-                                        writeln!(w, ";")?;
-                                        writeln!(w, "}} // extern {c:?}", c = "C")?;
-                                    } else {
-                                        writeln!(
-                                            w,
-                                            "/* Unknown declarator = {:#?} */",
-                                            declarator
-                                        )?;
-                                    }
-                                }
-                            }
-                        }
-                        _ => {}
-                    }
-                }
+pub fn emit_declarator(
+    w: &mut dyn io::Write,
+    dtion: &ast::Declaration,
+    dtor: &ast::Declarator,
+) -> io::Result<()> {
+    let id = match get_identifier(dtor) {
+        None => return Ok(()),
+        Some(x) => x,
+    };
+
+    if let Some(ast::StorageClassSpecifier::Typedef) = get_storage_class(dtion) {
+        // typedef
+        write!(w, "type {} = ", id.name)?;
+        emit_type(w, &dtion.specifiers, &dtor.derived)?;
+    } else if let Some(function_declarator) = get_function(dtor) {
+        // non-typedef
+        emit_fdecl(w, dtion, id, dtor, function_declarator)?;
+    }
+
+    Ok(())
+}
+
+pub fn emit_unit(w: &mut dyn io::Write, unit: &ast::TranslationUnit) -> io::Result<()> {
+    for extdecl in nodes(&unit.0) {
+        if let ast::ExternalDeclaration::Declaration(Node {
+            node: declaration, ..
+        }) = &extdecl
+        {
+            for init_declarator in nodes(&declaration.declarators) {
+                let declarator = &init_declarator.declarator.node;
+                emit_declarator(w, declaration, declarator)?;
+                writeln!(w, ";")?;
             }
-            _ => {}
         }
     }
 

@@ -576,7 +576,7 @@ impl Parser {
                     println!("\n====== traversing AST");
 
                     let mut out = Vec::<u8>::new();
-                    emit::walk_ast(&mut out, &unit).unwrap();
+                    emit::emit_unit(&mut out, &unit).unwrap();
 
                     println!("========= Result ===========");
                     println!("{}", std::str::from_utf8(&out).unwrap());
