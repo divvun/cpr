@@ -51,7 +51,7 @@
 
 // int getpid(void);
 
-// long long int ohno;
+typedef long long int ohno;
 
 void returns_void(void);
 void *returns_void_ptr(void);

@@ -65,14 +65,20 @@ impl DeclarationExt for ast::Declaration {
 }
 
 pub(crate) trait DeclaratorExt {
-    fn has_pointer(&self) -> bool;
+    fn pointer_depth(&self) -> usize;
+    fn has_pointer(&self) -> bool {
+        self.pointer_depth() > 0
+    }
+
     fn get_function(&self) -> Option<&ast::FunctionDeclarator>;
     fn get_identifier(&self) -> Option<&ast::Identifier>;
 }
 
 impl DeclaratorExt for ast::Declarator {
-    fn has_pointer(&self) -> bool {
-        nodes(&self.derived[..]).any(|der| matches!(der, ast::DerivedDeclarator::Pointer(_)))
+    fn pointer_depth(&self) -> usize {
+        nodes(&self.derived[..])
+            .filter(|der| matches!(der, ast::DerivedDeclarator::Pointer(_)))
+            .count()
     }
 
     fn get_function(&self) -> Option<&ast::FunctionDeclarator> {
@@ -118,19 +124,49 @@ pub(crate) trait Typed {
     fn declarator(&self) -> Option<&ast::Declarator>;
     fn specifiers(&self) -> Box<dyn Iterator<Item = &dyn AsSpecifierQualifier> + '_>;
 
+    fn specquals(&self) -> Box<dyn Iterator<Item = ast::SpecifierQualifier> + '_> {
+        Box::new(self.specifiers().filter_map(|s| s.as_specqual()))
+    }
+
+    fn typespecs(&self) -> Box<dyn Iterator<Item = ast::TypeSpecifier> + '_> {
+        Box::new(self.specquals().filter_map(|s| {
+            if let ast::SpecifierQualifier::TypeSpecifier(Node { node: ts, .. }) = s {
+                Some(ts)
+            } else {
+                None
+            }
+        }))
+    }
+
+    fn derived(&self) -> Box<dyn Iterator<Item = &ast::DerivedDeclarator> + '_> {
+        if let Some(decl) = self.declarator() {
+            Box::new(decl.derived.iter().map(borrow_node))
+        } else {
+            Box::new(std::iter::empty())
+        }
+    }
+
+    fn is_const(&self) -> bool {
+        self.specquals().any(|s| s.is_const())
+    }
+
+    fn pointer_depth(&self) -> usize {
+        self.declarator().map(|d| d.pointer_depth()).unwrap_or(0)
+    }
+
     fn is_void(&self) -> bool {
         let is_pointer = self
             .declarator()
             .map(|d| d.has_pointer())
             .unwrap_or_default();
 
-        let has_void = self.specifiers().any(|spec| {
+        let has_void = self.specquals().any(|spec| {
             matches!(
-                spec.as_specqual(),
-                Some(ast::SpecifierQualifier::TypeSpecifier(Node {
+                spec,
+                ast::SpecifierQualifier::TypeSpecifier(Node {
                     node: ast::TypeSpecifier::Void,
                     ..
-                }))
+                })
             )
         });
 
@@ -139,11 +175,40 @@ pub(crate) trait Typed {
 }
 
 impl Typed for ast::ParameterDeclaration {
+    fn declarator(&self) -> Option<&lang_c::ast::Declarator> {
+        self.declarator.as_ref().map(borrow_node)
+    }
+
     fn specifiers(&self) -> Box<dyn Iterator<Item = &dyn AsSpecifierQualifier> + '_> {
         Box::new(nodes(&self.specifiers[..]).map(|x| x as &dyn AsSpecifierQualifier))
     }
+}
 
-    fn declarator(&self) -> Option<&lang_c::ast::Declarator> {
-        self.declarator.as_ref().map(borrow_node)
+pub(crate) struct DeclTuple<'a> {
+    pub(crate) dtion: &'a ast::Declaration,
+    pub(crate) dtor: &'a ast::Declarator,
+}
+
+impl<'a> Typed for DeclTuple<'a> {
+    fn declarator(&self) -> Option<&ast::Declarator> {
+        Some(&self.dtor)
+    }
+
+    fn specifiers(&self) -> Box<dyn Iterator<Item = &dyn AsSpecifierQualifier> + '_> {
+        Box::new(nodes(&self.dtion.specifiers[..]).map(|x| x as &dyn AsSpecifierQualifier))
+    }
+}
+
+pub(crate) struct StructFieldTuple<'a> {
+    pub(crate) field: &'a ast::StructField,
+    pub(crate) dtor: &'a ast::Declarator,
+}
+
+impl<'a> Typed for StructFieldTuple<'a> {
+    fn declarator(&self) -> Option<&ast::Declarator> {
+        Some(&self.dtor)
+    }
+    fn specifiers(&self) -> Box<dyn Iterator<Item = &dyn AsSpecifierQualifier> + '_> {
+        Box::new(nodes(&self.field.specifiers[..]).map(|x| x as &dyn AsSpecifierQualifier))
     }
 }

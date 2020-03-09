@@ -75,6 +75,7 @@ impl<'a> Writer<'a> {
 
                         for dtor in nodes(&field.declarators[..]) {
                             if let Some(Node { node: dtor, .. }) = dtor.declarator.as_ref() {
+                                let sftup = StructFieldTuple { field, dtor };
                                 log::debug!("{:?} {:?}", specifiers, dtor);
 
                                 let id = match dtor.get_identifier() {
@@ -82,7 +83,7 @@ impl<'a> Writer<'a> {
                                     None => continue,
                                 };
                                 write!(self, "{name}: ", name = id.name)?;
-                                self.emit_type(specifiers, &dtor.derived[..])?;
+                                self.emit_type(&sftup)?;
                                 writeln!(self, ";")?;
                             }
                         }
@@ -120,7 +121,7 @@ impl<'a> Writer<'a> {
         if let Some(ast::StorageClassSpecifier::Typedef) = dtion.get_storage_class() {
             // typedef
             write!(self, "type {} = ", id.name)?;
-            self.emit_type(&dtion.specifiers, &dtor.derived)?;
+            self.emit_type(&DeclTuple { dtion, dtor })?;
             self.end_statement()?;
         } else if let Some(fdecl) = dtor.get_function() {
             // non-typedef
@@ -143,6 +144,8 @@ impl<'a> Writer<'a> {
         dtor: &ast::Declarator,
         fdecl: &ast::FunctionDeclarator,
     ) -> io::Result<()> {
+        let ftup = DeclTuple { dtion, dtor };
+
         writeln!(self, "extern {c:?} {{", c = "C")?;
         self.indent += 1;
         write!(self, "fn {name}(", name = id.name)?;
@@ -155,20 +158,22 @@ impl<'a> Writer<'a> {
                     write!(self, ", ")?;
                 }
 
-                let declarator = param.declarator.as_ref().map(borrow_node);
-                let name = declarator
+                let name = param
+                    .declarator()
                     .and_then(|dtor| dtor.get_identifier())
                     .map(|id| id.name.clone())
                     .unwrap_or_else(|| format!("__arg{}", i));
                 write!(self, "{}: ", name)?;
-
-                let derived = declarator.map(|dtor| &dtor.derived[..]).unwrap_or_default();
-                self.emit_type(&param.specifiers[..], derived)?;
+                self.emit_type(param)?;
             }
         }
 
-        write!(self, ") -> ")?;
-        self.emit_type(&dtion.specifiers[..], &dtor.derived[..])?;
+        write!(self, ")")?;
+
+        if !ftup.is_void() {
+            write!(self, " -> ")?;
+            self.emit_type(&ftup)?;
+        }
         writeln!(self, ";")?;
 
         self.indent += 1;
@@ -199,41 +204,22 @@ impl<'a> Writer<'a> {
         }
     }
 
-    fn emit_type<SQ>(
-        &mut self,
-        specifiers: &[Node<SQ>],
-        derived: &[Node<ast::DerivedDeclarator>],
-    ) -> io::Result<()>
-    where
-        SQ: AsSpecifierQualifier,
-    {
-        let specifiers = specifiers
-            .iter()
-            .map(borrow_node)
-            .filter_map(AsSpecifierQualifier::as_specqual)
-            .collect::<Vec<ast::SpecifierQualifier>>();
-
-        let is_const = specifiers.iter().any(|s| s.is_const());
-        for derived in nodes(derived) {
-            match derived {
-                ast::DerivedDeclarator::Pointer(_qualifiers) => {
-                    if is_const {
+    fn emit_type(&mut self, typ: &dyn Typed) -> io::Result<()> {
+        match typ.pointer_depth() {
+            0 => { /* good! */ }
+            depth => {
+                for d in 0..depth {
+                    if typ.is_const() {
                         write!(self, "*const ")?;
                     } else {
                         write!(self, "*mut ")?;
                     }
                 }
-                _ => {}
             }
-        }
+        };
 
-        for spec in specifiers {
-            match spec {
-                ast::SpecifierQualifier::TypeSpecifier(Node { node: ts, .. }) => {
-                    self.emit_typespec(&ts)?;
-                }
-                _ => {}
-            }
+        for ts in typ.typespecs() {
+            self.emit_typespec(&ts)?;
         }
 
         Ok(())
