@@ -95,38 +95,55 @@ impl DeclaratorExt for ast::Declarator {
 }
 
 pub(crate) trait VoidExt {
-    fn takes_void(&self) -> bool;
-    fn returns_void(&self) -> bool;
+    fn takes_nothing(&self) -> bool;
+    fn returns_nothing(&self) -> bool;
 }
 
 impl VoidExt for ast::FunctionDeclarator {
-    fn takes_void(&self) -> bool {
+    fn takes_nothing(&self) -> bool {
         if self.parameters.len() != 1 {
             return false;
         }
 
         let Node { node: param, .. } = &self.parameters[0];
+        param.is_void()
+    }
 
-        let is_pointer = param
-            .declarator
-            .as_ref()
-            .map(|d| d.node.has_pointer())
+    fn returns_nothing(&self) -> bool {
+        unimplemented!()
+    }
+}
+
+pub(crate) trait Typed {
+    fn declarator(&self) -> Option<&ast::Declarator>;
+    fn specifiers(&self) -> Box<dyn Iterator<Item = &dyn AsSpecifierQualifier> + '_>;
+
+    fn is_void(&self) -> bool {
+        let is_pointer = self
+            .declarator()
+            .map(|d| d.has_pointer())
             .unwrap_or_default();
 
-        let has_void = nodes(&param.specifiers[..]).any(|spec| {
+        let has_void = self.specifiers().any(|spec| {
             matches!(
-                spec,
-                ast::DeclarationSpecifier::TypeSpecifier(Node {
+                spec.as_specqual(),
+                Some(ast::SpecifierQualifier::TypeSpecifier(Node {
                     node: ast::TypeSpecifier::Void,
                     ..
-                })
+                }))
             )
         });
 
         has_void && !is_pointer
     }
+}
 
-    fn returns_void(&self) -> bool {
-        unimplemented!()
+impl Typed for ast::ParameterDeclaration {
+    fn specifiers(&self) -> Box<dyn Iterator<Item = &dyn AsSpecifierQualifier> + '_> {
+        Box::new(nodes(&self.specifiers[..]).map(|x| x as &dyn AsSpecifierQualifier))
+    }
+
+    fn declarator(&self) -> Option<&lang_c::ast::Declarator> {
+        self.declarator.as_ref().map(borrow_node)
     }
 }

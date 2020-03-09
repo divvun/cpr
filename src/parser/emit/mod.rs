@@ -147,22 +147,24 @@ impl<'a> Writer<'a> {
         self.indent += 1;
         write!(self, "fn {name}(", name = id.name)?;
 
-        if fdecl.takes_void() {}
+        if fdecl.takes_nothing() {
+            // don't write params at all
+        } else {
+            for (i, param) in nodes(&fdecl.parameters[..]).enumerate() {
+                if i > 0 {
+                    write!(self, ", ")?;
+                }
 
-        for (i, param) in nodes(&fdecl.parameters[..]).enumerate() {
-            if i > 0 {
-                write!(self, ", ")?;
+                let declarator = param.declarator.as_ref().map(borrow_node);
+                let name = declarator
+                    .and_then(|dtor| dtor.get_identifier())
+                    .map(|id| id.name.clone())
+                    .unwrap_or_else(|| format!("__arg{}", i));
+                write!(self, "{}: ", name)?;
+
+                let derived = declarator.map(|dtor| &dtor.derived[..]).unwrap_or_default();
+                self.emit_type(&param.specifiers[..], derived)?;
             }
-
-            let declarator = param.declarator.as_ref().map(borrow_node);
-            let name = declarator
-                .and_then(|dtor| dtor.get_identifier())
-                .map(|id| id.name.clone())
-                .unwrap_or_else(|| format!("__arg{}", i));
-            write!(self, "{}: ", name)?;
-
-            let derived = declarator.map(|dtor| &dtor.derived[..]).unwrap_or_default();
-            self.emit_type(&param.specifiers[..], derived)?;
         }
 
         write!(self, ") -> ")?;

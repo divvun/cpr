@@ -53,6 +53,9 @@
 
 // long long int ohno;
 
-void returns_void();
-void *returns_void_ptr();
+void returns_void(void);
+void *returns_void_ptr(void);
+
+int takes_void(void);
+int takes_void_ptr(void *a);
 
