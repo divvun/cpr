@@ -18,28 +18,31 @@ fn emit_type(
     specifiers: &[Node<ast::DeclarationSpecifier>],
     derived: &[Node<ast::DerivedDeclarator>],
 ) -> io::Result<()> {
+    let is_const = nodes(specifiers).any(|dspec| {
+        if let ast::DeclarationSpecifier::TypeQualifier(Node {
+            node: ast::TypeQualifier::Const,
+            ..
+        }) = dspec
+        {
+            return true;
+        }
+        false
+    });
     for derived in nodes(derived) {
         match derived {
             ast::DerivedDeclarator::Pointer(qualifiers) => {
-                let is_const = nodes(&qualifiers[..]).any(|qual| {
-                    if let ast::PointerQualifier::TypeQualifier(Node {
-                        node: ast::TypeQualifier::Const,
-                        ..
-                    }) = qual
-                    {
-                        return true;
-                    }
-                    false
-                });
-
-                // TODO: qualifiers
-                write!(w, "mut *")?;
+                if is_const {
+                    write!(w, "const *")?;
+                } else {
+                    write!(w, "mut *")?;
+                }
             }
             _ => {}
         }
     }
-    for specifier in nodes(specifiers) {
-        match specifier {
+
+    for dspec in nodes(specifiers) {
+        match dspec {
             ast::DeclarationSpecifier::TypeSpecifier(Node { node: ts, .. }) => {
                 emit_typespec(w, ts)?;
             }
