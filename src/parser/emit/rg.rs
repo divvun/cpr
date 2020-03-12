@@ -6,10 +6,15 @@ use std::{
 
 static RUST_KEYWORDS: Lazy<HashSet<String>> = Lazy::new(|| {
     let mut set = HashSet::new();
-    let source = "as break const continue crate else enum extern false fn for
-    if impl in let loop match mod move mut pub ref return self Self static struct
+    let source = "as break const continue crate else enum extern false fn for 
+    if impl in let loop match mod move mut pub ref return self Self static struct 
     super trait true type unsafe use where while";
-    for kw in source.split(" ") {
+    for kw in source
+        .replace("\n", " ")
+        .split(" ")
+        .map(|x| x.trim())
+        .filter(|x| !x.is_empty())
+    {
         println!("Reserved keyword: {:#?}", kw);
         set.insert(kw.to_string());
     }
