@@ -575,15 +575,16 @@ impl Parser {
                     let unit = res.unit;
                     println!("\n====== traversing AST");
 
-                    let mut out = Vec::<u8>::new();
-                    emit::emit_unit(&mut out, &unit).unwrap();
+                    let unit_out = emit::translate_unit(&unit);
 
-                    println!("========= Result ===========");
-                    println!("{}", std::str::from_utf8(&out).unwrap());
+                    let code = format!("{}", unit_out);
+
+                    println!("========= Rust code ===========");
+                    println!("{}", code);
 
                     std::fs::create_dir_all("out").unwrap();
                     let path = "out/out.rs";
-                    std::fs::write(path, out).unwrap();
+                    std::fs::write(path, code).unwrap();
                     println!("(Also written to {:?})", path);
                 }
                 Err(e) => println!("Failed: {:#?}", e),
