@@ -1,14 +1,14 @@
 use super::*;
 
-fn def(s: &str) -> Defined {
-    Defined::from(s)
+fn expr(s: &str) -> Expr {
+    Expr::from(s)
 }
 
 fn parse(source: &str) -> ParsedUnit {
     ParsedUnit::parse(source.into()).expect("unit should parse")
 }
 
-fn test_single(source: &str, expected: Defined) {
+fn test_single(source: &str, expected: Expr) {
     let u = parse(source);
     let (_, actual) = u.dependencies.iter().next().unwrap();
     assert_eq!(*actual, expected);
@@ -20,7 +20,7 @@ fn test_true() {
         "
 #include <stdio.h>
         ",
-        Defined::True,
+        Expr::True,
     );
 }
 
@@ -32,7 +32,7 @@ fn test_one_ifdef() {
 #include <stdio.h>
 #endif
         ",
-        def("FOO"),
+        expr("FOO"),
     );
 }
 
@@ -46,7 +46,7 @@ fn test_two_ifdefs() {
 #endif
 #endif
         ",
-        def("BAR") & def("FOO"),
+        expr("BAR") & expr("FOO"),
     );
 }
 
@@ -60,7 +60,7 @@ fn test_else() {
 #include <stdio.h>
 #endif
         ",
-        !def("FOO"),
+        !expr("FOO"),
     )
 }
 
@@ -75,7 +75,7 @@ fn test_nested_else() {
 #endif
 #endif
         ",
-        !def("BAR") & def("FOO"),
+        !expr("BAR") & expr("FOO"),
     )
 }
 
@@ -87,6 +87,6 @@ fn test_nested_else() {
 // #include <stdio.h>
 // #endif
 //                 ",
-//         def("FOO"),
+//         expr("FOO"),
 //     );
 // }

@@ -1,38 +1,21 @@
 mod directive;
-mod emit;
+mod rangeset;
+mod utils;
 
-use directive::PreprocessorIdent;
-use lang_c::driver;
-use std::collections::BTreeMap;
-use std::collections::VecDeque;
-use std::fs::File;
-use std::io::{self, BufRead, BufReader};
-use std::ops::{BitAnd, BitOr, Not, Range};
+use directive::{Directive, PreprocessorIdent};
+use rangeset::RangeSet;
+
+use hashbrown::HashMap;
+use lang_c::ast::Expression;
+use regex::Regex;
 use std::{
+    collections::VecDeque,
     fmt,
+    fs::File,
+    io::{self, BufReader},
+    ops::{BitAnd, BitOr, Not},
     path::{Path, PathBuf},
 };
-
-use hashbrown::{HashMap, HashSet};
-use lang_c::ast::Expression;
-
-use directive::Directive;
-use regex::Regex;
-
-fn strip_all_escaped_newlines<R: BufRead>(reader: R) -> String {
-    reader
-        .lines()
-        .filter_map(Result::ok)
-        .map(|line| {
-            if line.ends_with(r"\") {
-                format!(" {}", line.trim_matches('\\').trim())
-            } else {
-                format!("{}\n", line.trim())
-            }
-        })
-        .collect::<Vec<_>>()
-        .join("")
-}
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Hash)]
 pub enum Define {
@@ -57,23 +40,23 @@ impl Define {
 }
 
 #[derive(Clone, PartialEq, Eq, Hash)]
-enum Defined {
+pub enum Expr {
     True,
     Value(String),
-    Expr(Expression),
-    And(Box<Defined>, Box<Defined>),
-    Or(Box<Defined>, Box<Defined>),
-    Not(Box<Defined>),
+    CExpr(Expression),
+    And(Box<Expr>, Box<Expr>),
+    Or(Box<Expr>, Box<Expr>),
+    Not(Box<Expr>),
 }
 
-impl fmt::Debug for Defined {
+impl fmt::Debug for Expr {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        use Defined::*;
+        use Expr::*;
 
         match self {
             True => write!(f, "true"),
             Value(s) => write!(f, "defined({})", s),
-            Expr(e) => write!(f, "(expr({:?}))", e),
+            CExpr(e) => write!(f, "(expr({:?}))", e),
             And(l, r) => write!(f, "({:?} && {:?})", l, r),
             Or(l, r) => write!(f, "({:?} || {:?})", l, r),
             Not(v) => write!(f, "(!{:?})", v),
@@ -81,13 +64,13 @@ impl fmt::Debug for Defined {
     }
 }
 
-impl PreprocessorIdent for Defined {
+impl PreprocessorIdent for Expr {
     fn ident(&self) -> Vec<String> {
-        use Defined::*;
+        use Expr::*;
 
         match self {
             Value(x) => vec![x.clone()],
-            Expr(x) => x.ident(),
+            CExpr(x) => x.ident(),
             And(x, y) | Or(x, y) => {
                 let mut x = x.ident();
                 x.append(&mut y.ident());
@@ -98,75 +81,75 @@ impl PreprocessorIdent for Defined {
     }
 }
 
-impl Defined {
-    fn combine(vec: &[Defined]) -> Defined {
-        vec.iter().fold(Defined::True, |acc, cur| acc & cur.clone())
+impl Expr {
+    fn combine(vec: &[Expr]) -> Expr {
+        vec.iter().fold(Expr::True, |acc, cur| acc & cur.clone())
     }
 
     fn satisfies(&self, defines: &[Define]) -> bool {
         match self {
-            Defined::True => true,
-            Defined::Value(v) => defines.iter().map(|x| x.name()).any(|n| n == v),
-            Defined::And(a, b) => a.satisfies(defines) && b.satisfies(defines),
-            Defined::Or(a, b) => a.satisfies(defines) || b.satisfies(defines),
-            Defined::Not(a) => !a.satisfies(defines),
-            Defined::Expr(_e) => unimplemented!(),
+            Expr::True => true,
+            Expr::Value(v) => defines.iter().map(|x| x.name()).any(|n| n == v),
+            Expr::And(a, b) => a.satisfies(defines) && b.satisfies(defines),
+            Expr::Or(a, b) => a.satisfies(defines) || b.satisfies(defines),
+            Expr::Not(a) => !a.satisfies(defines),
+            Expr::CExpr(_e) => unimplemented!(),
         }
     }
 }
 
-impl<T> From<T> for Defined
+impl<T> From<T> for Expr
 where
     T: AsRef<str>,
 {
     fn from(v: T) -> Self {
-        Defined::Value(v.as_ref().into())
+        Expr::Value(v.as_ref().into())
     }
 }
 
-impl Default for Defined {
-    fn default() -> Defined {
-        Defined::True
+impl Default for Expr {
+    fn default() -> Expr {
+        Expr::True
     }
 }
 
-impl BitAnd for Defined {
-    type Output = Defined;
+impl BitAnd for Expr {
+    type Output = Expr;
 
-    fn bitand(self, rhs: Defined) -> Self::Output {
+    fn bitand(self, rhs: Expr) -> Self::Output {
         match (self, rhs) {
-            (lhs, Defined::True) => lhs,
-            (Defined::True, rhs) => rhs,
-            (lhs, rhs) => Defined::And(Box::new(lhs), Box::new(rhs)),
+            (lhs, Expr::True) => lhs,
+            (Expr::True, rhs) => rhs,
+            (lhs, rhs) => Expr::And(Box::new(lhs), Box::new(rhs)),
         }
     }
 }
 
-impl BitOr for Defined {
-    type Output = Defined;
+impl BitOr for Expr {
+    type Output = Expr;
 
-    fn bitor(self, rhs: Defined) -> Self::Output {
+    fn bitor(self, rhs: Expr) -> Self::Output {
         match (self, rhs) {
-            (lhs, Defined::True) => lhs,
-            (Defined::True, rhs) => rhs,
-            (lhs, rhs) => Defined::Or(Box::new(lhs), Box::new(rhs)),
+            (lhs, Expr::True) => lhs,
+            (Expr::True, rhs) => rhs,
+            (lhs, rhs) => Expr::Or(Box::new(lhs), Box::new(rhs)),
         }
     }
 }
 
-impl Not for Defined {
-    type Output = Defined;
+impl Not for Expr {
+    type Output = Expr;
 
     fn not(self) -> Self::Output {
         match self {
-            Defined::Not(v) => *v,
-            v => Defined::Not(Box::new(v)),
+            Expr::Not(v) => *v,
+            v => Expr::Not(Box::new(v)),
         }
     }
 }
 
-impl Not for Box<Defined> {
-    type Output = Box<Defined>;
+impl Not for Box<Expr> {
+    type Output = Box<Expr>;
 
     fn not(self) -> Self::Output {
         Box::new(!*self)
@@ -256,88 +239,17 @@ pub enum Error {
     NotFound(Include),
 }
 
+/// One (1) C header, split into define-dependent ranges.
 #[derive(Debug)]
 pub struct ParsedUnit {
     source: String,
-    def_ranges: RangeSet<Defined>,
-    dependencies: HashMap<Include, Defined>,
+    def_ranges: RangeSet<Expr>,
+    dependencies: HashMap<Include, Expr>,
 }
 
 #[derive(Debug)]
-pub struct RangeSet<K: Default> {
-    stack: Vec<K>,
-    vec: BTreeMap<usize, K>,
-}
-
-impl<K> RangeSet<K>
-where
-    K: Default + Clone + PartialEq + Eq + std::hash::Hash + BitAnd<Output = K> + BitOr<Output = K>,
-{
-    fn new() -> RangeSet<K> {
-        let mut set = RangeSet {
-            stack: vec![],
-            vec: BTreeMap::new(),
-        };
-        set.vec.insert(0, K::default());
-        set
-    }
-
-    fn keys(&self) -> HashSet<&K> {
-        let mut set = HashSet::new();
-        for v in self.vec.values() {
-            set.insert(v);
-        }
-        set
-    }
-
-    fn push(&mut self, index: usize, key: K) {
-        assert!(index == 0 || *self.vec.keys().last().unwrap() <= index);
-
-        let value = self.vec.values().last().cloned().unwrap();
-        let new_value = key & value;
-
-        self.vec.insert(index, new_value.clone());
-        self.stack.push(new_value);
-    }
-
-    fn pop(&mut self, index: usize) {
-        assert!(!self.vec.keys().last().is_none() && *self.vec.keys().last().unwrap() <= index);
-
-        self.stack.pop();
-        let prev_key = self.stack.last().cloned().unwrap_or_else(|| K::default());
-        self.vec.insert(index, prev_key);
-    }
-
-    fn last(&self) -> (usize, &K) {
-        self.vec.iter().last().map(|(a, b)| (*a, b)).unwrap()
-    }
-
-    fn iter<'a>(&'a self) -> Iter<'a, K> {
-        Iter {
-            range_set: self,
-            keys: self.vec.keys().copied().collect::<VecDeque<_>>(),
-        }
-    }
-}
-
-struct Iter<'a, K: Default> {
-    range_set: &'a RangeSet<K>,
-    keys: VecDeque<usize>,
-}
-
-impl<'a, K: Default> Iterator for Iter<'a, K> {
-    type Item = (Range<usize>, &'a K);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        // log::trace!("KEYS: {:?}", &self.keys);
-        if self.keys.len() <= 1 {
-            return None;
-        }
-
-        let first = self.keys.pop_front().unwrap();
-        let second = self.keys[0];
-        Some((first..second, self.range_set.vec.get(&first).unwrap()))
-    }
+pub struct Chunk {
+    pub expr: Expr,
 }
 
 impl ParsedUnit {
@@ -345,9 +257,9 @@ impl ParsedUnit {
     /// like #if, #ifdef, #include, etc.
     fn parse(source: String) -> Result<ParsedUnit, Error> {
         let mut dependencies = HashMap::new();
-        let mut def_ranges = RangeSet::<Defined>::new();
+        let mut def_ranges = RangeSet::<Expr>::new();
         let mut n = 0usize;
-        let mut last_if: Option<Defined> = None;
+        let mut last_if: Option<Expr> = None;
 
         for line in source.lines() {
             if let Some(directive) = directive::parse_directive(line) {
@@ -358,28 +270,29 @@ impl ParsedUnit {
                         dependencies.insert(include, def_ranges.last().1.clone());
                     }
                     Directive::If(expr) => {
-                        let pred = Defined::Expr(expr);
-                        def_ranges.push(n, pred);
+                        let pred = Expr::CExpr(expr);
+                        def_ranges.push((n, pred));
                     }
                     Directive::IfDefined(name) => {
-                        let pred = Defined::Value(name);
+                        let pred = Expr::Value(name);
                         last_if = Some(pred.clone());
-                        def_ranges.push(n, pred);
+                        def_ranges.push((n, pred));
                     }
                     Directive::IfNotDefined(name) => {
-                        let pred = !Defined::Value(name);
+                        let pred = !Expr::Value(name);
                         last_if = Some(pred.clone());
-                        def_ranges.push(n, pred);
+                        def_ranges.push((n, pred));
                     }
                     Directive::ElseIf(value) => {
                         def_ranges.pop(n);
-                        let pred = Defined::Expr(value);
+                        let pred = Expr::CExpr(value);
                         last_if = Some(pred.clone());
-                        def_ranges.push(n, pred);
+                        def_ranges.push((n, pred));
                     }
                     Directive::Else => {
                         def_ranges.pop(n);
-                        def_ranges.push(n, !last_if.clone().expect("else without last_if"));
+                        let pred = !last_if.clone().expect("else without last_if");
+                        def_ranges.push((n, pred));
                     }
                     Directive::EndIf => {
                         def_ranges.pop(n);
@@ -401,7 +314,15 @@ impl ParsedUnit {
         })
     }
 
-    fn source(&self, defines: &[Define]) -> String {
+    // Iterate over valid chunks of C code
+    pub fn chunks<F, T, E>(_f: F)
+    where
+        F: FnMut(Chunk) -> Result<T, E>,
+    {
+        unimplemented!()
+    }
+
+    pub fn source(&self, defines: &[Define]) -> String {
         // log::trace!("SOURCE: {:?}", rules);
 
         let lines = self.source.lines().collect::<Vec<&str>>();
@@ -492,7 +413,7 @@ impl Parser {
 
         let file = File::open(path).map_err(Error::Io)?;
         let file = BufReader::new(file);
-        let file = strip_all_escaped_newlines(file);
+        let file = utils::strip_all_escaped_newlines(file);
         Ok(file)
     }
 
@@ -524,72 +445,8 @@ impl Parser {
         Ok(())
     }
 
-    /// Emit a single-file header, starting from the root, depth-first,
-    /// emitting the leaf-most units first.
-    pub fn emit_header(&self, defines: &[Define]) {
-        let mut set = Vec::new();
-
-        fn visit(
-            sources: &HashMap<Include, ParsedUnit>,
-            set: &mut Vec<Include>,
-            defines: &[Define],
-            k: &Include,
-        ) {
-            let mm = sources.get(k).unwrap();
-            log::trace!("[>] Visiting {:?}", k);
-            for (kk, cons) in &mm.dependencies {
-                if cons.satisfies(defines) {
-                    log::trace!("[v] Descending into {:?} ({:?})", kk, cons);
-                    visit(sources, set, defines, kk)
-                } else {
-                    log::trace!("[x] Skipping {:?} (cons {:?})", kk, cons);
-                }
-            }
-
-            // need an OrderedSet here really
-            if !set.iter().any(|x| x == k) {
-                set.push(k.clone());
-            }
-        }
-        log::trace!("=========== emit graph traversal start =============");
-        visit(&self.sources, &mut set, defines, &self.root);
-        log::trace!("=========== emit graph traversal end ===============");
-
-        for k in &set {
-            log::debug!("Processing {:?}", k);
-
-            let mm = self.sources.get(k).unwrap();
-
-            let source = mm.source(defines);
-            println!("{}", source);
-
-            match driver::parse_preprocessed(
-                &driver::Config {
-                    cpp_command: "<none>".into(),
-                    cpp_options: Default::default(),
-                    flavor: driver::Flavor::MsvcC11,
-                },
-                source.clone(),
-            ) {
-                Ok(res) => {
-                    let unit = res.unit;
-                    println!("\n====== traversing AST");
-
-                    let unit_out = emit::translate_unit(&unit);
-
-                    let code = format!("{}\n{}", emit::prelude(), unit_out);
-
-                    println!("========= Rust code ===========");
-                    println!("{}", code);
-
-                    std::fs::create_dir_all("out").unwrap();
-                    let path = "out/out.rs";
-                    std::fs::write(path, code).unwrap();
-                    println!("(Also written to {:?})", path);
-                }
-                Err(e) => println!("Failed: {:#?}", e),
-            }
-        }
+    pub fn iter(&self) -> impl Iterator<Item = (&Include, &ParsedUnit)> {
+        self.sources.iter()
     }
 }
 

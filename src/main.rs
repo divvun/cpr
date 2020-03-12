@@ -2,6 +2,7 @@
 
 mod devenv;
 mod parser;
+mod translator;
 
 use argh::*;
 use parser::Parser;
@@ -27,6 +28,10 @@ struct Args {
     /// predefine a name
     #[argh(option, short = 'D')]
     defines: Vec<String>,
+
+    /// path of the crate to generate
+    #[argh(option, short = 'o')]
+    output: PathBuf,
 }
 
 fn main() {
@@ -51,9 +56,13 @@ fn main() {
         msvc_path,
         PathBuf::from(r"."),
     ];
+
     log::debug!("System paths: {:#?}", system_paths);
+
     let parser = Parser::new(args.file, system_paths, vec![]).unwrap();
 
-    let defines = &[];
-    parser.emit_header(defines);
+    for (_include, unit) in parser.iter() {
+        let source = unit.source(&[]);
+        println!("{}", source);
+    }
 }
