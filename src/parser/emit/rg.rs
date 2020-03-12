@@ -84,13 +84,25 @@ impl WriteExt for fmt::Formatter<'_> {
 }
 
 pub(crate) enum Visi {
-    PubCrate,
+    Pub,
 }
 
 impl fmt::Display for Visi {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::PubCrate => write!(f, "pub(crate)"),
+            Self::Pub => write!(f, "pub"),
+        }
+    }
+}
+
+pub(crate) enum Repr {
+    C,
+}
+
+impl fmt::Display for Repr {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::C => write!(f, "#[repr(C)]"),
         }
     }
 }
@@ -171,11 +183,11 @@ pub(crate) struct StructDeclaration {
 
 impl fmt::Display for StructDeclaration {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "[repr(C)]")?;
+        writeln!(f, "{repr}", repr = Repr::C)?;
         writeln!(
             f,
             "{vis} struct {name} {{",
-            vis = Visi::PubCrate,
+            vis = Visi::Pub,
             name = &self.name
         )?;
         {
@@ -213,12 +225,7 @@ impl fmt::Display for FunctionDeclaration {
         writeln!(f, "extern {c:?} {{", c = "C")?;
         {
             let f = &mut f.indented();
-            write!(
-                f,
-                "{vis} fn {name} (",
-                vis = Visi::PubCrate,
-                name = self.name,
-            )?;
+            write!(f, "{vis} fn {name} (", vis = Visi::Pub, name = self.name,)?;
             for (i, param) in self.params.iter().enumerate() {
                 if i != 0 {
                     write!(f, ", ")?;

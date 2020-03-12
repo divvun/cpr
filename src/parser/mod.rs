@@ -577,7 +577,7 @@ impl Parser {
 
                     let unit_out = emit::translate_unit(&unit);
 
-                    let code = format!("{}", unit_out);
+                    let code = format!("{}\n{}", emit::prelude(), unit_out);
 
                     println!("========= Rust code ===========");
                     println!("{}", code);
