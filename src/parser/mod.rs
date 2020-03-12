@@ -4,6 +4,7 @@ mod utils;
 
 use directive::{Directive, PreprocessorIdent};
 use rangeset::RangeSet;
+use thiserror::Error;
 
 use hashbrown::HashMap;
 use lang_c::ast::Expression;
@@ -232,10 +233,15 @@ impl Include {
     }
 }
 
-#[derive(Debug)]
+#[derive(Error, Debug)]
 pub enum Error {
+    #[error("invalid file")]
     InvalidFile,
-    Io(io::Error),
+    #[error("io error: {0}")]
+    Io(#[from] io::Error),
+    #[error("utf-8 error: {0}")]
+    Utf8(#[from] std::string::FromUtf8Error),
+    #[error("include not found: {0:?}")]
     NotFound(Include),
 }
 
@@ -413,7 +419,7 @@ impl Parser {
 
         let file = File::open(path).map_err(Error::Io)?;
         let file = BufReader::new(file);
-        let file = utils::strip_all_escaped_newlines(file);
+        let file = utils::process_line_continuations_and_comments(file)?;
         Ok(file)
     }
 

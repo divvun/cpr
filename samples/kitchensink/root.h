@@ -3,7 +3,9 @@
 // Group
 // =====================
 
-typedef const char *const_first;
+/* C-style comment */
+
+typedef const char *const_first; // blah
 typedef char const *const_last;
 typedef char *not_const;
 
