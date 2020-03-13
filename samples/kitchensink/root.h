@@ -66,70 +66,8 @@ int takes_const(const char *which_string);
 void returns_void(void);
 void *returns_void_ptr(void);
 
+#ifdef VOID
 int takes_void(void);
 int takes_void_ptr(void *a);
-
-// file start
-
-#ifdef FOO
-
-int takes_void(void);
-
-struct evil {
-    int a;
-#ifdef BAR
-    int b;
-#endif // BAR
-};
-
-#endif // FOO
-
-
-// file start
-
-#if defined(FOO) && defined(BAR)
-int takes_void(void);
-struct evil {
-    int a;
-    int b;
-};
-#endif // FOO & BAR
-
-#if defined(FOO) && !defined(BAR)
-int takes_void(void);
-struct evil {
-    int a;
-};
-#endif // FOO & BAR
-
-// file start
-
-#if defined(FOO)
-int takes_void(void);
-#endif
-
-#if defined(FOO) && defined(BAR)
-struct evil {
-    int a;
-    int b;
-};
-#endif // FOO & BAR
-
-#if defined(FOO) && !defined(BAR)
-struct evil {
-    int a;
-};
-#endif // FOO & BAR
-
-
-
-struct foo {
-#ifdef really_evil
-    int a;
-}
-
-struct bar {
-#endif
-    int b;
-}
+#endif // VOID
 

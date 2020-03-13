@@ -6,6 +6,8 @@ mod translator;
 
 use argh::*;
 use parser::Parser;
+use std::error::Error;
+
 use std::path::PathBuf;
 
 #[derive(FromArgs)]
@@ -34,7 +36,7 @@ struct Args {
     output: PathBuf,
 }
 
-fn main() {
+fn main() -> Result<(), Box<dyn Error>> {
     env_logger::init();
     let args: Args = argh::from_env();
 
@@ -61,8 +63,13 @@ fn main() {
 
     let parser = Parser::new(args.file, system_paths, vec![]).unwrap();
 
-    for (_include, unit) in parser.iter() {
-        let source = unit.source(&[]);
-        println!("{}", source);
+    for (include, unit) in parser.iter() {
+        let chunks = unit.chunks()?;
+        log::debug!("{:?}: {} chunks", include, chunks.len());
+        for chunk in chunks {
+            println!("{:#?}", chunk);
+        }
     }
+
+    Ok(())
 }

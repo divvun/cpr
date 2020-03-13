@@ -6,6 +6,7 @@ use directive::{Directive, PreprocessorIdent};
 use rangeset::RangeSet;
 use thiserror::Error;
 
+use custom_debug_derive::CustomDebug;
 use hashbrown::HashMap;
 use lang_c::ast::Expression;
 use regex::Regex;
@@ -243,6 +244,23 @@ pub enum Error {
     Utf8(#[from] std::string::FromUtf8Error),
     #[error("include not found: {0:?}")]
     NotFound(Include),
+    #[error("C syntax error: {0}")]
+    Syntax(SyntaxError),
+}
+
+#[derive(Debug)]
+pub struct SyntaxError(pub lang_c::driver::SyntaxError);
+
+impl From<lang_c::driver::SyntaxError> for Error {
+    fn from(e: lang_c::driver::SyntaxError) -> Self {
+        Self::Syntax(SyntaxError(e))
+    }
+}
+
+impl fmt::Display for SyntaxError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        write!(f, "{}", self.0)
+    }
 }
 
 /// One (1) C header, split into define-dependent ranges.
@@ -253,9 +271,24 @@ pub struct ParsedUnit {
     dependencies: HashMap<Include, Expr>,
 }
 
-#[derive(Debug)]
+#[derive(CustomDebug)]
 pub struct Chunk {
     pub expr: Expr,
+    pub source: SourceString,
+    #[debug(skip)]
+    pub unit: lang_c::ast::TranslationUnit,
+}
+
+pub struct SourceString(pub String);
+
+impl fmt::Debug for SourceString {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("\n")?;
+        for line in self.0.lines() {
+            writeln!(f, "| {}", line)?;
+        }
+        Ok(())
+    }
 }
 
 impl ParsedUnit {
@@ -328,51 +361,40 @@ impl ParsedUnit {
         })
     }
 
-    // Iterate over valid chunks of C code
-    pub fn chunks<F, T, E>(_f: F)
-    where
-        F: FnMut(Chunk) -> Result<T, E>,
-    {
-        unimplemented!()
-    }
-
-    pub fn source(&self, defines: &[Define]) -> String {
-        // log::trace!("SOURCE: {:?}", rules);
-
+    pub fn chunks(&self) -> Result<Vec<Chunk>, Error> {
         let lines = self.source.lines().collect::<Vec<&str>>();
         let directive_pattern = Regex::new(r"^\s*#").unwrap();
-        let comment_pattern = Regex::new(r"^\s*//").unwrap();
 
-        let mut out = String::new();
-        let mut last_was_whitespace = false;
-        let mut write = |s: &str| {
-            let is_whitespace = s.chars().all(char::is_whitespace);
-            if is_whitespace && last_was_whitespace {
-                // don't write anything
-            } else {
-                out.push_str(s);
-                out.push('\n');
-            }
-            last_was_whitespace = is_whitespace;
+        let config = lang_c::driver::Config {
+            cpp_command: "".into(),
+            cpp_options: Vec::new(),
+            flavor: lang_c::driver::Flavor::MsvcC11,
         };
 
-        for (range, key) in self.def_ranges.iter() {
-            if !key.satisfies(defines) {
-                log::debug!("Skipping key {:?}", key);
-                continue;
-            }
+        let mut res = Vec::new();
 
-            for line in &lines[range] {
+        for (range, expr) in self.def_ranges.iter() {
+            let mut chunk_lines = Vec::new();
+            for &line in &lines[range] {
+                // TODO: process #define, #undef, etc.
                 if directive_pattern.is_match(line) {
                     continue;
                 }
-                if comment_pattern.is_match(line) {
-                    continue;
-                }
-                write(line);
+                chunk_lines.push(line);
             }
+
+            let chunk_source = chunk_lines.join("\n");
+            let lang_c::driver::Parse { source, unit } =
+                lang_c::driver::parse_preprocessed(&config, chunk_source)?;
+
+            res.push(Chunk {
+                source: SourceString(source),
+                unit,
+                expr: expr.clone(),
+            });
         }
-        out
+
+        Ok(res)
     }
 }
 
@@ -413,7 +435,7 @@ impl Parser {
     }
 
     /// Find a file on disk corresponding to an `Include`, read it
-    /// to String, strip escaped newlines.
+    /// to String, process line continuations and comments
     fn read_include(&self, include: &Include) -> Result<String, Error> {
         log::debug!("=== {:?} ===", include);
 
