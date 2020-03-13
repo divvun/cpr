@@ -1,14 +1,10 @@
-use std::io::BufRead;
-
-use super::Error;
-
 trait Sink {
-    fn push(&mut self, c: u8);
+    fn push(&mut self, c: char);
 }
 
-impl Sink for Vec<u8> {
-    fn push(&mut self, b: u8) {
-        Vec::push(self, b);
+impl Sink for String {
+    fn push(&mut self, c: char) {
+        String::push(self, c);
     }
 }
 
@@ -24,28 +20,28 @@ enum LState {
 }
 
 impl<'a> Sink for LProcessor<'a> {
-    fn push(&mut self, v: u8) {
+    fn push(&mut self, c: char) {
         match self.state {
-            LState::Normal => match v {
-                b'\\' => {
+            LState::Normal => match c {
+                '\\' => {
                     self.state = LState::Backslash;
                 }
-                v => {
-                    self.sink.push(v);
+                c => {
+                    self.sink.push(c);
                 }
             },
-            LState::Backslash => match v {
-                b'\r' => {
+            LState::Backslash => match c {
+                '\r' => {
                     // ah, CRLF. Ignore and stay in line continuation state
                 }
-                b'\n' => {
+                '\n' => {
                     // line continuation
                     self.state = LState::Normal;
                 }
-                v => {
+                c => {
                     // not a line continuation, nevermind
-                    self.sink.push(b'\\');
-                    self.sink.push(v);
+                    self.sink.push('\\');
+                    self.sink.push(c);
                     self.state = LState::Normal;
                 }
             },
@@ -75,73 +71,73 @@ enum CState {
 }
 
 impl<'a> Sink for CProcessor<'a> {
-    fn push(&mut self, v: u8) {
+    fn push(&mut self, c: char) {
         match self.state {
-            CState::Normal => match v {
-                b'/' => {
+            CState::Normal => match c {
+                '/' => {
                     self.state = CState::NormalSlash;
                 }
-                b'"' => {
-                    self.sink.push(b'"');
+                '"' => {
+                    self.sink.push('"');
                     self.state = CState::String;
                 }
                 v => {
                     self.sink.push(v);
                 }
             },
-            CState::String => match v {
-                b'"' => {
+            CState::String => match c {
+                '"' => {
                     // end of string
-                    self.sink.push(b'"');
+                    self.sink.push('"');
                     self.state = CState::Normal;
                 }
-                b'\\' => {
+                '\\' => {
                     // start of escape sequence
                     self.state = CState::StringBackslash;
                 }
-                v => {
-                    self.sink.push(v);
+                c => {
+                    self.sink.push(c);
                 }
             },
-            CState::StringBackslash => match v {
-                v => {
+            CState::StringBackslash => match c {
+                c => {
                     // this state exists for `\"` pretty much
-                    self.sink.push(b'\\');
-                    self.sink.push(v);
+                    self.sink.push('\\');
+                    self.sink.push(c);
                     self.state = CState::String;
                 }
             },
-            CState::NormalSlash => match v {
-                b'/' => {
+            CState::NormalSlash => match c {
+                '/' => {
                     // start of single-line comment
                     self.state = CState::Single;
                 }
-                b'*' => {
+                '*' => {
                     // start of multi-line comment
                     self.state = CState::Multi;
                 }
-                v => {
+                c => {
                     // just a good old slash
-                    self.sink.push(b'/');
-                    self.sink.push(v);
+                    self.sink.push('/');
+                    self.sink.push(c);
                     self.state = CState::Normal;
                 }
             },
-            CState::Single => match v {
-                b'\n' => {
+            CState::Single => match c {
+                '\n' => {
                     // end of single-line comment
                     // C spec says replace comments with single space
-                    self.sink.push(b' ');
+                    self.sink.push(' ');
                     // also, it's still a newline I guess
-                    self.sink.push(b'\n');
+                    self.sink.push('\n');
                     self.state = CState::Normal;
                 }
                 _ => {
                     // ignore everything else until newline
                 }
             },
-            CState::Multi => match v {
-                b'*' => {
+            CState::Multi => match c {
+                '*' => {
                     // possible end of multi-line comment
                     self.state = CState::MultiStar;
                 }
@@ -149,11 +145,11 @@ impl<'a> Sink for CProcessor<'a> {
                     // ignore everything else until `*/`
                 }
             },
-            CState::MultiStar => match v {
-                b'/' => {
+            CState::MultiStar => match c {
+                '/' => {
                     // end of multi-line comment!
                     // C spec says replace comments with single space
-                    self.sink.push(b' ');
+                    self.sink.push(' ');
                     self.state = CState::Normal;
                 }
                 _ => {
@@ -169,8 +165,8 @@ impl<'a> Sink for CProcessor<'a> {
 ///
 ///   * Process line continuations, ie. replace "foo\\\nbar" with "foobar"
 ///   * Strip single-line and multi-line comments, replacing them with a single space
-pub fn process_line_continuations_and_comments<R: BufRead>(reader: R) -> Result<String, Error> {
-    let mut out = Vec::new();
+pub fn process_line_continuations_and_comments(input: &str) -> String {
+    let mut out = String::new();
     let mut cproc = CProcessor {
         state: CState::Normal,
         sink: &mut out,
@@ -180,10 +176,8 @@ pub fn process_line_continuations_and_comments<R: BufRead>(reader: R) -> Result<
         sink: &mut cproc,
     };
 
-    for b in reader.bytes() {
-        lcproc.push(b?);
+    for c in input.chars() {
+        lcproc.push(c);
     }
-
-    let out = String::from_utf8(out)?;
-    Ok(out)
+    out
 }

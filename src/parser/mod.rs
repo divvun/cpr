@@ -12,9 +12,7 @@ use lang_c::ast::Expression;
 use regex::Regex;
 use std::{
     collections::VecDeque,
-    fmt,
-    fs::File,
-    io::{self, BufReader},
+    fmt, io,
     ops::{BitAnd, BitOr, Not},
     path::{Path, PathBuf},
 };
@@ -279,6 +277,7 @@ pub struct Chunk {
     pub unit: lang_c::ast::TranslationUnit,
 }
 
+#[derive(PartialEq, Eq)]
 pub struct SourceString(pub String);
 
 impl fmt::Debug for SourceString {
@@ -291,10 +290,24 @@ impl fmt::Debug for SourceString {
     }
 }
 
+impl AsRef<str> for SourceString {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl From<&str> for SourceString {
+    fn from(s: &str) -> Self {
+        Self(s.to_string())
+    }
+}
+
 impl ParsedUnit {
     /// Go through each line of a source file, handling preprocessor directives
     /// like #if, #ifdef, #include, etc.
-    fn parse(source: String) -> Result<ParsedUnit, Error> {
+    fn parse(source: &str) -> Result<ParsedUnit, Error> {
+        let source = utils::process_line_continuations_and_comments(source);
+
         let mut dependencies = HashMap::new();
         let mut def_ranges = RangeSet::<Expr>::new();
         let mut n = 0usize;
@@ -376,11 +389,18 @@ impl ParsedUnit {
         for (range, expr) in self.def_ranges.iter() {
             let mut chunk_lines = Vec::new();
             for &line in &lines[range] {
-                // TODO: process #define, #undef, etc.
+                let line = line.trim();
+                if line.is_empty() {
+                    continue;
+                }
                 if directive_pattern.is_match(line) {
                     continue;
                 }
                 chunk_lines.push(line);
+            }
+
+            if chunk_lines.is_empty() {
+                continue;
             }
 
             let chunk_source = chunk_lines.join("\n");
@@ -435,7 +455,6 @@ impl Parser {
     }
 
     /// Find a file on disk corresponding to an `Include`, read it
-    /// to String, process line continuations and comments
     fn read_include(&self, include: &Include) -> Result<String, Error> {
         log::debug!("=== {:?} ===", include);
 
@@ -447,10 +466,7 @@ impl Parser {
 
         log::debug!("=== {:?} ===", &path);
 
-        let file = File::open(path).map_err(Error::Io)?;
-        let file = BufReader::new(file);
-        let file = utils::process_line_continuations_and_comments(file)?;
-        Ok(file)
+        Ok(std::fs::read_to_string(&path)?)
     }
 
     /// Parse the roots and all its included dependencies,
@@ -467,7 +483,7 @@ impl Parser {
             }
 
             let source = self.read_include(&work_unit)?;
-            let parsed_unit = ParsedUnit::parse(source)?;
+            let parsed_unit = ParsedUnit::parse(&source[..])?;
 
             log::trace!("{:?}", &parsed_unit);
 
@@ -487,4 +503,7 @@ impl Parser {
 }
 
 #[cfg(test)]
-mod tests;
+mod test_parse;
+
+#[cfg(test)]
+mod test_chunks;

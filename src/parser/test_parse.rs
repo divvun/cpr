@@ -5,7 +5,7 @@ fn expr(s: &str) -> Expr {
 }
 
 fn parse(source: &str) -> ParsedUnit {
-    ParsedUnit::parse(source.into()).expect("unit should parse")
+    ParsedUnit::parse(source.as_ref()).expect("unit should parse")
 }
 
 fn test_single(source: &str, expected: Expr) {
