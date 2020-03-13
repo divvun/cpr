@@ -269,6 +269,7 @@ impl ParsedUnit {
 
         for line in source.lines() {
             if let Some(directive) = directive::parse_directive(line) {
+                log::debug!("{}", line);
                 log::debug!("{:?}", &directive);
 
                 match directive {
@@ -277,6 +278,7 @@ impl ParsedUnit {
                     }
                     Directive::If(expr) => {
                         let pred = Expr::CExpr(expr);
+                        last_if = Some(pred.clone());
                         def_ranges.push((n, pred));
                     }
                     Directive::IfDefined(name) => {
@@ -304,7 +306,13 @@ impl ParsedUnit {
                         def_ranges.pop(n);
                         last_if = None;
                     }
-                    _ => unimplemented!(),
+                    Directive::Define(_)
+                    | Directive::Undefine(_)
+                    | Directive::Error(_)
+                    | Directive::Pragma(_)
+                    | Directive::Unknown(_, _) => {
+                        // leave as-is
+                    }
                 }
                 log::trace!("STACK: {:?}", def_ranges.last());
             }

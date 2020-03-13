@@ -156,7 +156,7 @@ impl<'a> Sink for CProcessor<'a> {
                     self.sink.push(b' ');
                     self.state = CState::Normal;
                 }
-                v => {
+                _ => {
                     // was just a regular star, keep skipping
                     self.state = CState::Multi;
                 }
@@ -165,6 +165,10 @@ impl<'a> Sink for CProcessor<'a> {
     }
 }
 
+/// Given a BufRead, does exactly two things, in this (conceptual) order:
+///
+///   * Process line continuations, ie. replace "foo\\\nbar" with "foobar"
+///   * Strip single-line and multi-line comments, replacing them with a single space
 pub fn process_line_continuations_and_comments<R: BufRead>(reader: R) -> Result<String, Error> {
     let mut out = Vec::new();
     let mut cproc = CProcessor {
