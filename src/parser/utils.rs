@@ -1,4 +1,4 @@
-use std::io::{self, BufRead};
+use std::io::BufRead;
 
 use super::Error;
 
@@ -24,26 +24,29 @@ enum LState {
 }
 
 impl<'a> Sink for LProcessor<'a> {
-    fn push(&mut self, b: u8) {
+    fn push(&mut self, v: u8) {
         match self.state {
-            LState::Normal => match b {
+            LState::Normal => match v {
                 b'\\' => {
                     self.state = LState::Backslash;
                 }
-                b => {
-                    self.sink.push(b);
+                v => {
+                    self.sink.push(v);
                 }
             },
-            LState::Backslash => match b {
+            LState::Backslash => match v {
                 b'\r' => {
-                    // boo
+                    // ah, CRLF. Ignore and stay in line continuation state
                 }
                 b'\n' => {
                     // line continuation
                     self.state = LState::Normal;
                 }
-                _ => {
-                    unimplemented!();
+                v => {
+                    // not a line continuation, nevermind
+                    self.sink.push(b'\\');
+                    self.sink.push(v);
+                    self.state = LState::Normal;
                 }
             },
         }
@@ -60,34 +63,102 @@ enum CState {
     Normal,
     NormalSlash,
     /// in single-line comment, waiting for newline
-    Sl,
+    Single,
     /// in string literal
-    Str,
+    String,
     /// in string literal, just saw backslash
-    StrBackslash,
+    StringBackslash,
     /// in multi-line comment
-    Ml,
+    Multi,
     /// in multi-line comment, just saw star
-    MlStar,
+    MultiStar,
 }
 
 impl<'a> Sink for CProcessor<'a> {
-    fn push(&mut self, b: u8) {
+    fn push(&mut self, v: u8) {
         match self.state {
-            CState::Normal => match b {
+            CState::Normal => match v {
                 b'/' => {
                     self.state = CState::NormalSlash;
                 }
-                b => {
-                    self.sink.push(b);
+                b'"' => {
+                    self.sink.push(b'"');
+                    self.state = CState::String;
+                }
+                v => {
+                    self.sink.push(v);
                 }
             },
-            CState::NormalSlash => match b {
+            CState::String => match v {
+                b'"' => {
+                    // end of string
+                    self.sink.push(b'"');
+                    self.state = CState::Normal;
+                }
+                b'\\' => {
+                    // start of escape sequence
+                    self.state = CState::StringBackslash;
+                }
+                v => {
+                    self.sink.push(v);
+                }
+            },
+            CState::StringBackslash => match v {
+                v => {
+                    // this state exists for `\"` pretty much
+                    self.sink.push(b'\\');
+                    self.sink.push(v);
+                    self.state = CState::String;
+                }
+            },
+            CState::NormalSlash => match v {
                 b'/' => {
-                    self.state = CState::Sl;
+                    // start of single-line comment
+                    self.state = CState::Single;
+                }
+                b'*' => {
+                    // start of multi-line comment
+                    self.state = CState::Multi;
+                }
+                v => {
+                    // just a good old slash
+                    self.sink.push(b'/');
+                    self.sink.push(v);
+                    self.state = CState::Normal;
+                }
+            },
+            CState::Single => match v {
+                b'\n' => {
+                    // end of single-line comment
+                    // C spec says replace comments with single space
+                    self.sink.push(b' ');
+                    // also, it's still a newline I guess
+                    self.sink.push(b'\n');
+                    self.state = CState::Normal;
                 }
                 _ => {
-                    unimplemented!();
+                    // ignore everything else until newline
+                }
+            },
+            CState::Multi => match v {
+                b'*' => {
+                    // possible end of multi-line comment
+                    self.state = CState::MultiStar;
+                }
+                _ => {
+                    // ignore everything else until `*/`
+                }
+            },
+            CState::MultiStar => match v {
+                b'/' => {
+                    // end of multi-line comment!
+                    // C spec says replace comments with single space
+                    self.sink.push(b' ');
+                    self.state = CState::Normal;
+                }
+                v => {
+                    // was just a regular star, keep skipping
+                    self.state = CState::Multi;
                 }
             },
         }

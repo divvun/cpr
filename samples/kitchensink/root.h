@@ -5,7 +5,21 @@
 
 /* C-style comment */
 
-typedef const char *const_first; // blah
+/*
+ * Multi-line C comment
+ */
+
+// Multi-line single-\
+line comment
+
+// Lots of slashes // More plz // Okay done
+
+#define HELLO "not a /* comment */"
+char *not_a_comment = "not /* a comment */";
+char *not_a_comment_either = "can't comment // in a string";
+
+typedef const ch\
+ar *const_first; // blah
 typedef char const *const_last;
 typedef char *not_const;
 
