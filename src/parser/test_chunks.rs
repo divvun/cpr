@@ -135,3 +135,18 @@ int foobar();
         ],
     );
 }
+
+// #[test]
+// fn chunks_evil() {
+//     test(
+//         "
+// struct foo {
+//     int lawful;
+// #ifdef EVIL
+//     int evil;
+// #endif // EVIL
+// }
+//         ",
+//         &[],
+//     )
+// }

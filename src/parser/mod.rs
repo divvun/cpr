@@ -42,6 +42,7 @@ impl Define {
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub enum Expr {
     True,
+    False,
     Value(String),
     CExpr(Expression),
     And(Box<Expr>, Box<Expr>),
@@ -55,10 +56,11 @@ impl fmt::Debug for Expr {
 
         match self {
             True => write!(f, "true"),
-            Value(s) => write!(f, "defined({})", s),
+            False => write!(f, "false"),
+            Value(s) => write!(f, "{:?}", s),
             CExpr(e) => write!(f, "(expr({:?}))", e),
-            And(l, r) => write!(f, "({:?} && {:?})", l, r),
-            Or(l, r) => write!(f, "({:?} || {:?})", l, r),
+            And(l, r) => write!(f, "({:?} & {:?})", l, r),
+            Or(l, r) => write!(f, "({:?} | {:?})", l, r),
             Not(v) => write!(f, "(!{:?})", v),
         }
     }
@@ -81,6 +83,130 @@ impl PreprocessorIdent for Expr {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum Assumption {
+    True,
+    False,
+    Unknowable,
+}
+
+impl Not for Assumption {
+    type Output = Self;
+    fn not(self) -> Self::Output {
+        match self {
+            Self::True => Self::False,
+            Self::False => Self::True,
+            Self::Unknowable => Self::Unknowable,
+        }
+    }
+}
+
+impl BitAnd for Assumption {
+    type Output = Self;
+    fn bitand(self, rhs: Self) -> Self::Output {
+        match self {
+            Self::True => match rhs {
+                Self::True => Self::True,
+                _ => Self::Unknowable,
+            },
+            Self::False => match rhs {
+                Self::False => Self::False,
+                _ => Self::Unknowable,
+            },
+            _ => Self::Unknowable,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct AssumptionSet(HashMap<String, Assumption>);
+
+impl AssumptionSet {
+    fn from<S: Into<String>>(s: S) -> Self {
+        let mut m = HashMap::new();
+        m.insert(s.into(), Assumption::True);
+        Self(m)
+    }
+
+    fn reduce(&self, expr: &Expr) -> Expr {
+        match expr {
+            Expr::Value(v) => match self.0.get(v) {
+                Some(ass) => match ass {
+                    Assumption::True => Expr::True,
+                    Assumption::False => Expr::False,
+                    Assumption::Unknowable => Expr::Value(v.clone()),
+                },
+                None => Expr::Value(v.clone()),
+            },
+            Expr::Not(b) => match b.as_ref() {
+                Expr::Not(b2) => self.reduce(b2.as_ref()),
+                b2 => Expr::Not(Box::new(self.reduce(&b2))),
+            },
+            Expr::And(a, b) => {
+                match (self.clone() & b.assumptions()).reduce(a) {
+                    Expr::False => return Expr::False,
+                    Expr::True => return self.reduce(b),
+                    _ => {}
+                }
+                match (self.clone() & a.assumptions()).reduce(b) {
+                    Expr::False => return Expr::False,
+                    Expr::True => return self.reduce(a),
+                    _ => {}
+                }
+                Expr::And(Box::new(self.reduce(a)), Box::new(self.reduce(b)))
+            }
+            Expr::Or(a, b) => {
+                match (self.clone() & b.assumptions()).reduce(a) {
+                    Expr::True => return self.reduce(b),
+                    _ => {}
+                }
+                match (self.clone() & a.assumptions()).reduce(b) {
+                    Expr::True => return self.reduce(a),
+                    _ => {}
+                }
+                match self.reduce(a) {
+                    Expr::False => return self.reduce(b),
+                    _ => {}
+                }
+                match self.reduce(b) {
+                    Expr::False => return self.reduce(a),
+                    _ => {}
+                }
+                Expr::Or(Box::new(self.reduce(a)), Box::new(self.reduce(b)))
+            }
+            x => x.clone(),
+        }
+    }
+}
+
+impl Default for AssumptionSet {
+    fn default() -> Self {
+        Self(Default::default())
+    }
+}
+
+impl BitAnd for AssumptionSet {
+    type Output = Self;
+    fn bitand(self, rhs: Self) -> Self::Output {
+        let mut m = HashMap::new();
+        for (k, v) in self.0.into_iter().chain(rhs.0.into_iter()) {
+            let v = match m.remove(&k) {
+                Some(pv) => pv & v,
+                None => v,
+            };
+            m.insert(k, v);
+        }
+        Self(m)
+    }
+}
+
+impl Not for AssumptionSet {
+    type Output = Self;
+    fn not(self) -> Self::Output {
+        Self(self.0.into_iter().map(|(k, v)| (k, !v)).collect())
+    }
+}
+
 impl Expr {
     fn combine(vec: &[Expr]) -> Expr {
         vec.iter().fold(Expr::True, |acc, cur| acc & cur.clone())
@@ -89,11 +215,25 @@ impl Expr {
     fn satisfies(&self, defines: &[Define]) -> bool {
         match self {
             Expr::True => true,
+            Expr::False => false,
             Expr::Value(v) => defines.iter().map(|x| x.name()).any(|n| n == v),
             Expr::And(a, b) => a.satisfies(defines) && b.satisfies(defines),
             Expr::Or(a, b) => a.satisfies(defines) || b.satisfies(defines),
             Expr::Not(a) => !a.satisfies(defines),
             Expr::CExpr(_e) => unimplemented!(),
+        }
+    }
+
+    fn reduce(&self) -> Expr {
+        AssumptionSet::default().reduce(self)
+    }
+
+    fn assumptions(&self) -> AssumptionSet {
+        match self {
+            Expr::Value(s) => AssumptionSet::from(s),
+            Expr::Not(b) => !b.assumptions(),
+            Expr::And(a, b) => a.assumptions() & b.assumptions(),
+            _ => Default::default(),
         }
     }
 }
@@ -507,3 +647,6 @@ mod test_parse;
 
 #[cfg(test)]
 mod test_chunks;
+
+#[cfg(test)]
+mod test_expr;
