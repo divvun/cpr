@@ -106,7 +106,7 @@ where
         assert!(index == 0 || *self.vec.keys().last().unwrap() <= index);
 
         let parent_value = self.vec.values().last().unwrap().clone();
-        let combo = child_value & parent_value;
+        let combo = parent_value & child_value;
 
         self.vec.insert(index, combo.clone());
         self.stack.push(combo);

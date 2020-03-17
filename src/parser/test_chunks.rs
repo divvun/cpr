@@ -117,3 +117,21 @@ int bar();
         &[(expr("FOO"), "int foo();"), (expr("BAR"), "int bar();")],
     )
 }
+
+#[test]
+fn chunks_nested() {
+    test(
+        "
+#ifdef FOO
+int foo();
+#ifdef BAR
+int foobar();
+#endif // BAR
+#endif // FOO
+        ",
+        &[
+            (expr("FOO"), "int foo();"),
+            (expr("FOO") & expr("BAR"), "int foobar();"),
+        ],
+    );
+}

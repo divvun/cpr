@@ -46,7 +46,7 @@ fn test_two_ifdefs() {
 #endif
 #endif
         ",
-        expr("BAR") & expr("FOO"),
+        expr("FOO") & expr("BAR"),
     );
 }
 
@@ -75,7 +75,7 @@ fn test_nested_else() {
 #endif
 #endif
         ",
-        !expr("BAR") & expr("FOO"),
+        expr("FOO") & !expr("BAR"),
     )
 }
 

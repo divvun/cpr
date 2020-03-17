@@ -73,3 +73,10 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     Ok(())
 }
+
+use ctor::ctor;
+
+#[ctor]
+fn init_color_backtrace() {
+    color_backtrace::install();
+}
