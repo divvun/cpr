@@ -146,41 +146,69 @@ impl AssumptionSet {
                 b => Expr::Not(Box::new(self.reduce(&b))),
             },
             Expr::And(a, b) => {
-                match (self.clone() & b.assumptions()).reduce(a) {
-                    Expr::False => return Expr::False,
-                    Expr::True => return self.reduce(b),
-                    _ => {}
+                let a = self.reduce(a);
+                let b = self.reduce(b);
+                // (false & x) = false
+                if a == Expr::False {
+                    return Expr::False;
                 }
-                match (self.clone() & a.assumptions()).reduce(b) {
-                    Expr::False => return Expr::False,
-                    Expr::True => return self.reduce(a),
-                    _ => {}
+                // (x & false) = false
+                if b == Expr::False {
+                    return Expr::False;
                 }
-                Expr::And(Box::new(self.reduce(a)), Box::new(self.reduce(b)))
+                // (true & x) = x
+                if a == Expr::True {
+                    return b;
+                }
+                // (x & true) = x
+                if b == Expr::True {
+                    return a;
+                }
+                // (!x & x) = false
+                if (!a.clone()).reduce() == b {
+                    return Expr::False;
+                }
+                // if b implies a, (a & b) = b
+                if Expr::True == b.assumptions().reduce(&a) {
+                    return b;
+                }
+                // if a implies b, (a & b) = a
+                if Expr::True == a.assumptions().reduce(&b) {
+                    return a;
+                }
+                // both terms are needed
+                a & b
             }
             Expr::Or(a, b) => {
                 let a = self.reduce(a);
                 let b = self.reduce(b);
 
+                // (x | false) = x
                 if a == Expr::False {
                     return b;
                 }
+                // (false | x) = x
                 if b == Expr::False {
                     return a;
                 }
+                // (!x | x) = true
                 if (!a.clone()).reduce() == b {
                     return Expr::True;
                 }
+                // if b implies a, (a | b) = b
                 if Expr::True == b.assumptions().reduce(&a) {
                     return b;
                 }
+                // if a implies b, (a | b) = a
                 if Expr::True == a.assumptions().reduce(&b) {
                     return a;
                 }
-                Expr::Or(Box::new(a), Box::new(b))
+                // both terms are needed
+                a | b
             }
             x => x.clone(),
         }
+        .sort()
     }
 }
 

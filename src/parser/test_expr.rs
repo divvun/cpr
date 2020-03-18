@@ -7,7 +7,7 @@ fn expr(s: &str) -> Expr {
 fn assert_reduces(init: Expr, gives: Expr) {
     init.permute(&mut |perm| {
         assert_eq!(
-            perm.reduce().sort(),
+            perm.reduce(),
             gives.sort(),
             "\ninit = {:?}\nperm = {:?}\ngives = {:?}",
             init,
@@ -185,4 +185,9 @@ fn test_reduce_deeply_nested() {
         ape() & (ape() & bar()) & ((ape() & bar()) & chai()),
         ape() & bar() & chai(),
     );
+}
+
+#[test]
+fn test_reduce_nested_negated() {
+    assert_reduces(ape() & !(ape() & bar()), ape() & !bar());
 }
