@@ -197,7 +197,7 @@ impl Expr {
         }
     }
 
-    fn reduce(&self) -> Expr {
+    fn simplify(&self) -> Expr {
         let mut terms = Terms::new();
         let input = self.as_bool(&mut terms);
         let mut output = input.simplify();
