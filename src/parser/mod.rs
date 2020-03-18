@@ -558,8 +558,16 @@ impl ParsedUnit {
 
         let mut res = Vec::new();
 
+        struct Region<'a> {
+            expr: Expr,
+            lines: Vec<&'a str>,
+        }
+
+        use lang_c::driver;
+        let mut regions = vec![];
+
         for (range, expr) in self.def_ranges.iter() {
-            let mut chunk_lines = Vec::new();
+            let mut region_lines = Vec::new();
             for &line in &lines[range] {
                 let line = line.trim();
                 if line.is_empty() {
@@ -568,22 +576,53 @@ impl ParsedUnit {
                 if directive_pattern.is_match(line) {
                     continue;
                 }
-                chunk_lines.push(line);
+                region_lines.push(line);
             }
 
-            if chunk_lines.is_empty() {
+            if !region_lines.is_empty() {
+                regions.push(Region {
+                    lines: region_lines,
+                    expr: expr.clone(),
+                });
+            }
+
+            if regions.is_empty() {
                 continue;
             }
 
-            let chunk_source = chunk_lines.join("\n");
-            let lang_c::driver::Parse { source, unit } =
-                lang_c::driver::parse_preprocessed(&config, chunk_source)?;
-
-            res.push(Chunk {
-                source: SourceString(source),
-                unit,
-                expr: expr.clone(),
-            });
+            let megachunk_source = regions
+                .iter()
+                .map(|r| r.lines.iter().copied())
+                .flatten()
+                .collect::<Vec<_>>()
+                .join("\n");
+            println!("megachunk source:\n{}", megachunk_source);
+            match driver::parse_preprocessed(&config, megachunk_source) {
+                Ok(_) => {
+                    let chunk_source = regions
+                        .iter()
+                        .map(|r| r.lines.iter().copied())
+                        .flatten()
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    match driver::parse_preprocessed(&config, chunk_source) {
+                        Ok(driver::Parse { source, unit }) => {
+                            res.push(Chunk {
+                                source: SourceString(source),
+                                unit,
+                                expr: expr.clone(), // FIXME
+                            });
+                        }
+                        Err(e) => {
+                            println!("incomplete: {:?}", e);
+                        }
+                    }
+                    regions.clear();
+                }
+                Err(e) => {
+                    println!("needs more regions: {:?}", e);
+                }
+            }
         }
 
         Ok(res)
@@ -672,6 +711,76 @@ impl Parser {
     pub fn iter(&self) -> impl Iterator<Item = (&Include, &ParsedUnit)> {
         self.sources.iter()
     }
+}
+
+pub fn variations(len: usize, f: &mut dyn FnMut(Box<dyn Iterator<Item = bool>>)) {
+    use std::iter::{empty, once};
+
+    match len {
+        0 => f(Box::new(empty())),
+        n => {
+            for &b in &[true, false] {
+                variations(n - 1, &mut |it| {
+                    f(Box::new(once(b).chain(it)));
+                });
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+#[test]
+fn test_variations() {
+    fn test(n: usize, expected: &[&[bool]]) {
+        let mut vecs = Vec::<Vec<_>>::new();
+        variations(n, &mut |v| vecs.push(v.collect()));
+        assert_eq!(&vecs[..], expected);
+    }
+
+    test(1, &[&[true], &[false]]);
+    test(
+        2,
+        &[
+            &[true, true],
+            &[true, false],
+            &[false, true],
+            &[false, false],
+        ],
+    );
+    test(
+        3,
+        &[
+            &[true, true, true],
+            &[true, true, false],
+            &[true, false, true],
+            &[true, false, false],
+            &[false, true, true],
+            &[false, true, false],
+            &[false, false, true],
+            &[false, false, false],
+        ],
+    );
+    test(
+        4,
+        &[
+            &[true, true, true, true],
+            &[true, true, true, false],
+            &[true, true, false, true],
+            &[true, true, false, false],
+            &[true, false, true, true],
+            &[true, false, true, false],
+            &[true, false, false, true],
+            &[true, false, false, false],
+            &[false, true, true, true],
+            &[false, true, true, false],
+            &[false, true, false, true],
+            &[false, true, false, false],
+            &[false, false, true, true],
+            &[false, false, true, false],
+            &[false, false, false, true],
+            &[false, false, false, false],
+        ],
+    );
 }
 
 #[cfg(test)]

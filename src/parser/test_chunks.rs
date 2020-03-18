@@ -145,8 +145,22 @@ struct foo {
 #ifdef EVIL
     int evil;
 #endif // EVIL
-}
+};
         ",
-        &[],
+        &[
+            (
+                expr("EVIL"),
+                "struct foo {
+                int lawful;
+                int evil;
+            };",
+            ),
+            (
+                !expr("EVIL"),
+                "struct foo {
+                int lawful;
+            };",
+            ),
+        ],
     )
 }

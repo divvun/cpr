@@ -9,6 +9,14 @@
 /* FOO            */ }
 /*                */ #endif // FOO
 
+#if defined(FOO)
+struct foo {
+    int haha;
+#if !defined(FOO)
+};
+#endif // !FOO
+#endif // FOO
+
 //  FOO &  (FOO & EVIL) &  (FOO & !EVIL) &  FOO       => false
 //  FOO &  (FOO & EVIL) &  (FOO & !EVIL) & !FOO       => false
 //  FOO &  (FOO & EVIL) & !(FOO & !EVIL) &  FOO       => FOO & EVIL, parses
