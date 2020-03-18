@@ -41,31 +41,26 @@ fn test_permute_3() {
 
 #[test]
 fn test_permute_4() {
-    let mut permutes = Vec::new();
-    ((ape() | bar()) | chai()).permute(&mut |v| permutes.push(v));
+    let original = (ape() | bar()) | chai();
+    let mut actual = Vec::new();
+    original.permute(&mut |v| actual.push(v));
+    let expected = &[
+        (ape() | bar()) | chai(),
+        chai() | (ape() | bar()),
+        (bar() | ape()) | chai(),
+        chai() | (bar() | ape()),
+        ape() | (bar() | chai()),
+        (bar() | chai()) | ape(),
+        ape() | (chai() | bar()),
+        (chai() | bar()) | ape(),
+    ];
     assert_eq!(
-        &permutes[..],
-        &[
-            (ape() | bar()) | chai(),
-            chai() | (ape() | bar()),
-            (bar() | ape()) | chai(),
-            chai() | (bar() | ape()),
-        ]
-    );
-}
-
-#[test]
-fn test_permute_5() {
-    let mut permutes = Vec::new();
-    ((ape() | bar()) & chai()).permute(&mut |v| permutes.push(v));
-    assert_eq!(
-        &permutes[..],
-        &[
-            (ape() | bar()) & chai(),
-            chai() & (ape() | bar()),
-            (bar() | ape()) & chai(),
-            chai() & (bar() | ape()),
-        ]
+        &actual[..],
+        expected,
+        "\noriginal = {:#?}\nexpected = {:#?}\nactual = {:#?}",
+        original,
+        expected,
+        &actual[..]
     );
 }
 
@@ -78,17 +73,18 @@ fn test_sort_1() {
 
 #[test]
 fn test_sort_2() {
-    (chai() & bar() & ape()).permute(&mut |v| {
-        assert_eq!(v.sort(), ape() & (bar() & chai()));
+    let orig = chai() & bar() & ape();
+    orig.permute(&mut |v| {
+        assert_eq!(v.sort(), ape() & (bar() & chai()), "orig = {:?}", orig);
     })
 }
 
-#[test]
-fn test_sort_3() {
-    ((chai() & bar()) | ape()).permute(&mut |v| {
-        assert_eq!(v.sort(), ape() | (bar() & chai()));
-    })
-}
+// #[test]
+// fn test_sort_3() {
+//     ((chai() & bar()) | ape()).permute(&mut |v| {
+//         assert_eq!(v.sort(), ape() | (bar() & chai()));
+//     })
+// }
 
 #[test]
 fn test_not_1() {

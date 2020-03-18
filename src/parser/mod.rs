@@ -40,7 +40,7 @@ impl Define {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub enum Expr {
     True,
     False,
@@ -51,7 +51,7 @@ pub enum Expr {
     Not(Box<Expr>),
 }
 
-impl fmt::Display for Expr {
+impl fmt::Debug for Expr {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use Expr::*;
 
@@ -59,10 +59,10 @@ impl fmt::Display for Expr {
             True => write!(f, "true"),
             False => write!(f, "false"),
             Value(s) => write!(f, "{}", s),
+            And(l, r) => write!(f, "({:?} & {:?})", l, r),
+            Or(l, r) => write!(f, "({:?} | {:?})", l, r),
+            Not(v) => write!(f, "(!{:?})", v),
             CExpr(e) => write!(f, "(expr({:?}))", e),
-            And(l, r) => write!(f, "({} & {})", l, r),
-            Or(l, r) => write!(f, "({} | {})", l, r),
-            Not(v) => write!(f, "(!{})", v),
         }
     }
 }
@@ -289,6 +289,28 @@ impl Expr {
             Expr::And(l, r) => {
                 let l = l.sort();
                 let r = r.sort();
+
+                match &l {
+                    Expr::And(l2, r2) => {
+                        // (l2 & r2) & r
+                        let mut elms = [*l2.clone(), *r2.clone(), r];
+                        elms.sort_unstable();
+                        let [a, b, c] = elms;
+                        return a & (b & c).sort();
+                    }
+                    _ => {}
+                }
+                match &r {
+                    Expr::And(l2, r2) => {
+                        // l & (l2 & r2)
+                        let mut elms = [l, *l2.clone(), *r2.clone()];
+                        elms.sort_unstable();
+                        let [a, b, c] = elms;
+                        return a & (b & c).sort();
+                    }
+                    _ => {}
+                }
+
                 if l > r {
                     Expr::And(Box::new(r), Box::new(l))
                 } else {
@@ -310,18 +332,106 @@ impl Expr {
 
     fn permute(&self, f: &mut dyn FnMut(Expr)) {
         match self {
-            Expr::And(l, r) => l.permute(&mut |l| {
-                r.permute(&mut |r| {
-                    f(Expr::And(Box::new(l.clone()), Box::new(r.clone())));
-                    f(Expr::And(Box::new(r), Box::new(l.clone())));
-                })
-            }),
-            Expr::Or(l, r) => l.permute(&mut |l| {
-                r.permute(&mut |r| {
-                    f(Expr::Or(Box::new(l.clone()), Box::new(r.clone())));
-                    f(Expr::Or(Box::new(r), Box::new(l.clone())));
-                })
-            }),
+            Expr::And(l, r) => {
+                l.permute(&mut |l| {
+                    r.permute(&mut |r| {
+                        f(l.clone() & r.clone());
+                        f(r.clone() & l.clone());
+                    });
+                });
+                match l.as_ref() {
+                    Expr::And(l2, r2) => {
+                        l2.permute(&mut |l2| {
+                            let other = *r2.clone() & *r.clone();
+                            other.permute(&mut |other| {
+                                f(l2.clone() & other.clone());
+                                f(other.clone() & l2.clone());
+                            })
+                        });
+                    }
+                    Expr::Or(l2, r2) => {
+                        l2.permute(&mut |l2| {
+                            let other = *r2.clone() & *r.clone();
+                            other.permute(&mut |other| {
+                                f(l2.clone() | other.clone());
+                                f(other.clone() | l2.clone());
+                            })
+                        });
+                    }
+                    _ => {}
+                }
+                match r.as_ref() {
+                    Expr::And(l2, r2) => {
+                        r2.permute(&mut |r2| {
+                            let other = *l.clone() & *l2.clone();
+                            other.permute(&mut |other| {
+                                f(r2.clone() & other.clone());
+                                f(other.clone() & r2.clone());
+                            })
+                        });
+                    }
+                    Expr::Or(l2, r2) => {
+                        r2.permute(&mut |r2| {
+                            let other = *l.clone() & *l2.clone();
+                            other.permute(&mut |other| {
+                                f(r2.clone() | other.clone());
+                                f(other.clone() | r2.clone());
+                            })
+                        });
+                    }
+                    _ => {}
+                }
+            }
+            Expr::Or(l, r) => {
+                l.permute(&mut |l| {
+                    r.permute(&mut |r| {
+                        f(Expr::Or(Box::new(l.clone()), Box::new(r.clone())));
+                        f(Expr::Or(Box::new(r), Box::new(l.clone())));
+                    })
+                });
+                match l.as_ref() {
+                    Expr::And(l2, r2) => {
+                        l2.permute(&mut |l2| {
+                            let other = *r2.clone() | *r.clone();
+                            other.permute(&mut |other| {
+                                f(l2.clone() & other.clone());
+                                f(other.clone() & l2.clone());
+                            })
+                        });
+                    }
+                    Expr::Or(l2, r2) => {
+                        l2.permute(&mut |l2| {
+                            let other = *r2.clone() | *r.clone();
+                            other.permute(&mut |other| {
+                                f(l2.clone() | other.clone());
+                                f(other.clone() | l2.clone());
+                            })
+                        });
+                    }
+                    _ => {}
+                }
+                match r.as_ref() {
+                    Expr::And(l2, r2) => {
+                        r2.permute(&mut |r2| {
+                            let other = *l.clone() & *l2.clone();
+                            other.permute(&mut |other| {
+                                f(r2.clone() & other.clone());
+                                f(other.clone() & r2.clone());
+                            })
+                        });
+                    }
+                    Expr::Or(l2, r2) => {
+                        r2.permute(&mut |r2| {
+                            let other = *l.clone() & *l2.clone();
+                            other.permute(&mut |other| {
+                                f(r2.clone() | other.clone());
+                                f(other.clone() | r2.clone());
+                            })
+                        });
+                    }
+                    _ => {}
+                }
+            }
             Expr::Not(x) => x.permute(&mut |x| f(Expr::Not(Box::new(x)))),
             x => f(x.clone()),
         }
