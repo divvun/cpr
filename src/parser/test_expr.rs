@@ -8,48 +8,48 @@ fn assert_reduces(init: Expr, gives: Expr) {
     assert_eq!(init.reduce(), gives, "reducing {:?}", init)
 }
 
-fn foo() -> Expr {
-    expr("foo")
+fn ape() -> Expr {
+    expr("ape")
 }
 fn bar() -> Expr {
     expr("bar")
 }
-fn baz() -> Expr {
-    expr("baz")
+fn chai() -> Expr {
+    expr("chai")
 }
 
 #[test]
 fn test_permute_1() {
     let mut permutes = Vec::new();
-    (foo() & bar()).permute(&mut |v| permutes.push(v));
-    assert_eq!(&permutes[..], &[foo() & bar(), bar() & foo()]);
+    (ape() & bar()).permute(&mut |v| permutes.push(v));
+    assert_eq!(&permutes[..], &[ape() & bar(), bar() & ape()]);
 }
 
 #[test]
 fn test_permute_2() {
     let mut permutes = Vec::new();
-    (foo() | bar()).permute(&mut |v| permutes.push(v));
-    assert_eq!(&permutes[..], &[foo() | bar(), bar() | foo()]);
+    (ape() | bar()).permute(&mut |v| permutes.push(v));
+    assert_eq!(&permutes[..], &[ape() | bar(), bar() | ape()]);
 }
 
 #[test]
 fn test_permute_3() {
     let mut permutes = Vec::new();
-    (!(foo() | bar())).permute(&mut |v| permutes.push(v));
-    assert_eq!(&permutes[..], &[!(foo() | bar()), !(bar() | foo())]);
+    (!(ape() | bar())).permute(&mut |v| permutes.push(v));
+    assert_eq!(&permutes[..], &[!(ape() | bar()), !(bar() | ape())]);
 }
 
 #[test]
 fn test_permute_4() {
     let mut permutes = Vec::new();
-    ((foo() | bar()) | baz()).permute(&mut |v| permutes.push(v));
+    ((ape() | bar()) | chai()).permute(&mut |v| permutes.push(v));
     assert_eq!(
         &permutes[..],
         &[
-            (foo() | bar()) | baz(),
-            baz() | (foo() | bar()),
-            (bar() | foo()) | baz(),
-            baz() | (bar() | foo()),
+            (ape() | bar()) | chai(),
+            chai() | (ape() | bar()),
+            (bar() | ape()) | chai(),
+            chai() | (bar() | ape()),
         ]
     );
 }
@@ -57,59 +57,80 @@ fn test_permute_4() {
 #[test]
 fn test_permute_5() {
     let mut permutes = Vec::new();
-    ((foo() | bar()) & baz()).permute(&mut |v| permutes.push(v));
+    ((ape() | bar()) & chai()).permute(&mut |v| permutes.push(v));
     assert_eq!(
         &permutes[..],
         &[
-            (foo() | bar()) & baz(),
-            baz() & (foo() | bar()),
-            (bar() | foo()) & baz(),
-            baz() & (bar() | foo()),
+            (ape() | bar()) & chai(),
+            chai() & (ape() | bar()),
+            (bar() | ape()) & chai(),
+            chai() & (bar() | ape()),
         ]
     );
 }
 
 #[test]
+fn test_sort_1() {
+    (bar() | ape()).permute(&mut |v| {
+        assert_eq!(v.sort(), ape() | bar());
+    })
+}
+
+#[test]
+fn test_sort_2() {
+    (chai() & bar() & ape()).permute(&mut |v| {
+        assert_eq!(v.sort(), ape() & (bar() & chai()));
+    })
+}
+
+#[test]
+fn test_sort_3() {
+    ((chai() & bar()) | ape()).permute(&mut |v| {
+        assert_eq!(v.sort(), ape() | (bar() & chai()));
+    })
+}
+
+#[test]
 fn test_not_1() {
-    assert_reduces(!!foo(), foo());
+    assert_reduces(!!ape(), ape());
 }
 
 #[test]
 fn test_not_2() {
-    assert_reduces(!!!foo(), !foo());
+    assert_reduces(!!!ape(), !ape());
 }
 
 #[test]
 fn test_and_1() {
-    assert_reduces(foo() & foo(), foo());
+    assert_reduces(ape() & ape(), ape());
 }
 
 #[test]
 fn test_and_2() {
-    assert_reduces(foo() & (foo() & bar()), foo() & bar());
+    assert_reduces(ape() & (ape() & bar()), ape() & bar());
 }
 
 #[test]
 fn test_and_3() {
-    assert_reduces((foo() & bar()) & foo(), foo() & bar());
+    assert_reduces((ape() & bar()) & ape(), ape() & bar());
 }
 
 #[test]
 fn test_or_1() {
-    assert_reduces(foo() | foo(), foo());
+    assert_reduces(ape() | ape(), ape());
 }
 
 #[test]
 fn test_or_2() {
-    assert_reduces(foo() | !foo(), Expr::True);
+    assert_reduces(ape() | !ape(), Expr::True);
 }
 
 #[test]
 fn test_or_3() {
-    assert_reduces(foo() | Expr::False, foo());
+    assert_reduces(ape() | Expr::False, ape());
 }
 
 #[test]
 fn test_or_4() {
-    assert_reduces(Expr::False | foo(), foo());
+    assert_reduces(Expr::False | ape(), ape());
 }
