@@ -320,6 +320,28 @@ impl Expr {
             Expr::Or(l, r) => {
                 let l = l.sort();
                 let r = r.sort();
+
+                match &l {
+                    Expr::Or(l2, r2) => {
+                        // (l2 & r2) & r
+                        let mut elms = [*l2.clone(), *r2.clone(), r];
+                        elms.sort_unstable();
+                        let [a, b, c] = elms;
+                        return a | (b | c).sort();
+                    }
+                    _ => {}
+                }
+                match &r {
+                    Expr::Or(l2, r2) => {
+                        // l & (l2 & r2)
+                        let mut elms = [l, *l2.clone(), *r2.clone()];
+                        elms.sort_unstable();
+                        let [a, b, c] = elms;
+                        return a | (b | c).sort();
+                    }
+                    _ => {}
+                }
+
                 if l > r {
                     Expr::Or(Box::new(r), Box::new(l))
                 } else {
@@ -349,15 +371,6 @@ impl Expr {
                             })
                         });
                     }
-                    Expr::Or(l2, r2) => {
-                        l2.permute(&mut |l2| {
-                            let other = *r2.clone() & *r.clone();
-                            other.permute(&mut |other| {
-                                f(l2.clone() | other.clone());
-                                f(other.clone() | l2.clone());
-                            })
-                        });
-                    }
                     _ => {}
                 }
                 match r.as_ref() {
@@ -367,15 +380,6 @@ impl Expr {
                             other.permute(&mut |other| {
                                 f(r2.clone() & other.clone());
                                 f(other.clone() & r2.clone());
-                            })
-                        });
-                    }
-                    Expr::Or(l2, r2) => {
-                        r2.permute(&mut |r2| {
-                            let other = *l.clone() & *l2.clone();
-                            other.permute(&mut |other| {
-                                f(r2.clone() | other.clone());
-                                f(other.clone() | r2.clone());
                             })
                         });
                     }
@@ -390,15 +394,6 @@ impl Expr {
                     })
                 });
                 match l.as_ref() {
-                    Expr::And(l2, r2) => {
-                        l2.permute(&mut |l2| {
-                            let other = *r2.clone() | *r.clone();
-                            other.permute(&mut |other| {
-                                f(l2.clone() & other.clone());
-                                f(other.clone() & l2.clone());
-                            })
-                        });
-                    }
                     Expr::Or(l2, r2) => {
                         l2.permute(&mut |l2| {
                             let other = *r2.clone() | *r.clone();
@@ -411,15 +406,6 @@ impl Expr {
                     _ => {}
                 }
                 match r.as_ref() {
-                    Expr::And(l2, r2) => {
-                        r2.permute(&mut |r2| {
-                            let other = *l.clone() & *l2.clone();
-                            other.permute(&mut |other| {
-                                f(r2.clone() & other.clone());
-                                f(other.clone() & r2.clone());
-                            })
-                        });
-                    }
                     Expr::Or(l2, r2) => {
                         r2.permute(&mut |r2| {
                             let other = *l.clone() & *l2.clone();

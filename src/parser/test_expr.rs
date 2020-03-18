@@ -17,6 +17,9 @@ fn bar() -> Expr {
 fn chai() -> Expr {
     expr("chai")
 }
+fn ding() -> Expr {
+    expr("ding")
+}
 
 #[test]
 fn test_permute_1() {
@@ -65,6 +68,27 @@ fn test_permute_4() {
 }
 
 #[test]
+fn test_permute_5() {
+    let original = (ape() | bar()) & chai();
+    let mut actual = Vec::new();
+    original.permute(&mut |v| actual.push(v));
+    let expected = &[
+        (ape() | bar()) & chai(),
+        chai() & (ape() | bar()),
+        (bar() | ape()) & chai(),
+        chai() & (bar() | ape()),
+    ];
+    assert_eq!(
+        &actual[..],
+        expected,
+        "\noriginal = {:#?}\nexpected = {:#?}\nactual = {:#?}",
+        original,
+        expected,
+        &actual[..]
+    );
+}
+
+#[test]
 fn test_sort_1() {
     (bar() | ape()).permute(&mut |v| {
         assert_eq!(v.sort(), ape() | bar());
@@ -79,12 +103,12 @@ fn test_sort_2() {
     })
 }
 
-// #[test]
-// fn test_sort_3() {
-//     ((chai() & bar()) | ape()).permute(&mut |v| {
-//         assert_eq!(v.sort(), ape() | (bar() & chai()));
-//     })
-// }
+#[test]
+fn test_sort_3() {
+    ((chai() & bar()) | ape()).permute(&mut |v| {
+        assert_eq!(v.sort(), ape() | (bar() & chai()));
+    })
+}
 
 #[test]
 fn test_not_1() {
