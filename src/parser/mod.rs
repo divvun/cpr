@@ -45,9 +45,8 @@ pub enum Expr {
     True,
     False,
     Value(String),
-    CExpr(Expression),
-    And(Box<Expr>, Box<Expr>),
-    Or(Box<Expr>, Box<Expr>),
+    And(Vec<Expr>),
+    Or(Vec<Expr>),
     Not(Box<Expr>),
 }
 
@@ -59,10 +58,27 @@ impl fmt::Debug for Expr {
             True => write!(f, "true"),
             False => write!(f, "false"),
             Value(s) => write!(f, "{}", s),
-            And(l, r) => write!(f, "({:?} & {:?})", l, r),
-            Or(l, r) => write!(f, "({:?} | {:?})", l, r),
+            And(c) => {
+                write!(f, "(")?;
+                for (i, v) in c.iter().enumerate() {
+                    match i {
+                        0 => write!(f, "{:?}", v),
+                        _ => write!(f, " & {:?}", v),
+                    }?;
+                }
+                write!(f, ")")
+            }
+            Or(c) => {
+                write!(f, "(")?;
+                for (i, v) in c.iter().enumerate() {
+                    match i {
+                        0 => write!(f, "{:?}", v),
+                        _ => write!(f, " | {:?}", v),
+                    }?;
+                }
+                write!(f, ")")
+            }
             Not(v) => write!(f, "(!{:?})", v),
-            CExpr(e) => write!(f, "(expr({:?}))", e),
         }
     }
 }
@@ -73,11 +89,12 @@ impl PreprocessorIdent for Expr {
 
         match self {
             Value(x) => vec![x.clone()],
-            CExpr(x) => x.ident(),
-            And(x, y) | Or(x, y) => {
-                let mut x = x.ident();
-                x.append(&mut y.ident());
-                x
+            And(c) | Or(c) => {
+                let mut res = Vec::new();
+                for v in c {
+                    res.append(&mut v.ident());
+                }
+                res
             }
             _ => vec![],
         }
@@ -119,168 +136,39 @@ impl BitAnd for Assumption {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct AssumptionSet(HashMap<String, Assumption>);
-
-impl AssumptionSet {
-    fn from<S: Into<String>>(s: S) -> Self {
-        let mut m = HashMap::new();
-        m.insert(s.into(), Assumption::True);
-        Self(m)
-    }
-
-    fn reduce(&self, expr: &Expr) -> Expr {
-        match expr {
-            Expr::Value(v) => match self.0.get(v) {
-                Some(ass) => match ass {
-                    Assumption::True => Expr::True,
-                    Assumption::False => Expr::False,
-                    Assumption::Unknowable => Expr::Value(v.clone()),
-                },
-                None => Expr::Value(v.clone()),
-            },
-            Expr::Not(b) => match b.as_ref() {
-                Expr::Not(b) => self.reduce(b.as_ref()),
-                Expr::True => Expr::False,
-                Expr::False => Expr::True,
-                b => Expr::Not(Box::new(self.reduce(&b))),
-            },
-            Expr::And(a, b) => {
-                let a = self.reduce(a);
-                let b = self.reduce(b);
-                // (false & x) = false
-                if a == Expr::False {
-                    return Expr::False;
-                }
-                // (x & false) = false
-                if b == Expr::False {
-                    return Expr::False;
-                }
-                // (true & x) = x
-                if a == Expr::True {
-                    return b;
-                }
-                // (x & true) = x
-                if b == Expr::True {
-                    return a;
-                }
-                // (!x & x) = false
-                if (!a.clone()).reduce() == b {
-                    return Expr::False;
-                }
-                // if b implies a, (a & b) = b
-                if Expr::True == b.assumptions().reduce(&a) {
-                    return b;
-                }
-                // if a implies b, (a & b) = a
-                if Expr::True == a.assumptions().reduce(&b) {
-                    return a;
-                }
-                // both terms are needed
-                a & b
-            }
-            Expr::Or(a, b) => {
-                let a = self.reduce(a);
-                let b = self.reduce(b);
-
-                // (x | false) = x
-                if a == Expr::False {
-                    return b;
-                }
-                // (false | x) = x
-                if b == Expr::False {
-                    return a;
-                }
-                // (!x | x) = true
-                if (!a.clone()).reduce() == b {
-                    return Expr::True;
-                }
-                // if b implies a, (a | b) = b
-                if Expr::True == b.assumptions().reduce(&a) {
-                    return b;
-                }
-                // if a implies b, (a | b) = a
-                if Expr::True == a.assumptions().reduce(&b) {
-                    return a;
-                }
-                // both terms are needed
-                a | b
-            }
-            x => x.clone(),
-        }
-        .sort()
-    }
-}
-
-impl Default for AssumptionSet {
-    fn default() -> Self {
-        Self(Default::default())
-    }
-}
-
-impl BitAnd for AssumptionSet {
-    type Output = Self;
-    fn bitand(self, rhs: Self) -> Self::Output {
-        let mut m = HashMap::new();
-        for (k, v) in self.0.into_iter().chain(rhs.0.into_iter()) {
-            let v = match m.remove(&k) {
-                Some(pv) => pv & v,
-                None => v,
-            };
-            m.insert(k, v);
-        }
-        Self(m)
-    }
-}
-
-impl Not for AssumptionSet {
-    type Output = Self;
-    fn not(self) -> Self::Output {
-        Self(self.0.into_iter().map(|(k, v)| (k, !v)).collect())
-    }
-}
-
 impl Ord for Expr {
     fn cmp(&self, other: &Self) -> Ordering {
+        use Expr::*;
+
         match self {
-            Expr::True => match other {
-                Expr::True => Ordering::Equal,
+            True => match other {
+                True => Ordering::Equal,
                 _ => Ordering::Less,
             },
-            Expr::False => match other {
-                Expr::True => Ordering::Greater,
-                Expr::False => Ordering::Equal,
+            False => match other {
+                True => Ordering::Greater,
+                False => Ordering::Equal,
                 _ => Ordering::Less,
             },
-            Expr::Value(v1) => match other {
-                Expr::True | Expr::False => Ordering::Greater,
-                Expr::Value(v2) => v1.cmp(v2),
+            Value(v1) => match other {
+                True | False => Ordering::Greater,
+                Value(v2) => v1.cmp(v2),
                 _ => Ordering::Less,
             },
-            Expr::Not(v1) => match other {
-                Expr::True | Expr::False | Expr::Value(_) => Ordering::Greater,
-                Expr::Not(v2) => v1.cmp(v2),
+            Not(v1) => match other {
+                True | False | Value(_) => Ordering::Greater,
+                Not(v2) => v1.cmp(v2),
                 _ => Ordering::Less,
             },
-            Expr::And(l, r) => match other {
-                Expr::True | Expr::False | Expr::Value(_) | Expr::Not(_) => Ordering::Greater,
-                Expr::And(l2, r2) => match l.cmp(l2) {
-                    Ordering::Equal => r.cmp(r2),
-                    o => o,
-                },
+            And(c) => match other {
+                True | False | Value(_) | Not(_) => Ordering::Greater,
+                And(c2) => c.cmp(c2),
                 _ => Ordering::Less,
             },
-            Expr::Or(l, r) => match other {
-                Expr::True | Expr::False | Expr::Value(_) | Expr::Not(_) | Expr::And(_, _) => {
-                    Ordering::Greater
-                }
-                Expr::Or(l2, r2) => match l.cmp(l2) {
-                    Ordering::Equal => r.cmp(r2),
-                    o => o,
-                },
-                _ => Ordering::Less,
+            Or(c) => match other {
+                True | False | Value(_) | Not(_) | And(_) => Ordering::Greater,
+                Or(c2) => c.cmp(c2),
             },
-            Expr::CExpr(_e) => unimplemented!(),
         }
     }
 }
@@ -301,162 +189,32 @@ impl Expr {
             Expr::True => true,
             Expr::False => false,
             Expr::Value(v) => defines.iter().map(|x| x.name()).any(|n| n == v),
-            Expr::And(l, r) => l.satisfies(defines) && r.satisfies(defines),
-            Expr::Or(l, r) => l.satisfies(defines) || r.satisfies(defines),
+            Expr::And(c) => c.iter().all(|v| v.satisfies(defines)),
+            Expr::Or(c) => c.iter().any(|v| v.satisfies(defines)),
             Expr::Not(v) => !v.satisfies(defines),
-            Expr::CExpr(_e) => unimplemented!(),
         }
     }
 
     fn reduce(&self) -> Expr {
-        AssumptionSet::default().reduce(self)
+        unimplemented!()
     }
 
     fn sort(&self) -> Expr {
+        use Expr::*;
+
         match self {
-            Expr::And(l, r) => {
-                let l = l.sort();
-                let r = r.sort();
-
-                match &l {
-                    Expr::And(l2, r2) => {
-                        // (l2 & r2) & r
-                        let mut elms = [*l2.clone(), *r2.clone(), r];
-                        elms.sort_unstable();
-                        let [a, b, c] = elms;
-                        return a & (b & c).sort();
-                    }
-                    _ => {}
-                }
-                match &r {
-                    Expr::And(l2, r2) => {
-                        // l & (l2 & r2)
-                        let mut elms = [l, *l2.clone(), *r2.clone()];
-                        elms.sort_unstable();
-                        let [a, b, c] = elms;
-                        return a & (b & c).sort();
-                    }
-                    _ => {}
-                }
-
-                if l > r {
-                    Expr::And(Box::new(r), Box::new(l))
-                } else {
-                    Expr::And(Box::new(l), Box::new(r))
-                }
+            And(c) => {
+                let mut c: Vec<_> = c.iter().map(|e| e.sort()).collect();
+                c.sort();
+                And(c)
             }
-            Expr::Or(l, r) => {
-                let l = l.sort();
-                let r = r.sort();
-
-                match &l {
-                    Expr::Or(l2, r2) => {
-                        // (l2 & r2) & r
-                        let mut elms = [*l2.clone(), *r2.clone(), r];
-                        elms.sort_unstable();
-                        let [a, b, c] = elms;
-                        return a | (b | c).sort();
-                    }
-                    _ => {}
-                }
-                match &r {
-                    Expr::Or(l2, r2) => {
-                        // l & (l2 & r2)
-                        let mut elms = [l, *l2.clone(), *r2.clone()];
-                        elms.sort_unstable();
-                        let [a, b, c] = elms;
-                        return a | (b | c).sort();
-                    }
-                    _ => {}
-                }
-
-                if l > r {
-                    Expr::Or(Box::new(r), Box::new(l))
-                } else {
-                    Expr::Or(Box::new(l), Box::new(r))
-                }
+            Or(c) => {
+                let mut c: Vec<_> = c.iter().map(|e| e.sort()).collect();
+                c.sort();
+                Or(c)
             }
+            Not(v) => !v.sort(),
             v => v.clone(),
-        }
-    }
-
-    fn permute(&self, f: &mut dyn FnMut(Expr)) {
-        match self {
-            Expr::And(l, r) => {
-                l.permute(&mut |l| {
-                    r.permute(&mut |r| {
-                        f(l.clone() & r.clone());
-                        f(r.clone() & l.clone());
-                    });
-                });
-                match l.as_ref() {
-                    Expr::And(l2, r2) => {
-                        l2.permute(&mut |l2| {
-                            let other = *r2.clone() & *r.clone();
-                            other.permute(&mut |other| {
-                                f(l2.clone() & other.clone());
-                                f(other.clone() & l2.clone());
-                            })
-                        });
-                    }
-                    _ => {}
-                }
-                match r.as_ref() {
-                    Expr::And(l2, r2) => {
-                        r2.permute(&mut |r2| {
-                            let other = *l.clone() & *l2.clone();
-                            other.permute(&mut |other| {
-                                f(r2.clone() & other.clone());
-                                f(other.clone() & r2.clone());
-                            })
-                        });
-                    }
-                    _ => {}
-                }
-            }
-            Expr::Or(l, r) => {
-                l.permute(&mut |l| {
-                    r.permute(&mut |r| {
-                        f(Expr::Or(Box::new(l.clone()), Box::new(r.clone())));
-                        f(Expr::Or(Box::new(r), Box::new(l.clone())));
-                    })
-                });
-                match l.as_ref() {
-                    Expr::Or(l2, r2) => {
-                        l2.permute(&mut |l2| {
-                            let other = *r2.clone() | *r.clone();
-                            other.permute(&mut |other| {
-                                f(l2.clone() | other.clone());
-                                f(other.clone() | l2.clone());
-                            })
-                        });
-                    }
-                    _ => {}
-                }
-                match r.as_ref() {
-                    Expr::Or(l2, r2) => {
-                        r2.permute(&mut |r2| {
-                            let other = *l.clone() & *l2.clone();
-                            other.permute(&mut |other| {
-                                f(r2.clone() | other.clone());
-                                f(other.clone() | r2.clone());
-                            })
-                        });
-                    }
-                    _ => {}
-                }
-            }
-            Expr::Not(x) => x.permute(&mut |x| f(Expr::Not(Box::new(x)))),
-            x => f(x.clone()),
-        }
-    }
-
-    fn assumptions(&self) -> AssumptionSet {
-        match self {
-            Expr::Value(s) => AssumptionSet::from(s),
-            Expr::Not(b) => !b.assumptions(),
-            Expr::And(a, b) => a.assumptions() & b.assumptions(),
-            _ => Default::default(),
         }
     }
 }
@@ -480,10 +238,15 @@ impl BitAnd for Expr {
     type Output = Expr;
 
     fn bitand(self, rhs: Expr) -> Self::Output {
+        use std::iter::once;
+        use Expr::*;
+
         match (self, rhs) {
-            (lhs, Expr::True) => lhs,
-            (Expr::True, rhs) => rhs,
-            (lhs, rhs) => Expr::And(Box::new(lhs), Box::new(rhs)),
+            (_, False) | (False, _) => False,
+            (v, True) | (True, v) => v,
+            (And(l), And(r)) => And(l.into_iter().chain(r.into_iter()).collect()),
+            (And(c), v) | (v, And(c)) => And(c.into_iter().chain(once(v)).collect()),
+            (l, r) => And(vec![l, r]),
         }
     }
 }
@@ -492,10 +255,15 @@ impl BitOr for Expr {
     type Output = Expr;
 
     fn bitor(self, rhs: Expr) -> Self::Output {
+        use std::iter::once;
+        use Expr::*;
+
         match (self, rhs) {
-            (lhs, Expr::True) => lhs,
-            (Expr::True, rhs) => rhs,
-            (lhs, rhs) => Expr::Or(Box::new(lhs), Box::new(rhs)),
+            (_, True) | (True, _) => True,
+            (v, False) | (False, v) => v,
+            (Or(l), Or(r)) => Or(l.into_iter().chain(r.into_iter()).collect()),
+            (Or(c), v) | (v, Or(c)) => Or(c.into_iter().chain(once(v)).collect()),
+            (l, r) => Or(vec![l, r]),
         }
     }
 }
@@ -504,18 +272,12 @@ impl Not for Expr {
     type Output = Expr;
 
     fn not(self) -> Self::Output {
+        use Expr::*;
+
         match self {
-            Expr::Not(v) => *v,
-            v => Expr::Not(Box::new(v)),
+            Not(v) => *v,
+            v => Not(Box::new(v)),
         }
-    }
-}
-
-impl Not for Box<Expr> {
-    type Output = Box<Expr>;
-
-    fn not(self) -> Self::Output {
-        Box::new(!*self)
     }
 }
 
@@ -686,9 +448,10 @@ impl ParsedUnit {
                         dependencies.insert(include, def_ranges.last().1.clone());
                     }
                     Directive::If(expr) => {
-                        let pred = Expr::CExpr(expr);
-                        last_if = Some(pred.clone());
-                        def_ranges.push((n, pred));
+                        panic!("CExpr not supported: {:?}", expr);
+                        // let pred = Expr::CExpr(expr);
+                        // last_if = Some(pred.clone());
+                        // def_ranges.push((n, pred));
                     }
                     Directive::IfDefined(name) => {
                         let pred = Expr::Value(name);
@@ -701,10 +464,11 @@ impl ParsedUnit {
                         def_ranges.push((n, pred));
                     }
                     Directive::ElseIf(value) => {
-                        def_ranges.pop(n);
-                        let pred = Expr::CExpr(value);
-                        last_if = Some(pred.clone());
-                        def_ranges.push((n, pred));
+                        panic!("CExpr not supported {:?}", value);
+                        // def_ranges.pop(n);
+                        // let pred = Expr::CExpr(value);
+                        // last_if = Some(pred.clone());
+                        // def_ranges.push((n, pred));
                     }
                     Directive::Else => {
                         def_ranges.pop(n);
