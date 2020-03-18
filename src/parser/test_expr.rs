@@ -16,6 +16,13 @@ fn bar() -> Expr {
 }
 
 #[test]
+fn test_permute() {
+    let mut permutes = Vec::new();
+    (foo() & bar()).permute(&mut |v| permutes.push(v));
+    assert_eq!(&permutes[..], &[foo() & bar(), bar() & foo()]);
+}
+
+#[test]
 fn test_not_1() {
     assert_reduces(!!foo(), foo());
 }
@@ -50,3 +57,12 @@ fn test_or_2() {
     assert_reduces(foo() | !foo(), Expr::True);
 }
 
+#[test]
+fn test_or_3() {
+    assert_reduces(foo() | Expr::False, foo());
+}
+
+#[test]
+fn test_or_4() {
+    assert_reduces(Expr::False | foo(), foo());
+}

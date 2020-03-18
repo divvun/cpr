@@ -11,6 +11,7 @@ use hashbrown::HashMap;
 use lang_c::ast::Expression;
 use regex::Regex;
 use std::{
+    cmp::Ordering,
     collections::VecDeque,
     fmt, io,
     ops::{BitAnd, BitOr, Not},
@@ -39,7 +40,7 @@ impl Define {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Expr {
     True,
     False,
@@ -50,18 +51,18 @@ pub enum Expr {
     Not(Box<Expr>),
 }
 
-impl fmt::Debug for Expr {
+impl fmt::Display for Expr {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use Expr::*;
 
         match self {
             True => write!(f, "true"),
             False => write!(f, "false"),
-            Value(s) => write!(f, "{:?}", s),
+            Value(s) => write!(f, "{}", s),
             CExpr(e) => write!(f, "(expr({:?}))", e),
-            And(l, r) => write!(f, "({:?} & {:?})", l, r),
-            Or(l, r) => write!(f, "({:?} | {:?})", l, r),
-            Not(v) => write!(f, "(!{:?})", v),
+            And(l, r) => write!(f, "({} & {})", l, r),
+            Or(l, r) => write!(f, "({} | {})", l, r),
+            Not(v) => write!(f, "(!{})", v),
         }
     }
 }
@@ -139,8 +140,10 @@ impl AssumptionSet {
                 None => Expr::Value(v.clone()),
             },
             Expr::Not(b) => match b.as_ref() {
-                Expr::Not(b2) => self.reduce(b2.as_ref()),
-                b2 => Expr::Not(Box::new(self.reduce(&b2))),
+                Expr::Not(b) => self.reduce(b.as_ref()),
+                Expr::True => Expr::False,
+                Expr::False => Expr::True,
+                b => Expr::Not(Box::new(self.reduce(&b))),
             },
             Expr::And(a, b) => {
                 match (self.clone() & b.assumptions()).reduce(a) {
@@ -156,23 +159,25 @@ impl AssumptionSet {
                 Expr::And(Box::new(self.reduce(a)), Box::new(self.reduce(b)))
             }
             Expr::Or(a, b) => {
-                match (self.clone() & b.assumptions()).reduce(a) {
-                    Expr::True => return self.reduce(b),
-                    _ => {}
+                let a = self.reduce(a);
+                let b = self.reduce(b);
+
+                if a == Expr::False {
+                    return b;
                 }
-                match (self.clone() & a.assumptions()).reduce(b) {
-                    Expr::True => return self.reduce(a),
-                    _ => {}
+                if b == Expr::False {
+                    return a;
                 }
-                match self.reduce(a) {
-                    Expr::False => return self.reduce(b),
-                    _ => {}
+                if (!a.clone()).reduce() == b {
+                    return Expr::True;
                 }
-                match self.reduce(b) {
-                    Expr::False => return self.reduce(a),
-                    _ => {}
+                if Expr::True == b.assumptions().reduce(&a) {
+                    return b;
                 }
-                Expr::Or(Box::new(self.reduce(a)), Box::new(self.reduce(b)))
+                if Expr::True == a.assumptions().reduce(&b) {
+                    return a;
+                }
+                Expr::Or(Box::new(a), Box::new(b))
             }
             x => x.clone(),
         }
@@ -207,6 +212,57 @@ impl Not for AssumptionSet {
     }
 }
 
+impl Ord for Expr {
+    fn cmp(&self, other: &Self) -> Ordering {
+        match self {
+            Expr::True => match other {
+                Expr::True => Ordering::Equal,
+                _ => Ordering::Less,
+            },
+            Expr::False => match other {
+                Expr::True => Ordering::Greater,
+                Expr::False => Ordering::Equal,
+                _ => Ordering::Less,
+            },
+            Expr::Value(v1) => match other {
+                Expr::True | Expr::False => Ordering::Greater,
+                Expr::Value(v2) => v1.cmp(v2),
+                _ => Ordering::Less,
+            },
+            Expr::Not(v1) => match other {
+                Expr::True | Expr::False | Expr::Value(_) => Ordering::Greater,
+                Expr::Not(v2) => v1.cmp(v2),
+                _ => Ordering::Less,
+            },
+            Expr::And(l, r) => match other {
+                Expr::True | Expr::False | Expr::Value(_) | Expr::Not(_) => Ordering::Greater,
+                Expr::And(l2, r2) => match l.cmp(l2) {
+                    Ordering::Equal => r.cmp(r2),
+                    o => o,
+                },
+                _ => Ordering::Less,
+            },
+            Expr::Or(l, r) => match other {
+                Expr::True | Expr::False | Expr::Value(_) | Expr::Not(_) | Expr::And(_, _) => {
+                    Ordering::Greater
+                }
+                Expr::Or(l2, r2) => match l.cmp(l2) {
+                    Ordering::Equal => r.cmp(r2),
+                    o => o,
+                },
+                _ => Ordering::Less,
+            },
+            Expr::CExpr(_e) => unimplemented!(),
+        }
+    }
+}
+
+impl PartialOrd for Expr {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
 impl Expr {
     fn combine(vec: &[Expr]) -> Expr {
         vec.iter().fold(Expr::True, |acc, cur| acc & cur.clone())
@@ -217,15 +273,58 @@ impl Expr {
             Expr::True => true,
             Expr::False => false,
             Expr::Value(v) => defines.iter().map(|x| x.name()).any(|n| n == v),
-            Expr::And(a, b) => a.satisfies(defines) && b.satisfies(defines),
-            Expr::Or(a, b) => a.satisfies(defines) || b.satisfies(defines),
-            Expr::Not(a) => !a.satisfies(defines),
+            Expr::And(l, r) => l.satisfies(defines) && r.satisfies(defines),
+            Expr::Or(l, r) => l.satisfies(defines) || r.satisfies(defines),
+            Expr::Not(v) => !v.satisfies(defines),
             Expr::CExpr(_e) => unimplemented!(),
         }
     }
 
     fn reduce(&self) -> Expr {
         AssumptionSet::default().reduce(self)
+    }
+
+    fn sort(&self) -> Expr {
+        match self {
+            Expr::And(l, r) => {
+                let l = l.sort();
+                let r = r.sort();
+                if l > r {
+                    Expr::And(Box::new(r), Box::new(l))
+                } else {
+                    Expr::And(Box::new(l), Box::new(r))
+                }
+            }
+            Expr::Or(l, r) => {
+                let l = l.sort();
+                let r = r.sort();
+                if l > r {
+                    Expr::Or(Box::new(r), Box::new(l))
+                } else {
+                    Expr::Or(Box::new(l), Box::new(r))
+                }
+            }
+            v => v.clone(),
+        }
+    }
+
+    fn permute(&self, f: &mut dyn FnMut(Expr)) {
+        match self {
+            Expr::And(l, r) => l.permute(&mut |l| {
+                r.permute(&mut |r| {
+                    f(Expr::And(Box::new(l.clone()), Box::new(r.clone())));
+                    f(Expr::And(Box::new(r), Box::new(l.clone())));
+                })
+            }),
+            Expr::Or(l, r) => l.permute(&mut |l| {
+                r.permute(&mut |r| {
+                    f(Expr::Or(Box::new(l.clone()), Box::new(r.clone())));
+                    f(Expr::Or(Box::new(r), Box::new(l.clone())));
+                })
+            }),
+            Expr::Not(x) => x.permute(&mut |x| f(Expr::Not(Box::new(x)))),
+            x => f(x.clone()),
+        }
     }
 
     fn assumptions(&self) -> AssumptionSet {
