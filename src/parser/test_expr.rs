@@ -14,12 +14,59 @@ fn foo() -> Expr {
 fn bar() -> Expr {
     expr("bar")
 }
+fn baz() -> Expr {
+    expr("baz")
+}
 
 #[test]
-fn test_permute() {
+fn test_permute_1() {
     let mut permutes = Vec::new();
     (foo() & bar()).permute(&mut |v| permutes.push(v));
     assert_eq!(&permutes[..], &[foo() & bar(), bar() & foo()]);
+}
+
+#[test]
+fn test_permute_2() {
+    let mut permutes = Vec::new();
+    (foo() | bar()).permute(&mut |v| permutes.push(v));
+    assert_eq!(&permutes[..], &[foo() | bar(), bar() | foo()]);
+}
+
+#[test]
+fn test_permute_3() {
+    let mut permutes = Vec::new();
+    (!(foo() | bar())).permute(&mut |v| permutes.push(v));
+    assert_eq!(&permutes[..], &[!(foo() | bar()), !(bar() | foo())]);
+}
+
+#[test]
+fn test_permute_4() {
+    let mut permutes = Vec::new();
+    ((foo() | bar()) | baz()).permute(&mut |v| permutes.push(v));
+    assert_eq!(
+        &permutes[..],
+        &[
+            (foo() | bar()) | baz(),
+            baz() | (foo() | bar()),
+            (bar() | foo()) | baz(),
+            baz() | (bar() | foo()),
+        ]
+    );
+}
+
+#[test]
+fn test_permute_5() {
+    let mut permutes = Vec::new();
+    ((foo() | bar()) & baz()).permute(&mut |v| permutes.push(v));
+    assert_eq!(
+        &permutes[..],
+        &[
+            (foo() | bar()) & baz(),
+            baz() & (foo() | bar()),
+            (bar() | foo()) & baz(),
+            baz() & (bar() | foo()),
+        ]
+    );
 }
 
 #[test]
