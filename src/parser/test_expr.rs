@@ -5,9 +5,11 @@ fn expr(s: &str) -> Expr {
 }
 
 fn assert_reduces(init: Expr, gives: Expr) {
+    let reduced = init.reduce();
+    let gives = gives.sort();
     assert_eq!(
-        init.reduce(),
-        gives.sort(),
+        reduced,
+        gives,
         "\ninit = {:?}\ngives = {:?}",
         init,
         gives.sort()

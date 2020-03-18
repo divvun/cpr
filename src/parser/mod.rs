@@ -3,6 +3,7 @@ mod rangeset;
 mod utils;
 
 use directive::{Directive, PreprocessorIdent};
+use quine_mc_cluskey as qmc;
 use rangeset::RangeSet;
 use thiserror::Error;
 
@@ -48,6 +49,40 @@ pub enum Expr {
     And(Vec<Expr>),
     Or(Vec<Expr>),
     Not(Box<Expr>),
+}
+
+pub struct Terms {
+    map: HashMap<Expr, u8>,
+}
+
+impl Terms {
+    const MAX_TERMS: usize = 12;
+
+    fn new() -> Self {
+        Self {
+            map: HashMap::new(),
+        }
+    }
+
+    fn add(&mut self, e: &Expr) -> qmc::Bool {
+        use Expr::*;
+
+        qmc::Bool::Term(match e {
+            Value(_) => match self.map.get(e) {
+                Some(&t) => t,
+                None => {
+                    let next_term = self.map.len();
+                    if next_term >= Self::MAX_TERMS {
+                        panic!("refusing to add more than {} terms", Self::MAX_TERMS);
+                    }
+                    let next_term = next_term as u8;
+                    self.map.insert(e.clone(), next_term as u8);
+                    next_term
+                }
+            },
+            _ => panic!("can't add expr to terms: {:#?}", e),
+        })
+    }
 }
 
 impl fmt::Debug for Expr {
@@ -101,41 +136,6 @@ impl PreprocessorIdent for Expr {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-pub enum Assumption {
-    True,
-    False,
-    Unknowable,
-}
-
-impl Not for Assumption {
-    type Output = Self;
-    fn not(self) -> Self::Output {
-        match self {
-            Self::True => Self::False,
-            Self::False => Self::True,
-            Self::Unknowable => Self::Unknowable,
-        }
-    }
-}
-
-impl BitAnd for Assumption {
-    type Output = Self;
-    fn bitand(self, rhs: Self) -> Self::Output {
-        match self {
-            Self::True => match rhs {
-                Self::True => Self::True,
-                _ => Self::Unknowable,
-            },
-            Self::False => match rhs {
-                Self::False => Self::False,
-                _ => Self::Unknowable,
-            },
-            _ => Self::Unknowable,
-        }
-    }
-}
-
 impl Ord for Expr {
     fn cmp(&self, other: &Self) -> Ordering {
         use Expr::*;
@@ -181,22 +181,67 @@ impl PartialOrd for Expr {
 
 impl Expr {
     fn combine(vec: &[Expr]) -> Expr {
-        vec.iter().fold(Expr::True, |acc, cur| acc & cur.clone())
+        use Expr::*;
+        vec.iter().fold(True, |acc, cur| acc & cur.clone())
     }
 
     fn satisfies(&self, defines: &[Define]) -> bool {
+        use Expr::*;
         match self {
-            Expr::True => true,
-            Expr::False => false,
-            Expr::Value(v) => defines.iter().map(|x| x.name()).any(|n| n == v),
-            Expr::And(c) => c.iter().all(|v| v.satisfies(defines)),
-            Expr::Or(c) => c.iter().any(|v| v.satisfies(defines)),
-            Expr::Not(v) => !v.satisfies(defines),
+            True => true,
+            False => false,
+            Value(v) => defines.iter().map(|x| x.name()).any(|n| n == v),
+            And(c) => c.iter().all(|v| v.satisfies(defines)),
+            Or(c) => c.iter().any(|v| v.satisfies(defines)),
+            Not(v) => !v.satisfies(defines),
         }
     }
 
     fn reduce(&self) -> Expr {
-        unimplemented!()
+        let mut terms = Terms::new();
+        let input = self.as_bool(&mut terms);
+        let mut output = input.simplify();
+        assert_eq!(output.len(), 1);
+        let output = output
+            .pop()
+            .expect("simplification should yield at least one term");
+        Self::from_bool(output, &terms)
+    }
+
+    fn as_bool(&self, terms: &mut Terms) -> qmc::Bool {
+        use qmc::Bool;
+        use Expr::*;
+
+        match self {
+            True => Bool::True,
+            False => Bool::False,
+            And(v) => Bool::And(v.into_iter().map(|v| v.as_bool(terms)).collect()),
+            Or(v) => Bool::Or(v.into_iter().map(|v| v.as_bool(terms)).collect()),
+            Not(c) => Bool::Not(Box::new(c.as_bool(terms))),
+            Value(_) => terms.add(self),
+        }
+    }
+
+    fn from_bool(v: qmc::Bool, terms: &Terms) -> Expr {
+        use qmc::Bool;
+        use Expr::*;
+
+        match v {
+            Bool::True => True,
+            Bool::False => False,
+            Bool::And(c) => And(c.into_iter().map(|v| Self::from_bool(v, terms)).collect()),
+            Bool::Or(c) => Or(c.into_iter().map(|v| Self::from_bool(v, terms)).collect()),
+            Bool::Not(v) => Not(Box::new(Self::from_bool(*v, terms))),
+            Bool::Term(t) => {
+                // todo: reverse terms once
+                for (k, &v) in &terms.map {
+                    if v == t {
+                        return k.clone();
+                    }
+                }
+                panic!("unknown term: {}", t)
+            }
+        }
     }
 
     fn sort(&self) -> Expr {
