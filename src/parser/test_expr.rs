@@ -5,7 +5,16 @@ fn expr(s: &str) -> Expr {
 }
 
 fn assert_reduces(init: Expr, gives: Expr) {
-    assert_eq!(init.reduce(), gives, "reducing {:?}", init)
+    init.permute(&mut |perm| {
+        assert_eq!(
+            perm.reduce().sort(),
+            gives.sort(),
+            "\ninit = {:?}\nperm = {:?}\ngives = {:?}",
+            init,
+            perm,
+            gives.sort()
+        )
+    });
 }
 
 fn ape() -> Expr {
@@ -111,46 +120,69 @@ fn test_sort_3() {
 }
 
 #[test]
-fn test_not_1() {
+fn test_reduce_identity() {
+    assert_reduces(ape(), ape());
+}
+
+#[test]
+fn test_reduce_not_0() {
+    assert_reduces(!ape(), !ape());
+}
+
+#[test]
+fn test_reduce_not_1() {
     assert_reduces(!!ape(), ape());
 }
 
 #[test]
-fn test_not_2() {
+fn test_reduce_not_2() {
     assert_reduces(!!!ape(), !ape());
 }
 
 #[test]
-fn test_and_1() {
+fn test_reduce_and_1() {
     assert_reduces(ape() & ape(), ape());
 }
 
 #[test]
-fn test_and_2() {
+fn test_reduce_and_1b() {
+    assert_reduces(ape() & !ape(), Expr::False);
+}
+
+#[test]
+fn test_reduce_and_2() {
     assert_reduces(ape() & (ape() & bar()), ape() & bar());
 }
 
 #[test]
-fn test_and_3() {
+fn test_reduce_and_3() {
     assert_reduces((ape() & bar()) & ape(), ape() & bar());
 }
 
 #[test]
-fn test_or_1() {
+fn test_reduce_or_1() {
     assert_reduces(ape() | ape(), ape());
 }
 
 #[test]
-fn test_or_2() {
+fn test_reduce_or_2() {
     assert_reduces(ape() | !ape(), Expr::True);
 }
 
 #[test]
-fn test_or_3() {
+fn test_reduce_or_3() {
     assert_reduces(ape() | Expr::False, ape());
 }
 
 #[test]
-fn test_or_4() {
+fn test_reduce_or_4() {
     assert_reduces(Expr::False | ape(), ape());
+}
+
+#[test]
+fn test_reduce_deeply_nested() {
+    assert_reduces(
+        ape() & (ape() & bar()) & ((ape() & bar()) & chai()),
+        ape() & bar() & chai(),
+    );
 }
