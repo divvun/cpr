@@ -1,26 +1,62 @@
-#ifdef FOO
+/* FOO            */ #ifdef FOO     
+/* FOO            */ struct foo {
+/* FOO            */     int foo;
+/* FOO & EVIL     */ #ifdef EVIL
+/* FOO & EVIL     */     int evil;
+/* FOO & !EVIL    */ #else
+/* FOO & !EVIL    */     int good;
+/* FOO            */ #endif // EVIL
+/* FOO            */ }
+/*                */ #endif // FOO
+
+//  FOO &  (FOO & EVIL) &  (FOO & !EVIL) &  FOO       => false
+//  FOO &  (FOO & EVIL) &  (FOO & !EVIL) & !FOO       => false
+//  FOO &  (FOO & EVIL) & !(FOO & !EVIL) &  FOO       => FOO & EVIL, parses
+//  FOO &  (FOO & EVIL) & !(FOO & !EVIL) & !FOO       => false
+//  FOO & !(FOO & EVIL) &  (FOO & !EVIL) &  FOO       => FOO & !EVIL, parses
+//  FOO & !(FOO & EVIL) &  (FOO & !EVIL) & !FOO       => false
+//  FOO & !(FOO & EVIL) & !(FOO & !EVIL) &  FOO       => false
+//  FOO & !(FOO & EVIL) & !(FOO & !EVIL) & !FOO       => false
+// !FOO &  (FOO & EVIL) &  (FOO & !EVIL) &  FOO       => false
+// !FOO &  (FOO & EVIL) &  (FOO & !EVIL) & !FOO       => false
+// !FOO &  (FOO & EVIL) & !(FOO & !EVIL) &  FOO       => false
+// !FOO &  (FOO & EVIL) & !(FOO & !EVIL) & !FOO       => false
+// !FOO & !(FOO & EVIL) &  (FOO & !EVIL) &  FOO       => false
+// !FOO & !(FOO & EVIL) &  (FOO & !EVIL) & !FOO       => false
+// !FOO & !(FOO & EVIL) & !(FOO & !EVIL) &  FOO       => false
+// !FOO & !(FOO & EVIL) & !(FOO & !EVIL) & !FOO       => !FOO, but zero regions
+
+// ----------------
+
+/* FOO            */ #ifdef FOO     
+/* FOO            */ struct foo {
+/* FOO            */     int foo;
+/* FOO & EVIL     */ #ifdef EVIL
+/* FOO & EVIL     */     int evil;
+/* FOO            */ #endif // EVIL
+/* FOO            */ }
+/*                */ #endif // FOO
+
+//  FOO &  (FOO & EVIL) &  FOO   => FOO & EVIL, parses!
+//  FOO &  (FOO & EVIL) & !FOO   => false
+//  FOO & !(FOO & EVIL) &  FOO   => FOO & !EVIL, parses!
+//  FOO & !(FOO & EVIL) & !FOO   => false
+// !FOO &  (FOO & EVIL) &  FOO   => false
+// !FOO &  (FOO & EVIL) & !FOO   => false
+// !FOO & !(FOO & EVIL) &  FOO   => false
+// !FOO & !(FOO & EVIL) & !FOO   => !FOO, but zero regions
+
+#if defined(FOO) && defined(EVIL)
 struct foo {
     int foo;
-#ifdef EVIL
     int evil;
-#else
-    int good;
-#endif // EVIL
 }
-#endif // FOO
+#endif
 
+#if defined(FOO) && !defined(EVIL)
+struct foo {
+    int foo;
+}
+#endif
 
-#ifdef FOO
-    struct foo {
-        int foo;
-
-    #ifdef EVIL
-        int evil;
-    #endif
-
-    #if !defined(EVIL)
-        int good;
-    #endif // EVIL
-    }
-#endif // FOO
 

@@ -10,8 +10,9 @@ fn assert_reduces(init: Expr, gives: Expr) {
     assert_eq!(
         reduced,
         gives,
-        "\ninit = {:?}\ngives = {:?}",
+        "\ninit = {:?}\nreduced = {:?}\ngives = {:?}\n",
         init,
+        reduced,
         gives.sort()
     )
 }
@@ -118,4 +119,40 @@ fn test_reduce_deeply_nested() {
 #[test]
 fn test_reduce_nested_negated() {
     assert_reduces(ape() & !(ape() & bar()), ape() & !bar());
+}
+
+#[test]
+fn test_reduce_nested_negated_2() {
+    let a = || ape();
+    let b = || ape() & bar();
+    let c = || ape() & bar() & chai();
+
+    assert_reduces(a() & b() & c(), ape() & bar() & chai());
+    assert_reduces(a() & b() & !c(), ape() & bar() & !chai());
+    assert_reduces(a() & !b() & c(), Expr::False);
+    assert_reduces(a() & !b() & !c(), ape() & !bar());
+}
+
+#[test]
+fn test_reduce_nested_negated_3() {
+    let init = ape() & (ape() & bar()) & (ape() & !bar()) & ape();
+    assert_reduces(init, Expr::False);
+}
+
+#[test]
+fn test_reduce_nested_negated_4() {
+    let init = ape() & (ape() & bar()) & !(ape() & !bar()) & ape();
+    assert_reduces(init, ape() & bar());
+}
+
+#[test]
+fn test_reduce_nested_negated_5() {
+    let init = ape() & !(ape() & bar()) & (ape() & !bar()) & ape();
+    assert_reduces(init, ape() & !bar());
+}
+
+#[test]
+fn test_reduce_nested_negated_6() {
+    let init = ape() & !(ape() & bar()) & !(ape() & !bar()) & ape();
+    assert_reduces(init, Expr::False);
 }
