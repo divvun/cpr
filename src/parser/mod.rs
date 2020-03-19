@@ -9,7 +9,7 @@ use thiserror::Error;
 
 use custom_debug_derive::CustomDebug;
 use hashbrown::HashMap;
-use lang_c::ast::Expression;
+use lang_c::{ast::Expression, driver};
 use regex::Regex;
 use std::{
     cmp::Ordering,
@@ -326,6 +326,109 @@ impl Not for Expr {
     }
 }
 
+struct Atom<'a> {
+    expr: Expr,
+    lines: Vec<&'a str>,
+}
+
+struct Molecule<'a> {
+    config: &'a driver::Config,
+    atoms: Vec<Atom<'a>>,
+}
+
+impl<'a> Molecule<'a> {
+    fn new(config: &'a driver::Config) -> Self {
+        Self {
+            config,
+            atoms: Default::default(),
+        }
+    }
+
+    /// Returns true if molecule has zero atoms
+    fn is_empty(&self) -> bool {
+        self.atoms.is_empty()
+    }
+
+    /// Add a new atom to the list
+    fn push(&mut self, atom: Atom<'a>) {
+        self.atoms.push(atom)
+    }
+
+    /// Return the number of atoms in this molecule
+    fn len(&self) -> usize {
+        self.atoms.len()
+    }
+
+    /// Returns true if all atoms put together parse as a series of C external
+    /// declarations
+    fn try_parse(&self) -> Option<driver::SyntaxError> {
+        let source = self.source(&mut self.atoms.iter());
+        self.parse(source).err()
+    }
+
+    /// Returns a single String for the source of all given atoms put together
+    fn source(&self, iter: &mut dyn Iterator<Item = &Atom>) -> String {
+        iter.map(|r| r.lines.iter().copied())
+            .flatten()
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    /// Parses C code
+    fn parse(&self, source: String) -> Result<driver::Parse, driver::SyntaxError> {
+        driver::parse_preprocessed(self.config, source)
+    }
+
+    fn chunks(&self) -> Vec<Chunk> {
+        let mut chunks = Vec::new();
+        variations(self.len(), &mut |toggles| {
+            let pairs: Vec<_> = self.atoms.iter().zip(toggles).collect();
+            log::debug!(
+                "Trying chunk with {} pairs, {} enabled",
+                pairs.len(),
+                pairs.iter().filter(|(_, on)| *on).count()
+            );
+            let expr = pairs.iter().fold(Expr::True, |acc, (atom, on)| {
+                acc & if *on {
+                    atom.expr.clone()
+                } else {
+                    !atom.expr.clone()
+                }
+            });
+            log::debug!("Expr = {:?}", expr);
+            let expr = expr.simplify();
+            log::debug!("Simplified expr = {:?}", expr);
+            if matches!(expr, Expr::False) {
+                log::debug!("Degenerate expr, skipping");
+                return;
+            }
+
+            let atoms: Vec<_> = pairs
+                .iter()
+                .copied()
+                .filter_map(|(atom, on)| if on { Some(atom) } else { None })
+                .collect();
+            if atoms.is_empty() {
+                log::debug!("No atoms, skipping");
+                return;
+            }
+
+            let source = self.source(&mut atoms.iter().copied());
+            match self.parse(source) {
+                Ok(driver::Parse { source, unit }) => chunks.push(Chunk {
+                    source: SourceString(source),
+                    unit,
+                    expr,
+                }),
+                Err(e) => {
+                    log::debug!("Unsound atom, skipping: {:?}", e);
+                }
+            }
+        });
+        chunks
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Include {
     System(PathBuf),
@@ -417,10 +520,10 @@ pub enum Error {
 }
 
 #[derive(Debug)]
-pub struct SyntaxError(pub lang_c::driver::SyntaxError);
+pub struct SyntaxError(pub driver::SyntaxError);
 
-impl From<lang_c::driver::SyntaxError> for Error {
-    fn from(e: lang_c::driver::SyntaxError) -> Self {
+impl From<driver::SyntaxError> for Error {
+    fn from(e: driver::SyntaxError) -> Self {
         Self::Syntax(SyntaxError(e))
     }
 }
@@ -447,6 +550,16 @@ pub struct Chunk {
     pub unit: lang_c::ast::TranslationUnit,
 }
 
+impl Chunk {
+    fn new(parse: driver::Parse, expr: Expr) -> Self {
+        Chunk {
+            source: SourceString(parse.source),
+            unit: parse.unit,
+            expr,
+        }
+    }
+}
+
 #[derive(PartialEq, Eq)]
 pub struct SourceString(pub String);
 
@@ -466,9 +579,12 @@ impl AsRef<str> for SourceString {
     }
 }
 
-impl From<&str> for SourceString {
-    fn from(s: &str) -> Self {
-        Self(s.to_string())
+impl<T> From<T> for SourceString
+where
+    T: Into<String>,
+{
+    fn from(t: T) -> Self {
+        Self(t.into())
     }
 }
 
@@ -546,86 +662,83 @@ impl ParsedUnit {
         })
     }
 
-    pub fn chunks(&self) -> Result<Vec<Chunk>, Error> {
+    fn atoms(&self) -> VecDeque<Atom<'_>> {
         let lines = self.source.lines().collect::<Vec<&str>>();
         let directive_pattern = Regex::new(r"^\s*#").unwrap();
 
-        let config = lang_c::driver::Config {
+        self.def_ranges
+            .iter()
+            .filter_map(|(range, expr)| {
+                let mut region_lines = Vec::new();
+                for &line in &lines[range] {
+                    let line = line.trim();
+                    if line.is_empty() {
+                        continue;
+                    }
+                    if directive_pattern.is_match(line) {
+                        continue;
+                    }
+                    region_lines.push(line);
+                }
+
+                if region_lines.is_empty() {
+                    None
+                } else {
+                    Some(Atom {
+                        lines: region_lines,
+                        expr: expr.clone(),
+                    })
+                }
+            })
+            .collect()
+    }
+
+    pub fn chunks(&self) -> Result<Vec<Chunk>, Error> {
+        let config = driver::Config {
             cpp_command: "".into(),
             cpp_options: Vec::new(),
-            flavor: lang_c::driver::Flavor::MsvcC11,
+            flavor: driver::Flavor::MsvcC11,
         };
 
-        let mut res = Vec::new();
+        let mut chunks = Vec::new();
+        let mut atom_queue = self.atoms();
+        let mut molecule = Molecule::new(&config);
 
-        struct Region<'a> {
-            expr: Expr,
-            lines: Vec<&'a str>,
-        }
+        loop {
+            log::debug!("Looping...");
 
-        use lang_c::driver;
-        let mut regions = vec![];
-
-        for (range, expr) in self.def_ranges.iter() {
-            let mut region_lines = Vec::new();
-            for &line in &lines[range] {
-                let line = line.trim();
-                if line.is_empty() {
-                    continue;
-                }
-                if directive_pattern.is_match(line) {
-                    continue;
-                }
-                region_lines.push(line);
+            let mut must_finish = false;
+            match atom_queue.pop_front() {
+                Some(atom) => molecule.push(atom),
+                None => must_finish = true,
             }
 
-            if !region_lines.is_empty() {
-                regions.push(Region {
-                    lines: region_lines,
-                    expr: expr.clone(),
-                });
-            }
-
-            if regions.is_empty() {
+            if molecule.is_empty() {
+                if must_finish {
+                    log::debug!("Finished with empty molecule");
+                    return Ok(chunks);
+                }
+                log::debug!("Molecule empty so far, continuing");
                 continue;
             }
 
-            let megachunk_source = regions
-                .iter()
-                .map(|r| r.lines.iter().copied())
-                .flatten()
-                .collect::<Vec<_>>()
-                .join("\n");
-            println!("megachunk source:\n{}", megachunk_source);
-            match driver::parse_preprocessed(&config, megachunk_source) {
-                Ok(_) => {
-                    let chunk_source = regions
-                        .iter()
-                        .map(|r| r.lines.iter().copied())
-                        .flatten()
-                        .collect::<Vec<_>>()
-                        .join("\n");
-                    match driver::parse_preprocessed(&config, chunk_source) {
-                        Ok(driver::Parse { source, unit }) => {
-                            res.push(Chunk {
-                                source: SourceString(source),
-                                unit,
-                                expr: expr.clone(), // FIXME
-                            });
-                        }
-                        Err(e) => {
-                            println!("incomplete: {:?}", e);
-                        }
+            match molecule.try_parse() {
+                Some(err) => {
+                    log::debug!("Molecule isn't sound yet: {:?}", err);
+                    if must_finish {
+                        log::debug!("Ran out of atoms while trying to make a complete molecule");
+                        return Err(err)?;
                     }
-                    regions.clear();
                 }
-                Err(e) => {
-                    println!("needs more regions: {:?}", e);
+                None => {
+                    log::debug!("Found sound molecule, length {}", molecule.len());
+                    chunks.extend(molecule.chunks());
+
+                    log::debug!("Resetting molecule..");
+                    molecule = Molecule::new(&config);
                 }
             }
         }
-
-        Ok(res)
     }
 }
 

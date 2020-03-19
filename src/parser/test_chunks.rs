@@ -151,15 +151,15 @@ struct foo {
             (
                 expr("EVIL"),
                 "struct foo {
-                int lawful;
-                int evil;
-            };",
+int lawful;
+int evil;
+};",
             ),
             (
                 !expr("EVIL"),
                 "struct foo {
-                int lawful;
-            };",
+int lawful;
+};",
             ),
         ],
     )
