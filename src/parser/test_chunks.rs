@@ -103,7 +103,7 @@ char *c = \"hello // world\";
 }
 
 #[test]
-fn chunks_basic() {
+fn single_atom_strands() {
     test(
         "
 #ifdef FOO
@@ -119,7 +119,7 @@ int bar();
 }
 
 #[test]
-fn chunks_nested() {
+fn nested_ifdefs() {
     test(
         "
 #ifdef FOO
@@ -137,7 +137,7 @@ int foobar();
 }
 
 #[test]
-fn chunks_evil() {
+fn chunks_gated_struct_field() {
     test(
         "
 struct foo {
@@ -166,7 +166,7 @@ int lawful;
 }
 
 #[test]
-fn chunks_evil_2() {
+fn chunks_gated_struct_field_ifelse() {
     test(
         "
 struct foo {
@@ -196,3 +196,43 @@ int good;
         ],
     )
 }
+
+#[test]
+fn gated_struct_close_ifelse_xxx() {
+    env_logger::init();
+
+    test(
+        "
+struct foo {
+    int lawful;
+#ifdef EVIL
+};
+#else 
+};
+#endif
+        ",
+        &[
+            (
+                expr("EVIL"),
+                "struct foo {
+int lawful;
+};",
+            ),
+            (
+                !expr("EVIL"),
+                "struct foo {
+int lawful;
+};",
+            ),
+        ],
+    )
+}
+
+/*
+
+     ([atom1, atom2, atom3], [])
+  => ([atom3], [strand1([atom1, atom2])])
+  => can't find molecule!
+
+
+*/

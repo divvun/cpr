@@ -700,12 +700,13 @@ impl ParsedUnit {
             flavor: driver::Flavor::MsvcC11,
         };
 
-        let mut chunks = Vec::new();
         let mut atom_queue = self.atoms();
+
+        let mut strands = Vec::new();
         let mut strand = Strand::new(&config);
 
-        loop {
-            log::debug!("Looping...");
+        'knit: loop {
+            log::debug!("Knitting...");
 
             let mut must_finish = false;
             match atom_queue.pop_front() {
@@ -716,7 +717,7 @@ impl ParsedUnit {
             if strand.is_empty() {
                 if must_finish {
                     log::debug!("Finished with empty strand");
-                    return Ok(chunks);
+                    break 'knit;
                 }
                 log::debug!("Strand empty so far, continuing");
                 continue;
@@ -724,21 +725,42 @@ impl ParsedUnit {
 
             match strand.try_parse() {
                 Some(err) => {
-                    log::debug!("Strand isn't sound yet: {:?}", err);
+                    use codespan_reporting::{
+                        diagnostic::{Diagnostic, Label},
+                        files::SimpleFile,
+                        term::{
+                            self,
+                            termcolor::{ColorChoice, StandardStream},
+                        },
+                    };
+                    let writer = StandardStream::stderr(ColorChoice::Always);
+                    let config = codespan_reporting::term::Config::default();
+                    let files = SimpleFile::new("strand.h", &err.source);
+                    let diags = Diagnostic::error()
+                        .with_message(format!("Strand incomplete (len {})", strand.len()))
+                        .with_labels(vec![Label::primary((), err.offset..err.offset)
+                            .with_message(format!("Expected one of: {:?}", err.expected))]);
+                    term::emit(&mut writer.lock(), &config, &files, &diags).unwrap();
                     if must_finish {
                         log::debug!("Ran out of atoms while trying to make a complete strand");
                         return Err(err)?;
                     }
                 }
                 None => {
-                    log::debug!("Found sound strand, length {}", strand.len());
-                    chunks.extend(strand.chunks());
+                    log::debug!("Strand complete (len {})", strand.len());
+                    strands.push(strand);
 
                     log::debug!("Resetting strand..");
                     strand = Strand::new(&config);
                 }
             }
         }
+
+        Ok(strands
+            .iter()
+            .map(|strand| strand.chunks())
+            .flatten()
+            .collect())
     }
 }
 
