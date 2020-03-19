@@ -164,3 +164,35 @@ int lawful;
         ],
     )
 }
+
+#[test]
+fn chunks_evil_2() {
+    test(
+        "
+struct foo {
+    int lawful;
+#ifdef EVIL
+    int evil;
+#else 
+    int good;
+#endif
+};
+        ",
+        &[
+            (
+                expr("EVIL"),
+                "struct foo {
+int lawful;
+int evil;
+};",
+            ),
+            (
+                !expr("EVIL"),
+                "struct foo {
+int lawful;
+int good;
+};",
+            ),
+        ],
+    )
+}

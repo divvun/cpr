@@ -331,12 +331,12 @@ struct Atom<'a> {
     lines: Vec<&'a str>,
 }
 
-struct Molecule<'a> {
+struct Strand<'a> {
     config: &'a driver::Config,
     atoms: Vec<Atom<'a>>,
 }
 
-impl<'a> Molecule<'a> {
+impl<'a> Strand<'a> {
     fn new(config: &'a driver::Config) -> Self {
         Self {
             config,
@@ -344,7 +344,7 @@ impl<'a> Molecule<'a> {
         }
     }
 
-    /// Returns true if molecule has zero atoms
+    /// Returns true if strand has zero atoms
     fn is_empty(&self) -> bool {
         self.atoms.is_empty()
     }
@@ -354,7 +354,7 @@ impl<'a> Molecule<'a> {
         self.atoms.push(atom)
     }
 
-    /// Return the number of atoms in this molecule
+    /// Return the number of atoms in this strand
     fn len(&self) -> usize {
         self.atoms.len()
     }
@@ -702,40 +702,40 @@ impl ParsedUnit {
 
         let mut chunks = Vec::new();
         let mut atom_queue = self.atoms();
-        let mut molecule = Molecule::new(&config);
+        let mut strand = Strand::new(&config);
 
         loop {
             log::debug!("Looping...");
 
             let mut must_finish = false;
             match atom_queue.pop_front() {
-                Some(atom) => molecule.push(atom),
+                Some(atom) => strand.push(atom),
                 None => must_finish = true,
             }
 
-            if molecule.is_empty() {
+            if strand.is_empty() {
                 if must_finish {
-                    log::debug!("Finished with empty molecule");
+                    log::debug!("Finished with empty strand");
                     return Ok(chunks);
                 }
-                log::debug!("Molecule empty so far, continuing");
+                log::debug!("Strand empty so far, continuing");
                 continue;
             }
 
-            match molecule.try_parse() {
+            match strand.try_parse() {
                 Some(err) => {
-                    log::debug!("Molecule isn't sound yet: {:?}", err);
+                    log::debug!("Strand isn't sound yet: {:?}", err);
                     if must_finish {
-                        log::debug!("Ran out of atoms while trying to make a complete molecule");
+                        log::debug!("Ran out of atoms while trying to make a complete strand");
                         return Err(err)?;
                     }
                 }
                 None => {
-                    log::debug!("Found sound molecule, length {}", molecule.len());
-                    chunks.extend(molecule.chunks());
+                    log::debug!("Found sound strand, length {}", strand.len());
+                    chunks.extend(strand.chunks());
 
-                    log::debug!("Resetting molecule..");
-                    molecule = Molecule::new(&config);
+                    log::debug!("Resetting strand..");
+                    strand = Strand::new(&config);
                 }
             }
         }

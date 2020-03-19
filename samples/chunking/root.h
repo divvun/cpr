@@ -68,3 +68,24 @@ struct foo {
 #endif
 
 
+//----------------
+
+/* 0 FOO               */ #if defined(FOO)
+/* 0 FOO               */ struct foo {
+/* 1 FOO & BAR         */ #if defined(BAR)
+/* 1 FOO & BAR         */     struct {
+/* 2 FOO & BAR & BAZ   */ #if defined(BAZ)
+/* 2 FOO & BAR & BAZ   */     } baz;
+/* 3 FOO & BAR & !BAZ  */ #else
+/* 3 FOO & BAR & !BAZ  */     } bar;
+/* 4 FOO & BAR         */ #endif // BAZ
+/* 5 FOO               */ #endif // BAR
+/* 5 FOO               */ };
+/* 6 true              */ #endif // FOO
+
+// these regions make up valid C code:
+
+/* 0 FOO               */ #if defined(FOO)
+/* 0 FOO               */ struct foo {
+/* 2 FOO & BAR & BAZ   */ #if defined(BAZ)
+/* 2 FOO & BAR & BAZ   */     } baz;
