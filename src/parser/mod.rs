@@ -361,9 +361,8 @@ impl<'a> Strand<'a> {
 
     /// Returns true if all atoms put together parse as a series of C external
     /// declarations
-    fn try_parse(&self) -> Option<driver::SyntaxError> {
-        let source = self.source(&mut self.atoms.iter());
-        self.parse(source).err()
+    fn has_complete_variants(&self) -> bool {
+        !self.chunks().is_empty()
     }
 
     /// Returns a single String for the source of all given atoms put together
@@ -383,23 +382,26 @@ impl<'a> Strand<'a> {
         let mut chunks = Vec::new();
         variations(self.len(), &mut |toggles| {
             let pairs: Vec<_> = self.atoms.iter().zip(toggles).collect();
-            log::debug!(
-                "Trying chunk with {} pairs, {} enabled",
-                pairs.len(),
-                pairs.iter().filter(|(_, on)| *on).count()
-            );
-            let expr = pairs.iter().fold(Expr::True, |acc, (atom, on)| {
+            let base_expr = pairs.iter().fold(Expr::True, |acc, (atom, on)| {
                 acc & if *on {
                     atom.expr.clone()
                 } else {
                     !atom.expr.clone()
                 }
             });
-            log::debug!("Expr = {:?}", expr);
-            let expr = expr.simplify();
-            log::debug!("Simplified expr = {:?}", expr);
+            let expr = base_expr.simplify();
+            log::debug!(
+                "[{}] {:?} => {:?}",
+                pairs
+                    .iter()
+                    .map(|(_, on)| if *on { "1" } else { "0" })
+                    .collect::<Vec<_>>()
+                    .join(""),
+                base_expr,
+                expr
+            );
             if matches!(expr, Expr::False) {
-                log::debug!("Degenerate expr, skipping");
+                log::debug!("(!) Always-false condition");
                 return;
             }
 
@@ -409,7 +411,7 @@ impl<'a> Strand<'a> {
                 .filter_map(|(atom, on)| if on { Some(atom) } else { None })
                 .collect();
             if atoms.is_empty() {
-                log::debug!("No atoms, skipping");
+                log::debug!("(!) Empty strand");
                 return;
             }
 
@@ -421,10 +423,13 @@ impl<'a> Strand<'a> {
                     expr,
                 }),
                 Err(e) => {
-                    log::debug!("Unsound atom, skipping: {:?}", e);
+                    log::debug!("(!) Incomplete strand: {:?}", e);
                 }
             }
         });
+        if !chunks.is_empty() {
+            log::debug!("Found {} complete chunks", chunks.len());
+        }
         chunks
     }
 }
@@ -517,6 +522,8 @@ pub enum Error {
     NotFound(Include),
     #[error("C syntax error: {0}")]
     Syntax(SyntaxError),
+    #[error("Could not knit atoms together. Source = \n{0}")]
+    CouldNotKnit(String),
 }
 
 #[derive(Debug)]
@@ -702,7 +709,7 @@ impl ParsedUnit {
 
         let mut atom_queue = self.atoms();
 
-        let mut strands = Vec::new();
+        let mut strands: Vec<Strand> = Vec::new();
         let mut strand = Strand::new(&config);
 
         'knit: loop {
@@ -723,35 +730,48 @@ impl ParsedUnit {
                 continue;
             }
 
-            match strand.try_parse() {
-                Some(err) => {
-                    use codespan_reporting::{
-                        diagnostic::{Diagnostic, Label},
-                        files::SimpleFile,
-                        term::{
-                            self,
-                            termcolor::{ColorChoice, StandardStream},
-                        },
-                    };
-                    let writer = StandardStream::stderr(ColorChoice::Always);
-                    let config = codespan_reporting::term::Config::default();
-                    let files = SimpleFile::new("strand.h", &err.source);
-                    let diags = Diagnostic::error()
-                        .with_message(format!("Strand incomplete (len {})", strand.len()))
-                        .with_labels(vec![Label::primary((), err.offset..err.offset)
-                            .with_message(format!("Expected one of: {:?}", err.expected))]);
-                    term::emit(&mut writer.lock(), &config, &files, &diags).unwrap();
-                    if must_finish {
-                        log::debug!("Ran out of atoms while trying to make a complete strand");
-                        return Err(err)?;
-                    }
-                }
-                None => {
-                    log::debug!("Strand complete (len {})", strand.len());
-                    strands.push(strand);
+            if strand.has_complete_variants() {
+                log::debug!("Strand complete (len {})", strand.len());
+                strands.push(strand);
 
-                    log::debug!("Resetting strand..");
-                    strand = Strand::new(&config);
+                log::debug!("Resetting strand..");
+                strand = Strand::new(&config);
+            } else {
+                if must_finish {
+                    log::debug!(
+                        "Ran out of atoms while trying to make a complete strand (got {} so far)",
+                        strand.len()
+                    );
+
+                    match strands.pop() {
+                        Some(prev) => {
+                            log::debug!(
+                                "Trying to backtrack by extending previous strand (len {})",
+                                prev.len()
+                            );
+                            atom_queue.extend(strand.atoms.drain(..));
+                            strand = prev;
+                            log::debug!(
+                                "Extended strand (len {}) now has source:\n{}",
+                                strand.len(),
+                                strand.source(&mut strand.atoms.iter())
+                            );
+                            continue 'knit;
+                        }
+                        None => {
+                            log::debug!("No previous strand, can't backtrack");
+                            return Err(Error::CouldNotKnit(
+                                strand
+                                    .atoms
+                                    .iter()
+                                    .map(|atom| {
+                                        format!("// ~> {:?}\n{}", atom.expr, atom.lines.join("\n"))
+                                    })
+                                    .collect::<Vec<_>>()
+                                    .join("\n"),
+                            ));
+                        }
+                    }
                 }
             }
         }

@@ -227,12 +227,3 @@ int lawful;
         ],
     )
 }
-
-/*
-
-     ([atom1, atom2, atom3], [])
-  => ([atom3], [strand1([atom1, atom2])])
-  => can't find molecule!
-
-
-*/
