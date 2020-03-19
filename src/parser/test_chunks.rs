@@ -198,9 +198,7 @@ int good;
 }
 
 #[test]
-fn gated_struct_close_ifelse_xxx() {
-    env_logger::init();
-
+fn gated_struct_close_ifelse() {
     test(
         "
 struct foo {
@@ -222,6 +220,43 @@ int lawful;
                 !expr("EVIL"),
                 "struct foo {
 int lawful;
+};",
+            ),
+        ],
+    )
+}
+
+#[test]
+fn gated_struct_close_convoluted_xxx() {
+    env_logger::init(); // XXX: remove me
+
+    test(
+        "
+struct foo {
+    int foo;
+#ifdef BAR
+    struct bar {
+        int bar;
+#endif // BAR
+#ifdef BAZ
+    } nested;
+#endif // BAZ
+};
+        ",
+        &[
+            (
+                expr("BAR") & expr("BAZ"),
+                "struct foo {
+int foo;
+struct bar {
+int bar;
+} nested;
+};",
+            ),
+            (
+                !expr("BAR") & !expr("BAZ"),
+                "struct foo {
+int foo;
 };",
             ),
         ],

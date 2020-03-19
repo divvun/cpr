@@ -382,6 +382,11 @@ impl<'a> Strand<'a> {
         let mut chunks = Vec::new();
         variations(self.len(), &mut |toggles| {
             let pairs: Vec<_> = self.atoms.iter().zip(toggles).collect();
+            if let Some((_, false)) = pairs.get(0) {
+                // skip first-false
+                return;
+            }
+
             let base_expr = pairs.iter().fold(Expr::True, |acc, (atom, on)| {
                 acc & if *on {
                     atom.expr.clone()
@@ -417,11 +422,14 @@ impl<'a> Strand<'a> {
 
             let source = self.source(&mut atoms.iter().copied());
             match self.parse(source) {
-                Ok(driver::Parse { source, unit }) => chunks.push(Chunk {
-                    source: SourceString(source),
-                    unit,
-                    expr,
-                }),
+                Ok(driver::Parse { source, unit }) => {
+                    log::debug!("(✔) Valid chunk");
+                    chunks.push(Chunk {
+                        source: SourceString(source),
+                        unit,
+                        expr,
+                    })
+                }
                 Err(e) => {
                     log::debug!("(!) Incomplete strand: {:?}", e);
                 }

@@ -89,3 +89,18 @@ struct foo {
 /* 0 FOO               */ struct foo {
 /* 2 FOO & BAR & BAZ   */ #if defined(BAZ)
 /* 2 FOO & BAR & BAZ   */     } baz;
+
+// ---------
+
+#if defined(FOO)
+struct foo {
+#if defined(BAR)
+    struct {
+#if defined(BAZ)
+    } baz;
+#else
+    } bar;
+#endif // BAZ
+#endif // BAR
+};
+#endif // FOO
