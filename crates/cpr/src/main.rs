@@ -5,7 +5,7 @@ mod parser;
 mod translator;
 
 use argh::*;
-use parser::{ChunkedUnit, Include, Parser};
+use parser::{ChunkedUnit, Context, Include, Parser};
 use std::error::Error;
 
 use std::{collections::HashMap, path::PathBuf};
@@ -65,6 +65,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     log::debug!("Done parsing!");
 
+    let ctx = Context::new();
     let sources: Vec<_> = parser.iter().collect();
     let mut parsed: HashMap<Include, ChunkedUnit> = HashMap::new();
 
@@ -76,7 +77,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             log::debug!("Adding dep {:?}", inc);
             deps.push(parsed.get(inc).unwrap());
         }
-        let cu = unit.chunkify(&deps[..]).unwrap();
+        let cu = unit.chunkify(&deps[..], &ctx).unwrap();
 
         log::debug!("{:?}: {} chunks", include, cu.chunks.len());
         for chunk in &cu.chunks {

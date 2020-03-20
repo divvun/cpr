@@ -18,8 +18,11 @@ use std::{
     path::{Path, PathBuf},
 };
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Define {
+    Blacklist {
+        name: String,
+    },
     Value {
         name: String,
         value: Option<String>,
@@ -31,11 +34,37 @@ pub enum Define {
     },
 }
 
+#[derive(Clone)]
+pub struct Context {
+    defines: HashMap<String, Define>,
+}
+
+impl Context {
+    pub fn new() -> Self {
+        let mut res = Context {
+            defines: HashMap::new(),
+        };
+        res.push(Define::Blacklist {
+            name: "__cplusplus".into(),
+        });
+        res
+    }
+
+    pub fn push(&mut self, d: Define) {
+        self.defines.insert(d.name().to_string(), d);
+    }
+
+    pub fn pop(&mut self, name: &str) {
+        self.defines.remove(name);
+    }
+}
+
 impl Define {
     fn name(&self) -> &str {
         match self {
-            Define::Value { name, .. } => &*name,
-            Define::Replacement { name, .. } => &*name,
+            Define::Blacklist { name, .. } => name,
+            Define::Value { name, .. } => name,
+            Define::Replacement { name, .. } => name,
         }
     }
 }
@@ -54,7 +83,7 @@ pub enum Expr {
     Not(Box<Expr>),
 }
 
-#[derive(Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub enum BinaryOperator {
     Less,
     LessOrEqual,
@@ -265,6 +294,51 @@ impl Expr {
         }
     }
 
+    fn eval(&self, ctx: &Context) -> Expr {
+        use Expr::*;
+
+        match self {
+            True | False => self.clone(),
+            And(c) => And(c.iter().map(|v| v.eval(ctx)).collect()),
+            Or(c) => Or(c.iter().map(|v| v.eval(ctx)).collect()),
+            Not(v) => !v.eval(ctx),
+            Defined(name) => match ctx.defines.get(name) {
+                Some(def) => match def {
+                    Define::Blacklist { .. } => {
+                        // explicitly blacklisted
+                        False
+                    }
+                    Define::Value { .. } | Define::Replacement { .. } => {
+                        // explicitly defined
+                        True
+                    }
+                },
+                None => {
+                    // not explicitly defined, it's impossible to tell if it's good or not
+                    self.clone()
+                }
+            },
+            Symbol(_name) => {
+                // TODO: we can do better - by using lang-c to parse `Define::Value`
+                // note: we could be doing that earlier
+                self.clone()
+            }
+            Call(callee, args) => {
+                // TODO: we can do better - by invoking the macro,
+                // which really should be defined at this point.
+                Call(
+                    Box::new(callee.eval(ctx)),
+                    args.iter().map(|arg| arg.eval(ctx)).collect(),
+                )
+            }
+            Binary(op, l, r) => {
+                // TODO: again, we can probably do some maths here, if l and r are constants.
+                Binary(*op, Box::new(l.eval(ctx)), Box::new(r.eval(ctx)))
+            }
+            Integer(_) => self.clone(),
+        }
+    }
+
     fn simplify(&self) -> Expr {
         let mut terms = Terms::new();
         let input = self.as_bool(&mut terms);
@@ -283,9 +357,9 @@ impl Expr {
         match self {
             True => Bool::True,
             False => Bool::False,
-            And(v) => Bool::And(v.into_iter().map(|v| v.as_bool(terms)).collect()),
-            Or(v) => Bool::Or(v.into_iter().map(|v| v.as_bool(terms)).collect()),
-            Not(c) => Bool::Not(Box::new(c.as_bool(terms))),
+            And(c) => Bool::And(c.into_iter().map(|v| v.as_bool(terms)).collect()),
+            Or(c) => Bool::Or(c.into_iter().map(|v| v.as_bool(terms)).collect()),
+            Not(v) => Bool::Not(Box::new(v.as_bool(terms))),
             Defined(_) | Symbol(_) | Call(_, _) | Binary(_, _, _) | Integer(_) => terms.add(self),
         }
     }
@@ -399,8 +473,8 @@ impl<'a> Strand<'a> {
 
     /// Returns true if all atoms put together parse as a series of C external
     /// declarations
-    fn has_complete_variants(&self, env: &mut Env) -> bool {
-        !self.chunks(env).is_empty()
+    fn has_complete_variants(&self, env: &mut Env, ctx: &Context) -> bool {
+        !self.chunks(env, ctx).is_empty()
     }
 
     /// Returns a single String for the source of all given atoms put together
@@ -425,7 +499,7 @@ impl<'a> Strand<'a> {
         }
     }
 
-    fn chunks(&self, env: &mut Env) -> Vec<Chunk> {
+    fn chunks(&self, env: &mut Env, ctx: &Context) -> Vec<Chunk> {
         let mut chunks = Vec::new();
         variations(self.len(), &mut |toggles| {
             let pairs: Vec<_> = self.atoms.iter().zip(toggles).collect();
@@ -441,7 +515,7 @@ impl<'a> Strand<'a> {
                     !atom.expr.clone()
                 }
             });
-            let expr = base_expr.simplify();
+            let expr = base_expr.eval(ctx).simplify();
             log::debug!(
                 "[{}] {:?} => {:?}",
                 pairs
@@ -727,13 +801,19 @@ impl ParsedUnit {
         })
     }
 
-    fn atoms(&self) -> VecDeque<Atom<'_>> {
+    fn atoms(&self, ctx: &Context) -> VecDeque<Atom<'_>> {
         let lines = self.source.lines().collect::<Vec<&str>>();
         let directive_pattern = Regex::new(r"^\s*#").unwrap();
 
         self.def_ranges
             .iter()
             .filter_map(|(range, expr)| {
+                let expr = expr.eval(ctx).simplify();
+                if matches!(expr, Expr::False) {
+                    log::debug!("Eliminating range {:?} (always-false)", range);
+                    return None;
+                }
+
                 let mut region_lines = Vec::new();
                 for &line in &lines[range] {
                     let line = line.trim();
@@ -758,8 +838,8 @@ impl ParsedUnit {
             .collect()
     }
 
-    pub fn chunkify(&self, deps: &[&ChunkedUnit]) -> Result<ChunkedUnit, Error> {
-        let mut atom_queue = self.atoms();
+    pub fn chunkify(&self, deps: &[&ChunkedUnit], ctx: &Context) -> Result<ChunkedUnit, Error> {
+        let mut atom_queue = self.atoms(ctx);
         let mut env = Env::with_msvc();
         for dep in deps {
             for typename in &dep.typenames {
@@ -795,7 +875,7 @@ impl ParsedUnit {
                 continue;
             }
 
-            if strand.has_complete_variants(&mut env) {
+            if strand.has_complete_variants(&mut env, ctx) {
                 log::debug!("Strand complete (len {})", strand.len());
                 strands.push(strand);
 
@@ -843,7 +923,7 @@ impl ParsedUnit {
 
         let chunks = strands
             .iter()
-            .map(|strand| strand.chunks(&mut env))
+            .map(|strand| strand.chunks(&mut env, ctx))
             .flatten()
             .collect();
 

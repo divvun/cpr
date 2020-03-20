@@ -11,7 +11,10 @@ fn parse(source: &str) -> ParsedUnit {
 }
 
 fn chunks(source: &str, deps: &[&ChunkedUnit]) -> Vec<Chunk> {
-    parse(source).chunkify(deps).unwrap().chunks
+    parse(source)
+        .chunkify(deps, &Context::new())
+        .unwrap()
+        .chunks
 }
 
 fn test(source: &str, expected_chunks: &[(Expr, &str)]) {
@@ -329,8 +332,6 @@ fn gated_struct_close_convoluted() {
 
 #[test]
 fn typedef_in_different_chunk() {
-    env_logger::init();
-
     test(
         indoc!(
             "
@@ -395,8 +396,8 @@ fn typedef_in_different_unit() -> Result<(), Box<dyn Error>> {
     let dep = parse(dep_source);
     let root = parse(root_source);
 
-    let dep_unit = dep.chunkify(&[])?;
-    let root_unit = root.chunkify(&[&dep_unit])?;
+    let dep_unit = dep.chunkify(&[], &Context::new())?;
+    let root_unit = root.chunkify(&[&dep_unit], &Context::new())?;
     assert_chunks(
         &root_unit.chunks[..],
         &[(
@@ -411,4 +412,31 @@ fn typedef_in_different_unit() -> Result<(), Box<dyn Error>> {
     );
 
     Ok(())
+}
+
+#[test]
+fn cplusplus() {
+    test(
+        indoc!(
+            r#"
+            #ifdef __cplusplus
+            extern "C" {
+            #endif
+
+            int foo(int bar);
+
+            #ifdef __cplusplus
+            }
+            #endif
+            "#
+        ),
+        &[(
+            Expr::True,
+            indoc!(
+                "
+                int foo(int bar);
+                "
+            ),
+        )],
+    )
 }
