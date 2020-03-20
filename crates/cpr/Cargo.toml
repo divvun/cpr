@@ -19,6 +19,7 @@ thiserror = "1.0.11"
 custom_debug_derive = "0.4.0"
 quine-mc_cluskey = "0.2.4"
 codespan-reporting = "0.9.0"
+indoc = "0.3.4"
 
 [target.'cfg(windows)'.dependencies]
 winreg = "0.7.0"

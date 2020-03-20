@@ -1,4 +1,6 @@
 use super::*;
+use indoc::indoc;
+use std::error::Error;
 
 fn def(s: &str) -> Expr {
     Expr::Defined(s.to_string())
@@ -14,6 +16,10 @@ fn chunks(source: &str, deps: &[&ChunkedUnit]) -> Vec<Chunk> {
 
 fn test(source: &str, expected_chunks: &[(Expr, &str)]) {
     let actual_chunks = chunks(source, &[]);
+    assert_chunks(&actual_chunks[..], expected_chunks);
+}
+
+fn assert_chunks(actual_chunks: &[Chunk], expected_chunks: &[(Expr, &str)]) {
     assert_eq!(actual_chunks.len(), expected_chunks.len());
     for (i, (actual, expected)) in actual_chunks.iter().zip(expected_chunks.iter()).enumerate() {
         assert_eq!(actual.expr, expected.0, "expr for chunk #{}", i);
@@ -29,10 +35,12 @@ fn test(source: &str, expected_chunks: &[(Expr, &str)]) {
 #[test]
 fn single_line_comment() {
     test(
-        "
-// single-line comment
-int foo();
-    ",
+        indoc!(
+            "
+            // single-line comment
+            int foo();
+            "
+        ),
         &[(Expr::True, "int foo();")],
     );
 }
@@ -40,11 +48,13 @@ int foo();
 #[test]
 fn single_line_comment_continued() {
     test(
-        "
-// single-line comment, \\
-continued
-int foo();
-    ",
+        indoc!(
+            "
+            // single-line comment, \\
+            continued
+            int foo();
+            "
+        ),
         &[(Expr::True, "int foo();")],
     );
 }
@@ -52,10 +62,12 @@ int foo();
 #[test]
 fn multi_line_comment_1_line() {
     test(
-        "
-/* classic multi-line comment */
-int foo();
-    ",
+        indoc!(
+            "
+            /* classic multi-line comment */
+            int foo();
+            "
+        ),
         &[(Expr::True, "int foo();")],
     );
 }
@@ -63,11 +75,13 @@ int foo();
 #[test]
 fn multi_line_comment_2_lines() {
     test(
-        "
-/* classic multi-line comment
- * but on multiple lines */
-int foo();
-    ",
+        indoc!(
+            "
+            /* classic multi-line comment
+            * but on multiple lines */
+            int foo();
+            "
+        ),
         &[(Expr::True, "int foo();")],
     );
 }
@@ -75,9 +89,11 @@ int foo();
 #[test]
 fn multi_line_comment_nested() {
     test(
-        "
-int/* boop */foo();
-    ",
+        indoc!(
+            "
+            int/* boop */foo();
+            "
+        ),
         &[(Expr::True, "int foo();")],
     );
 }
@@ -85,9 +101,11 @@ int/* boop */foo();
 #[test]
 fn string_literal_1() {
     test(
-        "
-char *c = \"hello /* world */\";
-    ",
+        indoc!(
+            "
+            char *c = \"hello /* world */\";
+            "
+        ),
         &[(Expr::True, "char *c = \"hello /* world */\";")],
     );
 }
@@ -95,9 +113,11 @@ char *c = \"hello /* world */\";
 #[test]
 fn string_literal_2() {
     test(
-        "
-char *c = \"hello // world\";
-    ",
+        indoc!(
+            "
+            char *c = \"hello // world\";
+            "
+        ),
         &[(Expr::True, "char *c = \"hello // world\";")],
     );
 }
@@ -105,15 +125,17 @@ char *c = \"hello // world\";
 #[test]
 fn single_atom_strands() {
     test(
-        "
-#ifdef FOO
-int foo();
-#endif
+        indoc!(
+            "
+            #ifdef FOO
+            int foo();
+            #endif
 
-#ifdef BAR
-int bar();
-#endif
-    ",
+            #ifdef BAR
+            int bar();
+            #endif
+            "
+        ),
         &[(def("FOO"), "int foo();"), (def("BAR"), "int bar();")],
     )
 }
@@ -121,14 +143,18 @@ int bar();
 #[test]
 fn nested_ifdefs() {
     test(
-        "
-#ifdef FOO
-int foo();
-#ifdef BAR
-int foobar();
-#endif // BAR
-#endif // FOO
-        ",
+        indoc!(
+            "
+            #ifdef FOO
+            int foo();
+
+            #ifdef BAR
+            int foobar();
+            #endif // BAR
+
+            #endif // FOO
+            "
+        ),
         &[
             (def("FOO"), "int foo();"),
             (def("FOO") & def("BAR"), "int foobar();"),
@@ -139,27 +165,37 @@ int foobar();
 #[test]
 fn chunks_gated_struct_field() {
     test(
-        "
-struct foo {
-    int lawful;
-#ifdef EVIL
-    int evil;
-#endif // EVIL
-};
-        ",
+        indoc!(
+            "
+            struct foo {
+                int lawful;
+            #ifdef EVIL
+                int evil;
+            #endif // EVIL
+            };
+            "
+        ),
         &[
             (
                 def("EVIL"),
-                "struct foo {
-int lawful;
-int evil;
-};",
+                indoc!(
+                    "
+                    struct foo {
+                    int lawful;
+                    int evil;
+                    };
+                    "
+                ),
             ),
             (
                 !def("EVIL"),
-                "struct foo {
-int lawful;
-};",
+                indoc!(
+                    "
+                    struct foo {
+                    int lawful;
+                    };
+                    "
+                ),
             ),
         ],
     )
@@ -168,30 +204,40 @@ int lawful;
 #[test]
 fn chunks_gated_struct_field_ifelse() {
     test(
-        "
-struct foo {
-    int lawful;
-#ifdef EVIL
-    int evil;
-#else 
-    int good;
-#endif
-};
-        ",
+        indoc!(
+            "
+            struct foo {
+                int lawful;
+            #ifdef EVIL
+                int evil;
+            #else 
+                int good;
+            #endif
+            };
+            "
+        ),
         &[
             (
                 def("EVIL"),
-                "struct foo {
-int lawful;
-int evil;
-};",
+                indoc!(
+                    "
+                    struct foo {
+                    int lawful;
+                    int evil;
+                    };
+                    "
+                ),
             ),
             (
                 !def("EVIL"),
-                "struct foo {
-int lawful;
-int good;
-};",
+                indoc!(
+                    "
+                    struct foo {
+                    int lawful;
+                    int good;
+                    };
+                    "
+                ),
             ),
         ],
     )
@@ -200,27 +246,37 @@ int good;
 #[test]
 fn gated_struct_close_ifelse() {
     test(
-        "
-struct foo {
-    int lawful;
-#ifdef EVIL
-};
-#else 
-};
-#endif
-        ",
+        indoc!(
+            "
+            struct foo {
+                int lawful;
+            #ifdef EVIL
+            };
+            #else 
+            };
+            #endif
+            "
+        ),
         &[
             (
                 def("EVIL"),
-                "struct foo {
-int lawful;
-};",
+                indoc!(
+                    "
+                    struct foo {
+                    int lawful;
+                    };
+                    "
+                ),
             ),
             (
                 !def("EVIL"),
-                "struct foo {
-int lawful;
-};",
+                indoc!(
+                    "
+                    struct foo {
+                    int lawful;
+                    };
+                    "
+                ),
             ),
         ],
     )
@@ -229,63 +285,130 @@ int lawful;
 #[test]
 fn gated_struct_close_convoluted() {
     test(
-        "
-struct foo {
-    int foo;
-#ifdef BAR
-    struct bar {
-        int bar;
-#endif // BAR
-#ifdef BAZ
-    } nested;
-#endif // BAZ
-};
-        ",
+        indoc!(
+            "
+            struct foo {
+                int foo;
+            #ifdef BAR
+                struct bar {
+                    int bar;
+            #endif // BAR
+            #ifdef BAZ
+                } nested;
+            #endif // BAZ
+            };
+            "
+        ),
         &[
             (
                 def("BAR") & def("BAZ"),
-                "struct foo {
-int foo;
-struct bar {
-int bar;
-} nested;
-};",
+                indoc!(
+                    "
+                    struct foo {
+                    int foo;
+                    struct bar {
+                    int bar;
+                    } nested;
+                    };
+                    "
+                ),
             ),
             (
                 !def("BAR") & !def("BAZ"),
-                "struct foo {
-int foo;
-};",
+                indoc!(
+                    "
+                    struct foo {
+                    int foo;
+                    };
+                    "
+                ),
             ),
         ],
     )
 }
 
 #[test]
-fn typedef_in_different_chunk_xxx() {
+fn typedef_in_different_chunk() {
     env_logger::init();
 
     test(
-        "
-typedef struct foo {
-    int a;
-} foo;
+        indoc!(
+            "
+            typedef struct foo {
+                int a;
+            } foo;
 
-#ifdef WOOPS
-int noop(void);
-#endif
+            #ifdef WOOPS
+            int noop(void);
+            #endif
 
-int bar(foo *f);
-    ",
+            int bar(foo *f);
+            "
+        ),
         &[
             (
                 Expr::True,
-                "typedef struct foo {
-int a;
-} foo;",
+                indoc!(
+                    "
+                    typedef struct foo {
+                    int a;
+                    } foo;
+                    "
+                ),
             ),
-            (def("WOOPS"), "int noop(void);"),
-            (Expr::True, "int bar(foo *f);"),
+            (
+                def("WOOPS"),
+                indoc!(
+                    "
+                    int noop(void);
+                    "
+                ),
+            ),
+            (
+                Expr::True,
+                indoc!(
+                    "
+                    int bar(foo *f);
+                    "
+                ),
+            ),
         ],
     )
+}
+
+#[test]
+fn typedef_in_different_unit() -> Result<(), Box<dyn Error>> {
+    let dep_source = indoc!(
+        "
+        typedef struct foo {
+            int bar;
+            int baz;
+        } foo;
+        "
+    );
+    let root_source = indoc!(
+        "
+        void set_foo(foo *arg);
+        foo *get_foo(void);
+        "
+    );
+    let dep = parse(dep_source);
+    let root = parse(root_source);
+
+    let dep_unit = dep.chunkify(&[])?;
+    let root_unit = root.chunkify(&[&dep_unit])?;
+    assert_chunks(
+        &root_unit.chunks[..],
+        &[(
+            Expr::True,
+            indoc!(
+                "
+                void set_foo(foo *arg);
+                foo *get_foo(void);
+                "
+            ),
+        )],
+    );
+
+    Ok(())
 }
