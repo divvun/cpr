@@ -464,3 +464,26 @@ fn include_guard() {
         )],
     )
 }
+
+#[test]
+fn define_on_the_fly() {
+    test(
+        indoc!(
+            "
+            #define ENABLE_FOOBAR
+
+            #ifdef ENABLE_FOOBAR
+            int foobar(void);
+            #endif
+            "
+        ),
+        &[(
+            Expr::True,
+            indoc!(
+                "
+                int foobar(void);
+                "
+            ),
+        )],
+    )
+}

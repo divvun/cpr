@@ -741,8 +741,9 @@ impl ParsedUnit {
         let mut last_if: Option<Expr> = None;
 
         for line in source.lines() {
+            log::debug!("| {}", line);
             if let Some(directive) = directive::parse_directive(line) {
-                log::debug!("{}", line);
+                // log::debug!("{}", line);
                 log::debug!("{:?}", &directive);
 
                 match directive {

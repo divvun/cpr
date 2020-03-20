@@ -53,11 +53,15 @@ peg::parser! { pub(crate) grammar parser() for str {
     pub rule include_line() -> Include
         = H("include") __ t:include_token() _ new_line()? { t }
     rule define_line0() -> Define
-        = H("define") __ i:identifier() __ r:replacement_list()? _ new_line() {
-            Define::Value { name: i.name, value: r.map(|x| x.join(" ")) }
+        = H("define") __ i:identifier() _ new_line()? {
+            Define::Value { name: i.name, value: None }
         }
     rule define_line1() -> Define
-        = H("define") __ i:identifier() "(" _ a:identifier_list() _ ")" __ r:replacement_list() new_line() {
+        = H("define") __ i:identifier() __ r:replacement_list() _ new_line()? {
+            Define::Value { name: i.name, value: Some(r.join(" ")) }
+        }
+    rule define_line2() -> Define
+        = H("define") __ i:identifier() "(" _ a:identifier_list() _ ")" __ r:replacement_list() new_line()? {
             Define::Replacement {
                 name: i.name,
                 args: a.values.into_iter().map(|x| x.name).collect(),
@@ -67,6 +71,7 @@ peg::parser! { pub(crate) grammar parser() for str {
     pub rule define_line() -> Define
         = define_line0()
         / define_line1()
+        / define_line2()
     rule undef_line()
         = H("undef") __ identifier() _ new_line()
         / expected!("#undef")
@@ -211,11 +216,17 @@ pub(crate) fn parse_directive(line: &str) -> Option<Directive> {
         "endif" => Some(EndIf),
         "ifdef" => Some(IfDefined(value)),
         "ifndef" => Some(IfNotDefined(value)),
-        "include" => parser::include_line(&format!("#include {}", &value))
+        "include" => parser::include_line(&format!("#include {}", value))
             .map(Include)
             .map_err(|_| ())
             .ok(),
-        "define" => parser::define_line(&value).map(Define).map_err(|_| ()).ok(),
+        "define" => parser::define_line(dbg!(&format!("#define {}", value)))
+            .map(Define)
+            .map_err(|e| {
+                dbg!(&e);
+                ()
+            })
+            .ok(),
         "undef" => Some(Undefine(value)),
         "error" => Some(Error(value)),
         "pragma" => Some(Pragma(value)),
