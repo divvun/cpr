@@ -220,7 +220,7 @@ pub(crate) fn parse_directive(line: &str) -> Option<Directive> {
             .map(Include)
             .map_err(|_| ())
             .ok(),
-        "define" => parser::define_line(dbg!(&format!("#define {}", value)))
+        "define" => parser::define_line(&format!("#define {}", value))
             .map(Define)
             .map_err(|e| {
                 dbg!(&e);

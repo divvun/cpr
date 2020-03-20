@@ -542,6 +542,7 @@ impl<'a> Strand<'a> {
             }
 
             let source = self.source(&mut atoms.iter().copied());
+            log::debug!("Parsing source:\n{:?}", SourceString(source.clone()));
             match Self::parse(source, env) {
                 Ok(driver::Parse { source, unit }) => {
                     log::debug!("(✔) Valid chunk");
@@ -804,7 +805,6 @@ impl ParsedUnit {
 
     fn atoms(&self, ctx: &Context) -> VecDeque<Atom<'_>> {
         let lines = self.source.lines().collect::<Vec<&str>>();
-        let directive_pattern = Regex::new(r"^\s*#").unwrap();
 
         self.def_ranges
             .iter()
@@ -816,13 +816,22 @@ impl ParsedUnit {
                 }
 
                 let mut region_lines = Vec::new();
-                for &line in &lines[range] {
+                'each_line: for &line in &lines[range] {
                     let line = line.trim();
                     if line.is_empty() {
                         continue;
                     }
-                    if directive_pattern.is_match(line) {
-                        continue;
+                    if let Some(directive) = directive::parse_directive(line) {
+                        match directive {
+                            Directive::Define(_) | Directive::Undefine(_) => {
+                                // leave them in!
+                                log::debug!("In atoms, found directive: {:?}", directive);
+                            }
+                            _ => {
+                                // skip'em
+                                continue 'each_line;
+                            }
+                        }
                     }
                     region_lines.push(line);
                 }
