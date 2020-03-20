@@ -12,7 +12,6 @@ use hashbrown::HashMap;
 use lang_c::{ast::Expression, driver};
 use regex::Regex;
 use std::{
-    cmp::Ordering,
     collections::VecDeque,
     fmt, io,
     ops::{BitAnd, BitOr, Not},
@@ -45,10 +44,37 @@ impl Define {
 pub enum Expr {
     True,
     False,
-    Value(String),
+    Defined(String),
+    Symbol(String),
+    Call(String, Vec<Expr>),
+    Binary(BinaryOperator, Box<Expr>, Box<Expr>),
     And(Vec<Expr>),
     Or(Vec<Expr>),
     Not(Box<Expr>),
+}
+
+#[derive(Clone, PartialEq, Eq, Hash)]
+pub enum BinaryOperator {
+    Less,
+    LessOrEqual,
+    Greater,
+    GreaterOrEqual,
+    Equal,
+    NotEqual,
+}
+
+impl BinaryOperator {
+    fn sign(&self) -> &'static str {
+        use BinaryOperator::*;
+        match self {
+            Less => "<",
+            LessOrEqual => "<=",
+            Greater => ">",
+            GreaterOrEqual => ">=",
+            Equal => "==",
+            NotEqual => "!=",
+        }
+    }
 }
 
 pub struct Terms {
@@ -65,22 +91,17 @@ impl Terms {
     }
 
     fn add(&mut self, e: &Expr) -> qmc::Bool {
-        use Expr::*;
-
-        qmc::Bool::Term(match e {
-            Value(_) => match self.map.get(e) {
-                Some(&t) => t,
-                None => {
-                    let next_term = self.map.len();
-                    if next_term >= Self::MAX_TERMS {
-                        panic!("refusing to add more than {} terms", Self::MAX_TERMS);
-                    }
-                    let next_term = next_term as u8;
-                    self.map.insert(e.clone(), next_term as u8);
-                    next_term
+        qmc::Bool::Term(match self.map.get(e) {
+            Some(&t) => t,
+            None => {
+                let next_term = self.map.len();
+                if next_term >= Self::MAX_TERMS {
+                    panic!("refusing to add more than {} terms", Self::MAX_TERMS);
                 }
-            },
-            _ => panic!("can't add expr to terms: {:#?}", e),
+                let next_term = next_term as u8;
+                self.map.insert(e.clone(), next_term as u8);
+                next_term
+            }
         })
     }
 }
@@ -92,13 +113,25 @@ impl fmt::Debug for Expr {
         match self {
             True => write!(f, "true"),
             False => write!(f, "false"),
-            Value(s) => write!(f, "{}", s),
+            Binary(op, l, r) => write!(f, "({:?} {} {:?})", l, op.sign(), r),
+            Call(sym, args) => {
+                write!(f, "{}(", sym)?;
+                for (i, arg) in args.iter().enumerate() {
+                    match i {
+                        0 => write!(f, "{:?}", arg),
+                        _ => write!(f, ", {:?}", arg),
+                    }?;
+                }
+                write!(f, ")")
+            }
+            Symbol(s) => write!(f, "{}", s),
+            Defined(s) => write!(f, "defined({})", s),
             And(c) => {
                 write!(f, "(")?;
                 for (i, v) in c.iter().enumerate() {
                     match i {
                         0 => write!(f, "{:?}", v),
-                        _ => write!(f, " & {:?}", v),
+                        _ => write!(f, " && {:?}", v),
                     }?;
                 }
                 write!(f, ")")
@@ -108,7 +141,7 @@ impl fmt::Debug for Expr {
                 for (i, v) in c.iter().enumerate() {
                     match i {
                         0 => write!(f, "{:?}", v),
-                        _ => write!(f, " | {:?}", v),
+                        _ => write!(f, " || {:?}", v),
                     }?;
                 }
                 write!(f, ")")
@@ -123,7 +156,21 @@ impl PreprocessorIdent for Expr {
         use Expr::*;
 
         match self {
-            Value(x) => vec![x.clone()],
+            Defined(x) => vec![x.clone()],
+            Symbol(x) => vec![x.clone()],
+            Call(sym, args) => {
+                let mut res = vec![sym.clone()];
+                for v in args {
+                    res.append(&mut v.ident());
+                }
+                res
+            }
+            Binary(_op, l, r) => {
+                let mut res = vec![];
+                res.append(&mut l.ident());
+                res.append(&mut r.ident());
+                res
+            }
             And(c) | Or(c) => {
                 let mut res = Vec::new();
                 for v in c {
@@ -131,55 +178,17 @@ impl PreprocessorIdent for Expr {
                 }
                 res
             }
-            _ => vec![],
+            Not(c) => c.ident(),
+            True | False => vec![],
         }
-    }
-}
-
-impl Ord for Expr {
-    fn cmp(&self, other: &Self) -> Ordering {
-        use Expr::*;
-
-        match self {
-            True => match other {
-                True => Ordering::Equal,
-                _ => Ordering::Less,
-            },
-            False => match other {
-                True => Ordering::Greater,
-                False => Ordering::Equal,
-                _ => Ordering::Less,
-            },
-            Value(v1) => match other {
-                True | False => Ordering::Greater,
-                Value(v2) => v1.cmp(v2),
-                _ => Ordering::Less,
-            },
-            Not(v1) => match other {
-                True | False | Value(_) => Ordering::Greater,
-                Not(v2) => v1.cmp(v2),
-                _ => Ordering::Less,
-            },
-            And(c) => match other {
-                True | False | Value(_) | Not(_) => Ordering::Greater,
-                And(c2) => c.cmp(c2),
-                _ => Ordering::Less,
-            },
-            Or(c) => match other {
-                True | False | Value(_) | Not(_) | And(_) => Ordering::Greater,
-                Or(c2) => c.cmp(c2),
-            },
-        }
-    }
-}
-
-impl PartialOrd for Expr {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
     }
 }
 
 impl Expr {
+    fn from_cexpr(_expr: Expression) -> Self {
+        unimplemented!()
+    }
+
     fn combine(vec: &[Expr]) -> Expr {
         use Expr::*;
         vec.iter().fold(True, |acc, cur| acc & cur.clone())
@@ -190,10 +199,11 @@ impl Expr {
         match self {
             True => true,
             False => false,
-            Value(v) => defines.iter().map(|x| x.name()).any(|n| n == v),
+            Defined(v) => defines.iter().map(|x| x.name()).any(|n| n == v),
             And(c) => c.iter().all(|v| v.satisfies(defines)),
             Or(c) => c.iter().any(|v| v.satisfies(defines)),
             Not(v) => !v.satisfies(defines),
+            _ => unimplemented!(),
         }
     }
 
@@ -218,7 +228,7 @@ impl Expr {
             And(v) => Bool::And(v.into_iter().map(|v| v.as_bool(terms)).collect()),
             Or(v) => Bool::Or(v.into_iter().map(|v| v.as_bool(terms)).collect()),
             Not(c) => Bool::Not(Box::new(c.as_bool(terms))),
-            Value(_) => terms.add(self),
+            Defined(_) | Symbol(_) | Call(_, _) | Binary(_, _, _) => terms.add(self),
         }
     }
 
@@ -242,34 +252,6 @@ impl Expr {
                 panic!("unknown term: {}", t)
             }
         }
-    }
-
-    fn sort(&self) -> Expr {
-        use Expr::*;
-
-        match self {
-            And(c) => {
-                let mut c: Vec<_> = c.iter().map(|e| e.sort()).collect();
-                c.sort();
-                And(c)
-            }
-            Or(c) => {
-                let mut c: Vec<_> = c.iter().map(|e| e.sort()).collect();
-                c.sort();
-                Or(c)
-            }
-            Not(v) => !v.sort(),
-            v => v.clone(),
-        }
-    }
-}
-
-impl<T> From<T> for Expr
-where
-    T: AsRef<str>,
-{
-    fn from(v: T) -> Self {
-        Expr::Value(v.as_ref().into())
     }
 }
 
@@ -624,27 +606,25 @@ impl ParsedUnit {
                         dependencies.insert(include, def_ranges.last().1.clone());
                     }
                     Directive::If(expr) => {
-                        panic!("CExpr not supported: {:?}", expr);
-                        // let pred = Expr::CExpr(expr);
-                        // last_if = Some(pred.clone());
-                        // def_ranges.push((n, pred));
+                        let pred = Expr::from_cexpr(expr);
+                        last_if = Some(pred.clone());
+                        def_ranges.push((n, pred));
                     }
                     Directive::IfDefined(name) => {
-                        let pred = Expr::Value(name);
+                        let pred = Expr::Defined(name);
                         last_if = Some(pred.clone());
                         def_ranges.push((n, pred));
                     }
                     Directive::IfNotDefined(name) => {
-                        let pred = !Expr::Value(name);
+                        let pred = !Expr::Defined(name);
                         last_if = Some(pred.clone());
                         def_ranges.push((n, pred));
                     }
                     Directive::ElseIf(value) => {
-                        panic!("CExpr not supported {:?}", value);
-                        // def_ranges.pop(n);
-                        // let pred = Expr::CExpr(value);
-                        // last_if = Some(pred.clone());
-                        // def_ranges.push((n, pred));
+                        def_ranges.pop(n);
+                        let pred = Expr::from_cexpr(value);
+                        last_if = Some(pred.clone());
+                        def_ranges.push((n, pred));
                     }
                     Directive::Else => {
                         def_ranges.pop(n);

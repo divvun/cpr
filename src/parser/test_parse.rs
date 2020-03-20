@@ -1,7 +1,7 @@
 use super::*;
 
-fn expr(s: &str) -> Expr {
-    Expr::from(s)
+fn def(s: &str) -> Expr {
+    Expr::Defined(s.to_string())
 }
 
 fn parse(source: &str) -> ParsedUnit {
@@ -32,7 +32,7 @@ fn test_one_ifdef() {
 #include <stdio.h>
 #endif
         ",
-        expr("FOO"),
+        def("FOO"),
     );
 }
 
@@ -46,7 +46,7 @@ fn test_two_ifdefs() {
 #endif
 #endif
         ",
-        expr("FOO") & expr("BAR"),
+        def("FOO") & def("BAR"),
     );
 }
 
@@ -60,7 +60,7 @@ fn test_else() {
 #include <stdio.h>
 #endif
         ",
-        !expr("FOO"),
+        !def("FOO"),
     )
 }
 
@@ -75,7 +75,7 @@ fn test_nested_else() {
 #endif
 #endif
         ",
-        expr("FOO") & !expr("BAR"),
+        def("FOO") & !def("BAR"),
     )
 }
 

@@ -1,7 +1,7 @@
 use super::*;
 
-fn expr(s: &str) -> Expr {
-    Expr::from(s)
+fn def(s: &str) -> Expr {
+    Expr::Defined(s.to_string())
 }
 
 fn parse(source: &str) -> ParsedUnit {
@@ -114,7 +114,7 @@ int foo();
 int bar();
 #endif
     ",
-        &[(expr("FOO"), "int foo();"), (expr("BAR"), "int bar();")],
+        &[(def("FOO"), "int foo();"), (def("BAR"), "int bar();")],
     )
 }
 
@@ -130,8 +130,8 @@ int foobar();
 #endif // FOO
         ",
         &[
-            (expr("FOO"), "int foo();"),
-            (expr("FOO") & expr("BAR"), "int foobar();"),
+            (def("FOO"), "int foo();"),
+            (def("FOO") & def("BAR"), "int foobar();"),
         ],
     );
 }
@@ -149,14 +149,14 @@ struct foo {
         ",
         &[
             (
-                expr("EVIL"),
+                def("EVIL"),
                 "struct foo {
 int lawful;
 int evil;
 };",
             ),
             (
-                !expr("EVIL"),
+                !def("EVIL"),
                 "struct foo {
 int lawful;
 };",
@@ -180,14 +180,14 @@ struct foo {
         ",
         &[
             (
-                expr("EVIL"),
+                def("EVIL"),
                 "struct foo {
 int lawful;
 int evil;
 };",
             ),
             (
-                !expr("EVIL"),
+                !def("EVIL"),
                 "struct foo {
 int lawful;
 int good;
@@ -211,13 +211,13 @@ struct foo {
         ",
         &[
             (
-                expr("EVIL"),
+                def("EVIL"),
                 "struct foo {
 int lawful;
 };",
             ),
             (
-                !expr("EVIL"),
+                !def("EVIL"),
                 "struct foo {
 int lawful;
 };",
@@ -227,9 +227,7 @@ int lawful;
 }
 
 #[test]
-fn gated_struct_close_convoluted_xxx() {
-    env_logger::init(); // XXX: remove me
-
+fn gated_struct_close_convoluted() {
     test(
         "
 struct foo {
@@ -245,7 +243,7 @@ struct foo {
         ",
         &[
             (
-                expr("BAR") & expr("BAZ"),
+                def("BAR") & def("BAZ"),
                 "struct foo {
 int foo;
 struct bar {
@@ -254,7 +252,7 @@ int bar;
 };",
             ),
             (
-                !expr("BAR") & !expr("BAZ"),
+                !def("BAR") & !def("BAZ"),
                 "struct foo {
 int foo;
 };",

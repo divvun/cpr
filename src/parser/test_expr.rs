@@ -1,51 +1,29 @@
 use super::*;
 
-fn expr(s: &str) -> Expr {
-    Expr::from(s)
+fn def(s: &str) -> Expr {
+    Expr::Defined(s.to_string())
 }
 
 fn assert_simplifies(init: Expr, gives: Expr) {
     let simple = init.simplify();
-    let gives = gives.sort();
     assert_eq!(
-        simple,
-        gives,
+        simple, gives,
         "\ninit = {:?}\nsimple = {:?}\ngives = {:?}\n",
-        init,
-        simple,
-        gives.sort()
+        init, simple, gives
     )
 }
 
 fn ape() -> Expr {
-    expr("ape")
+    def("ape")
 }
 fn bar() -> Expr {
-    expr("bar")
+    def("bar")
 }
 fn chai() -> Expr {
-    expr("chai")
+    def("chai")
 }
 fn ding() -> Expr {
-    expr("ding")
-}
-
-#[test]
-fn test_sort_1() {
-    let v = bar() | ape();
-    assert_eq!(v.sort(), ape() | bar());
-}
-
-#[test]
-fn test_sort_2() {
-    let v = chai() & bar() & ape();
-    assert_eq!(v.sort(), ape() & bar() & chai(), "orig = {:?}", v);
-}
-
-#[test]
-fn test_sort_3() {
-    let v = chai() & bar() | ape();
-    assert_eq!(v.sort(), ape() | bar() & chai());
+    def("ding")
 }
 
 #[test]
