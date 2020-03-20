@@ -9,7 +9,7 @@ use thiserror::Error;
 
 use custom_debug_derive::CustomDebug;
 use hashbrown::HashMap;
-use lang_c::{ast::Expression, driver};
+use lang_c::{ast::Expression, driver, env::Env};
 use regex::Regex;
 use std::{
     collections::VecDeque,
@@ -372,14 +372,12 @@ struct Atom<'a> {
 }
 
 struct Strand<'a> {
-    config: &'a driver::Config,
     atoms: Vec<Atom<'a>>,
 }
 
 impl<'a> Strand<'a> {
-    fn new(config: &'a driver::Config) -> Self {
+    fn new() -> Self {
         Self {
-            config,
             atoms: Default::default(),
         }
     }
@@ -401,8 +399,8 @@ impl<'a> Strand<'a> {
 
     /// Returns true if all atoms put together parse as a series of C external
     /// declarations
-    fn has_complete_variants(&self) -> bool {
-        !self.chunks().is_empty()
+    fn has_complete_variants(&self, env: &mut Env) -> bool {
+        !self.chunks(env).is_empty()
     }
 
     /// Returns a single String for the source of all given atoms put together
@@ -414,11 +412,20 @@ impl<'a> Strand<'a> {
     }
 
     /// Parses C code
-    fn parse(&self, source: String) -> Result<driver::Parse, driver::SyntaxError> {
-        driver::parse_preprocessed(self.config, source)
+    fn parse(source: String, env: &mut Env) -> Result<driver::Parse, driver::SyntaxError> {
+        match lang_c::parser::translation_unit(&source, env) {
+            Ok(unit) => Ok(driver::Parse { source, unit }),
+            Err(err) => Err(driver::SyntaxError {
+                source: source,
+                line: err.line,
+                column: err.column,
+                offset: err.offset,
+                expected: err.expected,
+            }),
+        }
     }
 
-    fn chunks(&self) -> Vec<Chunk> {
+    fn chunks(&self, env: &mut Env) -> Vec<Chunk> {
         let mut chunks = Vec::new();
         variations(self.len(), &mut |toggles| {
             let pairs: Vec<_> = self.atoms.iter().zip(toggles).collect();
@@ -461,7 +468,7 @@ impl<'a> Strand<'a> {
             }
 
             let source = self.source(&mut atoms.iter().copied());
-            match self.parse(source) {
+            match Self::parse(source, env) {
                 Ok(driver::Parse { source, unit }) => {
                     log::debug!("(✔) Valid chunk");
                     chunks.push(Chunk {
@@ -747,16 +754,11 @@ impl ParsedUnit {
     }
 
     pub fn chunks(&self) -> Result<Vec<Chunk>, Error> {
-        let config = driver::Config {
-            cpp_command: "".into(),
-            cpp_options: Vec::new(),
-            flavor: driver::Flavor::MsvcC11,
-        };
-
         let mut atom_queue = self.atoms();
+        let mut env = Env::with_msvc();
 
         let mut strands: Vec<Strand> = Vec::new();
-        let mut strand = Strand::new(&config);
+        let mut strand = Strand::new();
 
         'knit: loop {
             log::debug!("Knitting...");
@@ -783,12 +785,12 @@ impl ParsedUnit {
                 continue;
             }
 
-            if strand.has_complete_variants() {
+            if strand.has_complete_variants(&mut env) {
                 log::debug!("Strand complete (len {})", strand.len());
                 strands.push(strand);
 
                 log::debug!("Resetting strand..");
-                strand = Strand::new(&config);
+                strand = Strand::new();
             } else {
                 if must_finish {
                     log::debug!(
@@ -831,7 +833,7 @@ impl ParsedUnit {
 
         Ok(strands
             .iter()
-            .map(|strand| strand.chunks())
+            .map(|strand| strand.chunks(&mut env))
             .flatten()
             .collect())
     }
