@@ -12,7 +12,7 @@ use hashbrown::HashMap;
 use lang_c::{ast::Expression, driver, env::Env};
 use regex::Regex;
 use std::{
-    collections::VecDeque,
+    collections::{HashSet, VecDeque},
     fmt, io,
     ops::{BitAnd, BitOr, Not},
     path::{Path, PathBuf},
@@ -599,9 +599,9 @@ impl fmt::Display for SyntaxError {
 /// One (1) C header, split into define-dependent ranges.
 #[derive(Debug)]
 pub struct ParsedUnit {
-    source: String,
-    def_ranges: RangeSet<Expr>,
-    dependencies: HashMap<Include, Expr>,
+    pub source: String,
+    pub def_ranges: RangeSet<Expr>,
+    pub dependencies: HashMap<Include, Expr>,
 }
 
 #[derive(CustomDebug)]
@@ -648,6 +648,11 @@ where
     fn from(t: T) -> Self {
         Self(t.into())
     }
+}
+
+pub struct ChunkedUnit {
+    pub chunks: Vec<Chunk>,
+    pub typenames: HashSet<String>,
 }
 
 impl ParsedUnit {
@@ -753,9 +758,14 @@ impl ParsedUnit {
             .collect()
     }
 
-    pub fn chunks(&self) -> Result<Vec<Chunk>, Error> {
+    pub fn chunkify(&self, deps: &[&ChunkedUnit]) -> Result<ChunkedUnit, Error> {
         let mut atom_queue = self.atoms();
         let mut env = Env::with_msvc();
+        for dep in deps {
+            for typename in &dep.typenames {
+                env.add_typename(typename)
+            }
+        }
 
         let mut strands: Vec<Strand> = Vec::new();
         let mut strand = Strand::new();
@@ -831,11 +841,17 @@ impl ParsedUnit {
             }
         }
 
-        Ok(strands
+        let chunks = strands
             .iter()
             .map(|strand| strand.chunks(&mut env))
             .flatten()
-            .collect())
+            .collect();
+
+        let chunks = ChunkedUnit {
+            chunks,
+            typenames: env.typenames.drain(..).next().unwrap(),
+        };
+        Ok(chunks)
     }
 }
 
@@ -845,6 +861,7 @@ pub struct Parser {
     quoted_paths: Vec<PathBuf>,
     working_path: PathBuf,
     root: Include,
+    ordered_includes: Vec<Include>,
     sources: HashMap<Include, ParsedUnit>,
 }
 
@@ -868,6 +885,7 @@ impl Parser {
             quoted_paths,
             working_path,
             sources: HashMap::new(),
+            ordered_includes: vec![root.clone()],
             root,
         };
         parser.parse_all()?;
@@ -909,6 +927,7 @@ impl Parser {
             log::trace!("{:?}", &parsed_unit);
 
             for include in parsed_unit.dependencies.keys() {
+                self.ordered_includes.push(include.clone());
                 unit_queue.push_back(include.clone());
             }
 
@@ -919,7 +938,10 @@ impl Parser {
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (&Include, &ParsedUnit)> {
-        self.sources.iter()
+        // TODO: that's a hack, find something better.
+        self.ordered_includes
+            .iter()
+            .map(move |inc| (inc, self.sources.get(inc).unwrap()))
     }
 }
 

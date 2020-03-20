@@ -5,6 +5,7 @@ use span::Node;
 use strings;
 
 pub struct Env {
+    pub builtin_typenames: HashSet<String>,
     pub typenames: Vec<HashSet<String>>,
     pub extensions_gnu: bool,
     pub extensions_clang: bool,
@@ -27,7 +28,8 @@ impl Env {
             extensions_gnu: false,
             extensions_clang: false,
             extensions_msvc: false,
-            typenames: Vec::new(),
+            builtin_typenames: HashSet::new(),
+            typenames: vec![HashSet::new()],
             reserved: reserved,
             is_ignoring_reserved: false,
             is_single_line_mode: false,
@@ -44,7 +46,8 @@ impl Env {
             extensions_gnu: true,
             extensions_clang: false,
             extensions_msvc: false,
-            typenames: vec![typenames],
+            builtin_typenames: typenames,
+            typenames: vec![HashSet::new()],
             reserved: reserved,
             is_ignoring_reserved: false,
             is_single_line_mode: false,
@@ -62,7 +65,8 @@ impl Env {
             extensions_gnu: true,
             extensions_clang: true,
             extensions_msvc: false,
-            typenames: vec![typenames],
+            builtin_typenames: typenames,
+            typenames: vec![HashSet::new()],
             reserved: reserved,
             is_ignoring_reserved: false,
             is_single_line_mode: false,
@@ -81,7 +85,8 @@ impl Env {
             extensions_gnu: false,
             extensions_clang: false,
             extensions_msvc: true,
-            typenames: vec![typenames],
+            builtin_typenames: typenames,
+            typenames: vec![HashSet::new()],
             reserved: reserved,
             is_ignoring_reserved: false,
             is_single_line_mode: false,
@@ -113,7 +118,7 @@ impl Env {
     }
 
     pub fn is_typename(&self, s: &str) -> bool {
-        self.typenames.iter().any(|sc| sc.contains(s))
+        self.builtin_typenames.contains(s) || self.typenames.iter().any(|sc| sc.contains(s))
     }
 
     pub fn handle_declaration(&mut self, declaration: &Declaration) {

@@ -8,12 +8,12 @@ fn parse(source: &str) -> ParsedUnit {
     ParsedUnit::parse(source.as_ref()).expect("unit should parse")
 }
 
-fn chunks(source: &str) -> Vec<Chunk> {
-    parse(source).chunks().unwrap()
+fn chunks(source: &str, deps: &[&ChunkedUnit]) -> Vec<Chunk> {
+    parse(source).chunkify(deps).unwrap().chunks
 }
 
 fn test(source: &str, expected_chunks: &[(Expr, &str)]) {
-    let actual_chunks = chunks(source);
+    let actual_chunks = chunks(source, &[]);
     assert_eq!(actual_chunks.len(), expected_chunks.len());
     for (i, (actual, expected)) in actual_chunks.iter().zip(expected_chunks.iter()).enumerate() {
         assert_eq!(actual.expr, expected.0, "expr for chunk #{}", i);
