@@ -260,3 +260,32 @@ int foo;
         ],
     )
 }
+
+#[test]
+fn typedef_in_different_chunk_xxx() {
+    env_logger::init();
+
+    test(
+        "
+typedef struct foo {
+    int a;
+} foo;
+
+#ifdef WOOPS
+int noop(void);
+#endif
+
+int bar(foo *f);
+    ",
+        &[
+            (
+                Expr::True,
+                "typedef struct foo {
+int a;
+} foo;",
+            ),
+            (def("WOOPS"), "int noop(void);"),
+            (Expr::True, "int bar(foo *f);"),
+        ],
+    )
+}

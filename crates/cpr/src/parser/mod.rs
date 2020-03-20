@@ -46,8 +46,9 @@ pub enum Expr {
     False,
     Defined(String),
     Symbol(String),
-    Call(String, Vec<Expr>),
+    Call(Box<Expr>, Vec<Expr>),
     Binary(BinaryOperator, Box<Expr>, Box<Expr>),
+    Integer(i64),
     And(Vec<Expr>),
     Or(Vec<Expr>),
     Not(Box<Expr>),
@@ -59,8 +60,9 @@ pub enum BinaryOperator {
     LessOrEqual,
     Greater,
     GreaterOrEqual,
-    Equal,
-    NotEqual,
+    Equals,
+    NotEquals,
+    BitwiseOr,
 }
 
 impl BinaryOperator {
@@ -71,8 +73,9 @@ impl BinaryOperator {
             LessOrEqual => "<=",
             Greater => ">",
             GreaterOrEqual => ">=",
-            Equal => "==",
-            NotEqual => "!=",
+            Equals => "==",
+            NotEquals => "!=",
+            BitwiseOr => "|",
         }
     }
 }
@@ -113,16 +116,17 @@ impl fmt::Debug for Expr {
         match self {
             True => write!(f, "true"),
             False => write!(f, "false"),
+            Integer(i) => write!(f, "{}", i),
             Binary(op, l, r) => write!(f, "({:?} {} {:?})", l, op.sign(), r),
-            Call(sym, args) => {
-                write!(f, "{}(", sym)?;
+            Call(callee, args) => {
+                write!(f, "({:?}(", callee)?;
                 for (i, arg) in args.iter().enumerate() {
                     match i {
                         0 => write!(f, "{:?}", arg),
                         _ => write!(f, ", {:?}", arg),
                     }?;
                 }
-                write!(f, ")")
+                write!(f, "))")
             }
             Symbol(s) => write!(f, "{}", s),
             Defined(s) => write!(f, "defined({})", s),
@@ -158,8 +162,9 @@ impl PreprocessorIdent for Expr {
         match self {
             Defined(x) => vec![x.clone()],
             Symbol(x) => vec![x.clone()],
-            Call(sym, args) => {
-                let mut res = vec![sym.clone()];
+            Integer(_) => vec![],
+            Call(callee, args) => {
+                let mut res = callee.ident();
                 for v in args {
                     res.append(&mut v.ident());
                 }
@@ -185,8 +190,61 @@ impl PreprocessorIdent for Expr {
 }
 
 impl Expr {
-    fn from_cexpr(_expr: Expression) -> Self {
-        unimplemented!()
+    fn from_cexpr(expr: Expression) -> Self {
+        use lang_c::ast::{self, Expression as CE};
+        use Expr::*;
+
+        match expr {
+            CE::Constant(n) => match n.node {
+                ast::Constant::Integer(il) => match il.base {
+                    ast::IntegerBase::Hexademical /* sic. */ => Integer(i64::from_str_radix(il.number.as_ref(), 16).unwrap()),
+                    _ => todo!(),
+                },
+                _ => unimplemented!(),
+            },
+            CE::Call(n) => {
+                let ast::CallExpression {
+                    callee, arguments, ..
+                } = n.node;
+                Call(
+                    Box::new(Self::from_cexpr(callee.node)),
+                    arguments
+                        .into_iter()
+                        .map(|n| Self::from_cexpr(n.node))
+                        .collect(),
+                )
+            }
+            CE::Identifier(n) => Symbol(n.node.name),
+            CE::BinaryOperator(n) => {
+                let ast::BinaryOperatorExpression { operator, lhs, rhs } = n.node;
+                use ast::BinaryOperator as CBO;
+                use BinaryOperator as BO;
+
+                Binary(
+                    match operator.node {
+                        CBO::Greater => BO::Greater,
+                        CBO::GreaterOrEqual => BO::GreaterOrEqual,
+                        CBO::Less => BO::Less,
+                        CBO::LessOrEqual => BO::LessOrEqual,
+                        CBO::Equals => BO::Equals,
+                        CBO::NotEquals => BO::NotEquals,
+                        CBO::BitwiseOr => BO::BitwiseOr,
+                        _ => {
+                            panic!(
+                                "unsupported operator in preprocessor expression: {:?}",
+                                operator.node
+                            );
+                        }
+                    },
+                    Box::new(Self::from_cexpr(lhs.node)),
+                    Box::new(Self::from_cexpr(rhs.node)),
+                )
+            }
+            _ => {
+                log::debug!("Got CExpr: {:#?}", expr);
+                unimplemented!();
+            }
+        }
     }
 
     fn combine(vec: &[Expr]) -> Expr {
@@ -228,7 +286,7 @@ impl Expr {
             And(v) => Bool::And(v.into_iter().map(|v| v.as_bool(terms)).collect()),
             Or(v) => Bool::Or(v.into_iter().map(|v| v.as_bool(terms)).collect()),
             Not(c) => Bool::Not(Box::new(c.as_bool(terms))),
-            Defined(_) | Symbol(_) | Call(_, _) | Binary(_, _, _) => terms.add(self),
+            Defined(_) | Symbol(_) | Call(_, _) | Binary(_, _, _) | Integer(_) => terms.add(self),
         }
     }
 
@@ -707,6 +765,13 @@ impl ParsedUnit {
             match atom_queue.pop_front() {
                 Some(atom) => strand.push(atom),
                 None => must_finish = true,
+            }
+
+            if strand.len() > 4 {
+                panic!(
+                    "Trying to knit too deep, current strand =\n{}",
+                    strand.source(&mut strand.atoms.iter())
+                );
             }
 
             if strand.is_empty() {
