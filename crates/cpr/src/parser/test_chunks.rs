@@ -440,3 +440,27 @@ fn cplusplus() {
         )],
     )
 }
+
+#[test]
+fn include_guard() {
+    test(
+        indoc!(
+            "
+            #ifndef ROOT_H
+            #define ROOT_H
+
+            int foobar(void);
+
+            #endif
+            "
+        ),
+        &[(
+            !def("ROOT_H"),
+            indoc!(
+                "
+                int foobar(void);
+                "
+            ),
+        )],
+    )
+}
