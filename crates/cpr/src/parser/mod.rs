@@ -1,22 +1,23 @@
 mod directive;
+mod expr;
 mod rangeset;
+mod strand;
 mod utils;
 
-use directive::{Directive, PreprocessorIdent};
-use quine_mc_cluskey as qmc;
+use directive::Directive;
 use rangeset::RangeSet;
 use thiserror::Error;
 
 use custom_debug_derive::CustomDebug;
+use expr::{langc_conversion::*, Expr};
 use hashbrown::HashMap;
 use lang_c::{ast::Expression, driver, env::Env};
-use regex::Regex;
 use std::{
     collections::{HashSet, VecDeque},
     fmt, io,
-    ops::{BitAnd, BitOr, Not},
     path::{Path, PathBuf},
 };
+use strand::{Atom, Strand};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Define {
@@ -57,6 +58,17 @@ impl Context {
     pub fn pop(&mut self, name: &str) {
         self.defines.remove(name);
     }
+
+    /// Returns None if we don't know, Some(bool) if we know by now
+    pub fn is_defined(&self, name: &str) -> Option<bool> {
+        match self.defines.get(name) {
+            Some(def) => match def {
+                Define::Value { .. } | Define::Replacement { .. } => Some(true),
+                Define::Blacklist { .. } => Some(false),
+            },
+            None => None,
+        }
+    }
 }
 
 impl Define {
@@ -66,501 +78,6 @@ impl Define {
             Define::Value { name, .. } => name,
             Define::Replacement { name, .. } => name,
         }
-    }
-}
-
-#[derive(Clone, PartialEq, Eq, Hash)]
-pub enum Expr {
-    True,
-    False,
-    Defined(String),
-    Symbol(String),
-    Call(Box<Expr>, Vec<Expr>),
-    Binary(BinaryOperator, Box<Expr>, Box<Expr>),
-    Integer(i64),
-    And(Vec<Expr>),
-    Or(Vec<Expr>),
-    Not(Box<Expr>),
-}
-
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
-pub enum BinaryOperator {
-    Less,
-    LessOrEqual,
-    Greater,
-    GreaterOrEqual,
-    Equals,
-    NotEquals,
-    BitwiseOr,
-}
-
-impl BinaryOperator {
-    fn sign(&self) -> &'static str {
-        use BinaryOperator::*;
-        match self {
-            Less => "<",
-            LessOrEqual => "<=",
-            Greater => ">",
-            GreaterOrEqual => ">=",
-            Equals => "==",
-            NotEquals => "!=",
-            BitwiseOr => "|",
-        }
-    }
-}
-
-pub struct Terms {
-    map: HashMap<Expr, u8>,
-}
-
-impl Terms {
-    const MAX_TERMS: usize = 12;
-
-    fn new() -> Self {
-        Self {
-            map: HashMap::new(),
-        }
-    }
-
-    fn add(&mut self, e: &Expr) -> qmc::Bool {
-        qmc::Bool::Term(match self.map.get(e) {
-            Some(&t) => t,
-            None => {
-                let next_term = self.map.len();
-                if next_term >= Self::MAX_TERMS {
-                    panic!("refusing to add more than {} terms", Self::MAX_TERMS);
-                }
-                let next_term = next_term as u8;
-                self.map.insert(e.clone(), next_term as u8);
-                next_term
-            }
-        })
-    }
-}
-
-impl fmt::Debug for Expr {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        use Expr::*;
-
-        match self {
-            True => write!(f, "true"),
-            False => write!(f, "false"),
-            Integer(i) => write!(f, "{}", i),
-            Binary(op, l, r) => write!(f, "({:?} {} {:?})", l, op.sign(), r),
-            Call(callee, args) => {
-                write!(f, "({:?}(", callee)?;
-                for (i, arg) in args.iter().enumerate() {
-                    match i {
-                        0 => write!(f, "{:?}", arg),
-                        _ => write!(f, ", {:?}", arg),
-                    }?;
-                }
-                write!(f, "))")
-            }
-            Symbol(s) => write!(f, "{}", s),
-            Defined(s) => write!(f, "defined({})", s),
-            And(c) => {
-                write!(f, "(")?;
-                for (i, v) in c.iter().enumerate() {
-                    match i {
-                        0 => write!(f, "{:?}", v),
-                        _ => write!(f, " && {:?}", v),
-                    }?;
-                }
-                write!(f, ")")
-            }
-            Or(c) => {
-                write!(f, "(")?;
-                for (i, v) in c.iter().enumerate() {
-                    match i {
-                        0 => write!(f, "{:?}", v),
-                        _ => write!(f, " || {:?}", v),
-                    }?;
-                }
-                write!(f, ")")
-            }
-            Not(v) => write!(f, "(!{:?})", v),
-        }
-    }
-}
-
-impl PreprocessorIdent for Expr {
-    fn ident(&self) -> Vec<String> {
-        use Expr::*;
-
-        match self {
-            Defined(x) => vec![x.clone()],
-            Symbol(x) => vec![x.clone()],
-            Integer(_) => vec![],
-            Call(callee, args) => {
-                let mut res = callee.ident();
-                for v in args {
-                    res.append(&mut v.ident());
-                }
-                res
-            }
-            Binary(_op, l, r) => {
-                let mut res = vec![];
-                res.append(&mut l.ident());
-                res.append(&mut r.ident());
-                res
-            }
-            And(c) | Or(c) => {
-                let mut res = Vec::new();
-                for v in c {
-                    res.append(&mut v.ident());
-                }
-                res
-            }
-            Not(c) => c.ident(),
-            True | False => vec![],
-        }
-    }
-}
-
-impl Expr {
-    fn from_cexpr(expr: Expression) -> Self {
-        use lang_c::ast::{self, Expression as CE};
-        use Expr::*;
-
-        match expr {
-            CE::Constant(n) => match n.node {
-                ast::Constant::Integer(il) => match il.base {
-                    ast::IntegerBase::Hexademical /* sic. */ => Integer(i64::from_str_radix(il.number.as_ref(), 16).unwrap()),
-                    _ => todo!(),
-                },
-                _ => unimplemented!(),
-            },
-            CE::Call(n) => {
-                let ast::CallExpression {
-                    callee, arguments, ..
-                } = n.node;
-                Call(
-                    Box::new(Self::from_cexpr(callee.node)),
-                    arguments
-                        .into_iter()
-                        .map(|n| Self::from_cexpr(n.node))
-                        .collect(),
-                )
-            }
-            CE::Identifier(n) => Symbol(n.node.name),
-            CE::BinaryOperator(n) => {
-                let ast::BinaryOperatorExpression { operator, lhs, rhs } = n.node;
-                use ast::BinaryOperator as CBO;
-                use BinaryOperator as BO;
-
-                Binary(
-                    match operator.node {
-                        CBO::Greater => BO::Greater,
-                        CBO::GreaterOrEqual => BO::GreaterOrEqual,
-                        CBO::Less => BO::Less,
-                        CBO::LessOrEqual => BO::LessOrEqual,
-                        CBO::Equals => BO::Equals,
-                        CBO::NotEquals => BO::NotEquals,
-                        CBO::BitwiseOr => BO::BitwiseOr,
-                        _ => {
-                            panic!(
-                                "unsupported operator in preprocessor expression: {:?}",
-                                operator.node
-                            );
-                        }
-                    },
-                    Box::new(Self::from_cexpr(lhs.node)),
-                    Box::new(Self::from_cexpr(rhs.node)),
-                )
-            }
-            _ => {
-                log::debug!("Got CExpr: {:#?}", expr);
-                unimplemented!();
-            }
-        }
-    }
-
-    fn combine(vec: &[Expr]) -> Expr {
-        use Expr::*;
-        vec.iter().fold(True, |acc, cur| acc & cur.clone())
-    }
-
-    fn satisfies(&self, defines: &[Define]) -> bool {
-        use Expr::*;
-        match self {
-            True => true,
-            False => false,
-            Defined(v) => defines.iter().map(|x| x.name()).any(|n| n == v),
-            And(c) => c.iter().all(|v| v.satisfies(defines)),
-            Or(c) => c.iter().any(|v| v.satisfies(defines)),
-            Not(v) => !v.satisfies(defines),
-            _ => unimplemented!(),
-        }
-    }
-
-    fn eval(&self, ctx: &Context) -> Expr {
-        use Expr::*;
-
-        match self {
-            True | False => self.clone(),
-            And(c) => And(c.iter().map(|v| v.eval(ctx)).collect()),
-            Or(c) => Or(c.iter().map(|v| v.eval(ctx)).collect()),
-            Not(v) => !v.eval(ctx),
-            Defined(name) => match ctx.defines.get(name) {
-                Some(def) => match def {
-                    Define::Blacklist { .. } => {
-                        // explicitly blacklisted
-                        False
-                    }
-                    Define::Value { .. } | Define::Replacement { .. } => {
-                        // explicitly defined
-                        True
-                    }
-                },
-                None => {
-                    // not explicitly defined, it's impossible to tell if it's good or not
-                    self.clone()
-                }
-            },
-            Symbol(_name) => {
-                // TODO: we can do better - by using lang-c to parse `Define::Value`
-                // note: we could be doing that earlier
-                self.clone()
-            }
-            Call(callee, args) => {
-                // TODO: we can do better - by invoking the macro,
-                // which really should be defined at this point.
-                Call(
-                    Box::new(callee.eval(ctx)),
-                    args.iter().map(|arg| arg.eval(ctx)).collect(),
-                )
-            }
-            Binary(op, l, r) => {
-                // TODO: again, we can probably do some maths here, if l and r are constants.
-                Binary(*op, Box::new(l.eval(ctx)), Box::new(r.eval(ctx)))
-            }
-            Integer(_) => self.clone(),
-        }
-    }
-
-    fn simplify(&self) -> Expr {
-        let mut terms = Terms::new();
-        let input = self.as_bool(&mut terms);
-        let mut output = input.simplify();
-        assert_eq!(output.len(), 1);
-        let output = output
-            .pop()
-            .expect("simplification should yield at least one term");
-        Self::from_bool(output, &terms)
-    }
-
-    fn as_bool(&self, terms: &mut Terms) -> qmc::Bool {
-        use qmc::Bool;
-        use Expr::*;
-
-        match self {
-            True => Bool::True,
-            False => Bool::False,
-            And(c) => Bool::And(c.into_iter().map(|v| v.as_bool(terms)).collect()),
-            Or(c) => Bool::Or(c.into_iter().map(|v| v.as_bool(terms)).collect()),
-            Not(v) => Bool::Not(Box::new(v.as_bool(terms))),
-            Defined(_) | Symbol(_) | Call(_, _) | Binary(_, _, _) | Integer(_) => terms.add(self),
-        }
-    }
-
-    fn from_bool(v: qmc::Bool, terms: &Terms) -> Expr {
-        use qmc::Bool;
-        use Expr::*;
-
-        match v {
-            Bool::True => True,
-            Bool::False => False,
-            Bool::And(c) => And(c.into_iter().map(|v| Self::from_bool(v, terms)).collect()),
-            Bool::Or(c) => Or(c.into_iter().map(|v| Self::from_bool(v, terms)).collect()),
-            Bool::Not(v) => Not(Box::new(Self::from_bool(*v, terms))),
-            Bool::Term(t) => {
-                // todo: reverse terms once
-                for (k, &v) in &terms.map {
-                    if v == t {
-                        return k.clone();
-                    }
-                }
-                panic!("unknown term: {}", t)
-            }
-        }
-    }
-}
-
-impl Default for Expr {
-    fn default() -> Expr {
-        Expr::True
-    }
-}
-
-impl BitAnd for Expr {
-    type Output = Expr;
-
-    fn bitand(self, rhs: Expr) -> Self::Output {
-        use std::iter::once;
-        use Expr::*;
-
-        match (self, rhs) {
-            (_, False) | (False, _) => False,
-            (v, True) | (True, v) => v,
-            (And(l), And(r)) => And(l.into_iter().chain(r.into_iter()).collect()),
-            (And(c), v) | (v, And(c)) => And(c.into_iter().chain(once(v)).collect()),
-            (l, r) => And(vec![l, r]),
-        }
-    }
-}
-
-impl BitOr for Expr {
-    type Output = Expr;
-
-    fn bitor(self, rhs: Expr) -> Self::Output {
-        use std::iter::once;
-        use Expr::*;
-
-        match (self, rhs) {
-            (_, True) | (True, _) => True,
-            (v, False) | (False, v) => v,
-            (Or(l), Or(r)) => Or(l.into_iter().chain(r.into_iter()).collect()),
-            (Or(c), v) | (v, Or(c)) => Or(c.into_iter().chain(once(v)).collect()),
-            (l, r) => Or(vec![l, r]),
-        }
-    }
-}
-
-impl Not for Expr {
-    type Output = Expr;
-
-    fn not(self) -> Self::Output {
-        use Expr::*;
-
-        match self {
-            Not(v) => *v,
-            v => Not(Box::new(v)),
-        }
-    }
-}
-
-struct Atom<'a> {
-    expr: Expr,
-    lines: Vec<&'a str>,
-}
-
-struct Strand<'a> {
-    atoms: Vec<Atom<'a>>,
-}
-
-impl<'a> Strand<'a> {
-    fn new() -> Self {
-        Self {
-            atoms: Default::default(),
-        }
-    }
-
-    /// Returns true if strand has zero atoms
-    fn is_empty(&self) -> bool {
-        self.atoms.is_empty()
-    }
-
-    /// Add a new atom to the list
-    fn push(&mut self, atom: Atom<'a>) {
-        self.atoms.push(atom)
-    }
-
-    /// Return the number of atoms in this strand
-    fn len(&self) -> usize {
-        self.atoms.len()
-    }
-
-    /// Returns true if all atoms put together parse as a series of C external
-    /// declarations
-    fn has_complete_variants(&self, env: &mut Env, ctx: &Context) -> bool {
-        !self.chunks(env, ctx).is_empty()
-    }
-
-    /// Returns a single String for the source of all given atoms put together
-    fn source(&self, iter: &mut dyn Iterator<Item = &Atom>) -> String {
-        iter.map(|r| r.lines.iter().copied())
-            .flatten()
-            .collect::<Vec<_>>()
-            .join("\n")
-    }
-
-    /// Parses C code
-    fn parse(source: String, env: &mut Env) -> Result<driver::Parse, driver::SyntaxError> {
-        match lang_c::parser::translation_unit(&source, env) {
-            Ok(unit) => Ok(driver::Parse { source, unit }),
-            Err(err) => Err(driver::SyntaxError {
-                source: source,
-                line: err.line,
-                column: err.column,
-                offset: err.offset,
-                expected: err.expected,
-            }),
-        }
-    }
-
-    fn chunks(&self, env: &mut Env, ctx: &Context) -> Vec<Chunk> {
-        let mut chunks = Vec::new();
-        variations(self.len(), &mut |toggles| {
-            let pairs: Vec<_> = self.atoms.iter().zip(toggles).collect();
-            if let Some((_, false)) = pairs.get(0) {
-                // skip first-false
-                return;
-            }
-
-            let base_expr = pairs.iter().fold(Expr::True, |acc, (atom, on)| {
-                acc & if *on {
-                    atom.expr.clone()
-                } else {
-                    !atom.expr.clone()
-                }
-            });
-            let expr = base_expr.eval(ctx).simplify();
-            log::debug!(
-                "[{}] {:?} => {:?}",
-                pairs
-                    .iter()
-                    .map(|(_, on)| if *on { "1" } else { "0" })
-                    .collect::<Vec<_>>()
-                    .join(""),
-                base_expr,
-                expr
-            );
-            if matches!(expr, Expr::False) {
-                log::debug!("(!) Always-false condition");
-                return;
-            }
-
-            let atoms: Vec<_> = pairs
-                .iter()
-                .copied()
-                .filter_map(|(atom, on)| if on { Some(atom) } else { None })
-                .collect();
-            if atoms.is_empty() {
-                log::debug!("(!) Empty strand");
-                return;
-            }
-
-            let source = self.source(&mut atoms.iter().copied());
-            log::debug!("Parsing source:\n{:?}", SourceString(source.clone()));
-            match Self::parse(source, env) {
-                Ok(driver::Parse { source, unit }) => {
-                    log::debug!("(✔) Valid chunk");
-                    chunks.push(Chunk {
-                        source: SourceString(source),
-                        unit,
-                        expr,
-                    })
-                }
-                Err(e) => {
-                    log::debug!("(!) Incomplete strand: {:?}", e);
-                }
-            }
-        });
-        if !chunks.is_empty() {
-            log::debug!("Found {} complete chunks", chunks.len());
-        }
-        chunks
     }
 }
 
@@ -752,7 +269,7 @@ impl ParsedUnit {
                         dependencies.insert(include, def_ranges.last().1.clone());
                     }
                     Directive::If(expr) => {
-                        let pred = Expr::from_cexpr(expr);
+                        let pred = expr.into_expr();
                         last_if = Some(pred.clone());
                         def_ranges.push((n, pred));
                     }
@@ -768,7 +285,7 @@ impl ParsedUnit {
                     }
                     Directive::ElseIf(value) => {
                         def_ranges.pop(n);
-                        let pred = Expr::from_cexpr(value);
+                        let pred = value.into_expr();
                         last_if = Some(pred.clone());
                         def_ranges.push((n, pred));
                     }
@@ -872,7 +389,7 @@ impl ParsedUnit {
             if strand.len() > 4 {
                 panic!(
                     "Trying to knit too deep, current strand =\n{}",
-                    strand.source(&mut strand.atoms.iter())
+                    strand.source(&mut strand.all_atoms())
                 );
             }
 
@@ -904,21 +421,15 @@ impl ParsedUnit {
                                 "Trying to backtrack by extending previous strand (len {})",
                                 prev.len()
                             );
-                            atom_queue.extend(strand.atoms.drain(..));
+                            atom_queue.extend(strand.into_atoms());
                             strand = prev;
-                            log::debug!(
-                                "Extended strand (len {}) now has source:\n{}",
-                                strand.len(),
-                                strand.source(&mut strand.atoms.iter())
-                            );
                             continue 'knit;
                         }
                         None => {
                             log::debug!("No previous strand, can't backtrack");
                             return Err(Error::CouldNotKnit(
                                 strand
-                                    .atoms
-                                    .iter()
+                                    .all_atoms()
                                     .map(|atom| {
                                         format!("// ~> {:?}\n{}", atom.expr, atom.lines.join("\n"))
                                     })
@@ -1033,76 +544,6 @@ impl Parser {
             .iter()
             .map(move |inc| (inc, self.sources.get(inc).unwrap()))
     }
-}
-
-pub fn variations(len: usize, f: &mut dyn FnMut(Box<dyn Iterator<Item = bool>>)) {
-    use std::iter::{empty, once};
-
-    match len {
-        0 => f(Box::new(empty())),
-        n => {
-            for &b in &[true, false] {
-                variations(n - 1, &mut |it| {
-                    f(Box::new(once(b).chain(it)));
-                });
-            }
-        }
-    }
-}
-
-#[cfg(test)]
-#[test]
-fn test_variations() {
-    fn test(n: usize, expected: &[&[bool]]) {
-        let mut vecs = Vec::<Vec<_>>::new();
-        variations(n, &mut |v| vecs.push(v.collect()));
-        assert_eq!(&vecs[..], expected);
-    }
-
-    test(1, &[&[true], &[false]]);
-    test(
-        2,
-        &[
-            &[true, true],
-            &[true, false],
-            &[false, true],
-            &[false, false],
-        ],
-    );
-    test(
-        3,
-        &[
-            &[true, true, true],
-            &[true, true, false],
-            &[true, false, true],
-            &[true, false, false],
-            &[false, true, true],
-            &[false, true, false],
-            &[false, false, true],
-            &[false, false, false],
-        ],
-    );
-    test(
-        4,
-        &[
-            &[true, true, true, true],
-            &[true, true, true, false],
-            &[true, true, false, true],
-            &[true, true, false, false],
-            &[true, false, true, true],
-            &[true, false, true, false],
-            &[true, false, false, true],
-            &[true, false, false, false],
-            &[false, true, true, true],
-            &[false, true, true, false],
-            &[false, true, false, true],
-            &[false, true, false, false],
-            &[false, false, true, true],
-            &[false, false, true, false],
-            &[false, false, false, true],
-            &[false, false, false, false],
-        ],
-    );
 }
 
 #[cfg(test)]
