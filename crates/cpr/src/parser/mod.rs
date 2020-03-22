@@ -9,7 +9,7 @@ use rangeset::RangeSet;
 use thiserror::Error;
 
 use custom_debug_derive::CustomDebug;
-use expr::{langc_conversion::*, Expr};
+use expr::{Expr, TokenStream};
 use hashbrown::HashMap;
 use lang_c::{ast::Expression, driver, env::Env};
 use std::{
@@ -36,7 +36,20 @@ impl From<Punctuator> for Token {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+impl fmt::Display for Token {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Keyword(s) | Self::Identifier(s) => f.write_str(s)?,
+            Self::Punctuator(p) => write!(f, "{}", (*p as u8) as char)?,
+            Self::Integer(i) => write!(f, "{}", i)?,
+            Self::StringLiteral(s) => write!(f, "{:?}", s)?,
+            Self::Whitespace => f.write_str(" ")?,
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u8)]
 pub enum Punctuator {
     Bang = b'!',
@@ -71,7 +84,7 @@ pub enum Punctuator {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct DefineArguments {
-    values: Vec<String>,
+    names: Vec<String>,
     has_trailing: bool,
 }
 
@@ -82,12 +95,12 @@ pub enum Define {
     },
     Value {
         name: String,
-        value: Option<String>,
+        value: TokenStream,
     },
     Replacement {
         name: String,
         args: DefineArguments,
-        value: String,
+        value: TokenStream,
     },
 }
 
@@ -248,8 +261,8 @@ impl fmt::Display for SyntaxError {
 #[derive(Debug)]
 pub struct ParsedUnit {
     pub source: String,
-    pub def_ranges: RangeSet<Expr>,
-    pub dependencies: HashMap<Include, Expr>,
+    pub def_ranges: RangeSet<TokenStream>,
+    pub dependencies: HashMap<Include, TokenStream>,
 }
 
 #[derive(CustomDebug)]
@@ -310,38 +323,29 @@ impl ParsedUnit {
         let source = utils::process_line_continuations_and_comments(source);
 
         let mut dependencies = HashMap::new();
-        let mut def_ranges = RangeSet::<Expr>::new();
+        let mut def_ranges =
+            RangeSet::<TokenStream>::new(vec![Token::Keyword("true".into())].into());
         let mut n = 0usize;
-        let mut last_if: Option<Expr> = None;
+        let mut last_if: Option<TokenStream> = None;
 
         for line in source.lines() {
             log::debug!("| {}", line);
-            if let Some(directive) = directive::parse_directive(line) {
-                // log::debug!("{}", line);
+            let res = directive::parser::directive(line);
+            if let Some(directive) = res.expect("should be able to parse all directives") {
+                log::debug!("{}", line);
                 log::debug!("{:?}", &directive);
 
                 match directive {
                     Directive::Include(include) => {
                         dependencies.insert(include, def_ranges.last().1.clone());
                     }
-                    Directive::If(expr) => {
-                        let pred = expr.into_expr();
+                    Directive::If(pred) => {
                         last_if = Some(pred.clone());
                         def_ranges.push((n, pred));
                     }
-                    Directive::IfDefined(name) => {
-                        let pred = Expr::Defined(name);
-                        last_if = Some(pred.clone());
-                        def_ranges.push((n, pred));
-                    }
-                    Directive::IfNotDefined(name) => {
-                        let pred = !Expr::Defined(name);
-                        last_if = Some(pred.clone());
-                        def_ranges.push((n, pred));
-                    }
-                    Directive::ElseIf(value) => {
+                    Directive::ElseIf(pred) => {
                         def_ranges.pop(n);
-                        let pred = value.into_expr();
+                        let pred = !last_if.clone().expect("elif without last_if") & pred;
                         last_if = Some(pred.clone());
                         def_ranges.push((n, pred));
                     }
@@ -382,7 +386,7 @@ impl ParsedUnit {
         self.def_ranges
             .iter()
             .filter_map(|(range, expr)| {
-                let expr = expr.eval(ctx).simplify();
+                let expr = expr.parse().eval(ctx).simplify();
                 if matches!(expr, Expr::False) {
                     log::debug!("Eliminating range {:?} (always-false)", range);
                     return None;
@@ -394,7 +398,9 @@ impl ParsedUnit {
                     if line.is_empty() {
                         continue;
                     }
-                    if let Some(directive) = directive::parse_directive(line) {
+                    let res =
+                        directive::parser::directive(line).expect("should parse all directives");
+                    if let Some(directive) = res {
                         match directive {
                             Directive::Define(_) | Directive::Undefine(_) => {
                                 // leave them in!

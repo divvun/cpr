@@ -1,4 +1,7 @@
-use super::{directive::PreprocessorIdent, Context};
+use super::{
+    directive::{self, PreprocessorIdent},
+    Context, Define, Punctuator, Token,
+};
 use qmc_conversion::*;
 use std::{
     fmt,
@@ -7,6 +10,87 @@ use std::{
 
 pub mod langc_conversion;
 pub mod qmc_conversion;
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct TokenStream(pub Vec<Token>);
+
+impl From<Vec<Token>> for TokenStream {
+    fn from(tokens: Vec<Token>) -> Self {
+        Self(tokens)
+    }
+}
+
+impl fmt::Display for TokenStream {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for tok in &self.0 {
+            write!(f, "{}", tok)?;
+        }
+        Ok(())
+    }
+}
+
+impl TokenStream {
+    pub fn new() -> Self {
+        Self(Vec::new())
+    }
+
+    pub fn expand_in_place(&self, ctx: &Context, output: &mut Self) {
+        'each_tok: for tok in &self.0 {
+            match &tok {
+                Token::Identifier(id) => {
+                    if let Some(def) = ctx.defines.get(id) {
+                        match def {
+                            Define::Value { value, .. } => {
+                                value.expand_in_place(ctx, output);
+                                continue 'each_tok;
+                            }
+                            _ => {}
+                        }
+                    }
+                    output.0.push(tok.clone());
+                }
+                _ => unimplemented!(),
+            }
+        }
+    }
+
+    pub fn expand(&self, ctx: &Context) -> Self {
+        let mut res = Self::new();
+        self.expand_in_place(ctx, &mut res);
+        res
+    }
+
+    pub fn parse(&self) -> Expr {
+        directive::parser::expr(&self.to_string()).expect("all exprs should parse")
+    }
+}
+
+impl Not for TokenStream {
+    type Output = TokenStream;
+    fn not(self) -> Self::Output {
+        let mut out = Self::new();
+        out.0.push(Punctuator::Bang.into());
+        out.0.push(Punctuator::ParenOpen.into());
+        out.0.extend(self.0);
+        out.0.push(Punctuator::ParenClose.into());
+        out
+    }
+}
+
+impl BitAnd for TokenStream {
+    type Output = TokenStream;
+    fn bitand(self, rhs: TokenStream) -> TokenStream {
+        let mut out = Self::new();
+        out.0.push(Punctuator::ParenOpen.into());
+        out.0.extend(self.0);
+        out.0.push(Punctuator::ParenClose.into());
+        out.0.push(Punctuator::Ampersand.into());
+        out.0.push(Punctuator::ParenOpen.into());
+        out.0.extend(rhs.0);
+        out.0.push(Punctuator::ParenClose.into());
+        out
+    }
+}
 
 /// Any preprocessor expression, used in `#if` and `#elif`.
 /// Essentially a subset of valid C expressions.

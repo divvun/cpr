@@ -11,7 +11,7 @@ fn parse(source: &str) -> ParsedUnit {
 fn test_single(source: &str, expected: Expr) {
     let u = parse(source);
     let (_, actual) = u.dependencies.iter().next().unwrap();
-    assert_eq!(*actual, expected);
+    assert_eq!(actual.parse(), expected);
 }
 
 #[test]

@@ -2,7 +2,7 @@ mod variations;
 use crate::parser::SourceString;
 use variations::variations;
 
-use super::{directive, expr::Expr, Chunk, Context, Define};
+use super::{directive, expr::Expr, Chunk, Context};
 use directive::Directive;
 use lang_c::{driver, env::Env};
 
@@ -58,24 +58,9 @@ impl<'a> Strand<'a> {
 
         for atom in iter {
             'each_line: for &line in &atom.lines {
-                let mut line = line.to_string();
-
-                // FIXME: lex
-                // FIXME: Define::Replacement
-                // FIXME: recurse
-                for def in ctx.defines.values() {
-                    if let Define::Value { name, value } = def {
-                        if line.contains(name) {
-                            line = line.replace(
-                                name,
-                                value.as_ref().map(|x| x.as_str()).unwrap_or_default(),
-                            );
-                        }
-                    }
-                }
-
-                log::debug!("Expanded line | {}", line);
-                if let Some(directive) = directive::parse_directive(&line) {
+                if let Some(directive) =
+                    directive::parser::directive(line).expect("should parse all directives")
+                {
                     match directive {
                         Directive::Define(d) => {
                             log::debug!("Defining: {:?}", d);
@@ -89,12 +74,19 @@ impl<'a> Strand<'a> {
                         }
                         _ => {
                             log::debug!("Ignoring directive {:?}", directive);
+                            continue 'each_line;
                         }
                     }
-                }
+                } else {
+                    // non-directive line
+                    let tokens =
+                        directive::parser::token_stream(line).expect("should tokenize all lines");
+                    let line = tokens.expand(&ctx).to_string();
 
-                out.push_str(&line);
-                out.push('\n');
+                    log::debug!("Expanded line | {}", &line);
+                    out.push_str(&line);
+                    out.push('\n');
+                }
             }
         }
 

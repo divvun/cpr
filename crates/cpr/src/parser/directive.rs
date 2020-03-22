@@ -1,21 +1,17 @@
-use std::convert::TryFrom;
-
-use super::{Define, DefineArguments, Include, Punctuator, Token};
+use super::{Define, DefineArguments, Expr, Include, Punctuator, Token};
+use crate::parser::expr::TokenStream;
+use peg::ParseLiteral;
 
 use lang_c::ast::Expression;
-use regex::Regex;
 
 fn env() -> lang_c::env::Env {
     let mut env = lang_c::env::Env::with_core();
     env.ignore_reserved(true);
     env.reserved.insert("defined");
-    // env.single_line_mode(true);
     env
 }
 
 peg::parser! { pub(crate) grammar parser() for str {
-    use peg::ParseLiteral;
-
     /// 0+ whitespace
     rule _()
         = quiet!{[' ' | '\t']*}
@@ -40,70 +36,78 @@ peg::parser! { pub(crate) grammar parser() for str {
 
     rule directive1() -> Directive
         = N("include") __ i:include() { Directive::Include(i) }
+        / N("if") __ t:token_stream() { Directive::If(t) }
+        / N("elif") __ t:token_stream() { Directive::ElseIf(t) }
+        / N("ifdef") __ i:identifier() { Directive::If(
+            vec![
+                Token::Identifier("defined".into()),
+                Punctuator::ParenOpen.into(),
+                Token::Identifier(i),
+                Punctuator::ParenClose.into(),
+            ].into()
+        ) }
+        / N("ifndef") __ i:identifier() { Directive::If(
+            vec![
+                Punctuator::Bang.into(),
+                Token::Identifier("defined".into()),
+                Punctuator::ParenOpen.into(),
+                Token::Identifier(i),
+                Punctuator::ParenClose.into(),
+            ].into()
+        ) }
+        / N("else") eof() { Directive::Else }
+        / N("endif") eof() { Directive::EndIf }
         / N("define") __ d:define() { Directive::Define(d) }
+        / N("undef") __ n:undef() { Directive::Undefine(n) }
+        / N("error") __ s:$([_]*) { Directive::Error(s.into()) }
+        / N("pragma") __ s:$([_]*) { Directive::Error(s.into()) }
         / l:$(![' '][_]+) __ r:$([_]*)  { Directive::Unknown(l.into(), r.into()) }
         / expected!("directive name")
+
+    rule undef() -> String
+        = n:identifier() eof() { n }
 
     rule include() -> Include
         = t:include_token() eof() { t }
 
-    pub rule include_line() -> Include
-        = H("include") __ t:include_token() eof() { t }
+    rule include_token() -> Include
+        = "<" p:$((!['>'][_])+) ">" { Include::System(p.into()) }
+        / "\"" p:$((!['"'][_])+) "\"" { Include::Quoted(p.into()) }
+        / e:constant_expression() { Include::Expression(e) }
 
     rule define() -> Define
         = define_function_like()
         / define_object_like()
 
     rule define_function_like() -> Define
-        = name:identifier() "(" _ args:identifier_list() _ ")" __ value:replacement_list() eof() {
+        = name:identifier() "(" _ args:identifier_list() _ ")" __ value:token_stream() {
             Define::Replacement {
                 name,
                 args,
-                value: value.join(" "),
+                value,
             }
         }
 
     rule define_object_like() -> Define
-        = name:identifier() __ value:replacement_list()? eof() {
+        = name:identifier() __ value:token_stream() {
             Define::Value {
                 name,
-                value: value.map(|x| x.join(" ")),
+                value,
             }
         }
 
-    pub rule define_line() -> Define
-        = expected!("deprecated")
-    rule undef_line()
-        = H("undef") __ identifier() eof()
-        / expected!("#undef")
-    rule line_line()
-        = H("line") __ t:$([_]+) eof()
-        / expected!("#line")
-    rule error_line()
-        = H("error") (__ t:$([_]+))? eof()
-        / expected!("#error")
-    rule pragma_line()
-        = H("pragma") (__ t:$([_]+))? eof()
-        / expected!("#pragma")
-    rule include_token() -> Include
-        = "<" p:$((!['>'][_])+) ">" { Include::System(p.into()) }
-        / "\"" p:$((!['"'][_])+) "\"" { Include::Quoted(p.into()) }
-        / e:constant_expression() { Include::Expression(e) }
-
-    /// used for macro bodies and define values
-    rule replacement_list() -> Vec<String>
-        = n:$(![' '][_]+) ** (_ " " _) { n.iter().map(|x| x.to_string()).collect() }
     rule eof()
         = _ ![_] // 0+ whitespace then eof
         / expected!("eof")
+
     rule identifier() -> String
         = n:$(['_' | 'a'..='z' | 'A'..='Z'] ['_' | 'a'..='z' | 'A'..='Z' | '0'..='9']*) {
             n.into()
         }
     rule identifier_list() -> DefineArguments
-        = i:identifier() ** (_ "," _) _ e:("," _ "...")? {
+        = names:identifier() ** (_ "," _) _ e:("," _ "...")? {
             DefineArguments {
-                values: i,
+                names,
                 has_trailing: e.is_some(),
             }
         }
@@ -119,8 +123,8 @@ peg::parser! { pub(crate) grammar parser() for str {
             }
         }
 
-    pub rule tokens() -> Vec<Token>
-        = t:token()* eof() { t }
+    pub rule token_stream() -> TokenStream
+        = t:token()* eof() { t.into() }
 
     pub rule token() -> Token
         = __ { Token::Whitespace }
@@ -182,16 +186,28 @@ peg::parser! { pub(crate) grammar parser() for str {
         / "." { Punctuator::Dot }
         / "/" { Punctuator::Slash }
         / "#" { Punctuator::Hash }
+
+    pub rule expr() -> Expr = precedence!{
+        l:(@) _ "|" _ r:@ { l | r }
+        --
+        l:(@) _ "&" _ r:@ { l & r }
+        --
+        name:identifier() { Expr::Symbol(name) }
+        callee:@ _ "(" args:expr() ** (_ "," _) ")" _ { Expr::Call(Box::new(callee), args) }
+        --
+        "(" e:expr() ")" { e }
+        --
+        "defined" _ name:identifier() { Expr::Defined(name) }
+        "defined" _ "(" _ name:identifier() _ ")" { Expr::Defined(name) }
+    }
 }}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Directive {
-    If(Expression),
+    If(TokenStream),
     Else,
-    ElseIf(Expression),
+    ElseIf(TokenStream),
     EndIf,
-    IfDefined(String),
-    IfNotDefined(String),
     Include(Include),
     Define(Define),
     Undefine(String),
@@ -200,114 +216,31 @@ pub enum Directive {
     Unknown(String, String),
 }
 
-fn workaround_braceless_defined(value: &str) -> String {
-    lazy_static::lazy_static! {
-        static ref BRACELESS_DEFINED: Regex = Regex::new(r"defined ([^\s]+)").unwrap();
-        static ref DOUBLESLASH_COMMENT: Regex = Regex::new("// .*$").unwrap();
-        static ref SLASHSTAR_COMMENT: Regex = Regex::new(r"/\*.*?\*/").unwrap();
-    }
-    let v = BRACELESS_DEFINED.replace_all(value, "defined($1)");
-    let v = DOUBLESLASH_COMMENT.replace_all(&v, "");
-    SLASHSTAR_COMMENT.replace_all(&v, "").to_string()
-}
-
-pub(crate) fn parse_directive(line: &str) -> Option<Directive> {
-    lazy_static::lazy_static! {
-        static ref DIRECTIVE_PATTERN: Regex = Regex::new(r"^\s*#\s*([^\s]+?)(?:\s(.*?))?\s*(?:\s*//.*)?$")
-            .expect("regex must always be valid");
-    }
-
-    let captures = match DIRECTIVE_PATTERN.captures(line) {
-        Some(v) => v,
-        None => return None,
-    };
-
-    let key = match captures.get(1).map(|x| x.as_str()) {
-        Some(v) => v,
-        None => return None,
-    };
-
-    let value = match captures.get(2).map(|x| x.as_str()) {
-        Some(v) => workaround_braceless_defined(&v).trim().to_string(),
-        None => "".to_string(),
-    };
-
-    use Directive::*;
-    match key {
-        "if" => match lang_c::parser::constant_expression(&value, &mut env()) {
-            Ok(v) => match Expression::try_from(v.node) {
-                Ok(expr) => Some(If(expr)),
-                Err(e) => {
-                    dbg!(e);
-                    panic!(e)
-                }
-            },
-            Err(e) => {
-                dbg!(e);
-                panic!("if constant expression: {:?}", value)
-            }
-        },
-        "elif" => match lang_c::parser::constant_expression(&value, &mut env()) {
-            Ok(v) => match Expression::try_from(v.node) {
-                Ok(expr) => Some(ElseIf(expr)),
-                Err(e) => {
-                    dbg!(e);
-                    panic!(e)
-                }
-            },
-            Err(e) => {
-                dbg!(e);
-                panic!("elif constant expression: {:?}", value)
-            }
-        },
-        "else" => Some(Else),
-        "endif" => Some(EndIf),
-        "ifdef" => Some(IfDefined(value)),
-        "ifndef" => Some(IfNotDefined(value)),
-        "include" => parser::include_line(&format!("#include {}", value))
-            .map(Include)
-            .map_err(|_| ())
-            .ok(),
-        "define" => parser::define_line(&format!("#define {}", value))
-            .map(Define)
-            .map_err(|e| {
-                dbg!(&e);
-                ()
-            })
-            .ok(),
-        "undef" => Some(Undefine(value)),
-        "error" => Some(Error(value)),
-        "pragma" => Some(Pragma(value)),
-        _ => Some(Unknown(key.to_string(), value)),
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    #[allow(unused_imports)]
     use super::*;
 
+    use Punctuator as P;
+    use Token as T;
+    use T::Whitespace as __;
+
+    fn id(s: &str) -> T {
+        T::Identifier(s.into())
+    }
+
+    fn int(i: i64) -> T {
+        T::Integer(i)
+    }
+
     #[test]
-    fn token() {
-        use Punctuator as P;
-        use Token as T;
-        use T::Whitespace as __;
-
-        fn id(s: &str) -> T {
-            T::Identifier(s.into())
-        }
-
-        fn int(i: i64) -> T {
-            T::Integer(i)
-        }
-
+    fn tokens() {
         assert_eq!(
-            parser::tokens("2 + 4"),
-            Ok(vec![int(2), __, P::Plus.into(), __, int(4)])
+            parser::token_stream("2 + 4"),
+            Ok(vec![int(2), __, P::Plus.into(), __, int(4)].into())
         );
 
         assert_eq!(
-            parser::tokens("f(x) = y;"),
+            parser::token_stream("f(x) = y;"),
             Ok(vec![
                 id("f"),
                 P::ParenOpen.into(),
@@ -318,7 +251,8 @@ mod tests {
                 __,
                 id("y"),
                 P::Semicolon.into(),
-            ])
+            ]
+            .into())
         );
     }
 
@@ -329,12 +263,23 @@ mod tests {
     }
 
     #[test]
+    fn define_objectlike_empty() {
+        assert_eq!(
+            parser::directive("#define FOO"),
+            Ok(Some(Directive::Define(Define::Value {
+                name: "FOO".into(),
+                value: vec![].into()
+            })))
+        );
+    }
+
+    #[test]
     fn define_objectlike() {
         assert_eq!(
             parser::directive("#define FOO BAR"),
             Ok(Some(Directive::Define(Define::Value {
                 name: "FOO".into(),
-                value: Some("BAR".into())
+                value: vec![id("BAR")].into()
             })))
         );
     }
@@ -345,7 +290,13 @@ mod tests {
             parser::directive("#define FOO BAR(BAZ)"),
             Ok(Some(Directive::Define(Define::Value {
                 name: "FOO".into(),
-                value: Some("BAR(BAZ)".into())
+                value: vec![
+                    id("BAR"),
+                    P::ParenOpen.into(),
+                    id("BAZ"),
+                    P::ParenClose.into(),
+                ]
+                .into()
             })))
         );
     }
@@ -357,75 +308,35 @@ mod tests {
             Ok(Some(Directive::Define(Define::Replacement {
                 name: "FOO".into(),
                 args: DefineArguments {
-                    values: vec!["X".into(), "Y".into()],
+                    names: vec!["X".into(), "Y".into()],
                     has_trailing: false
                 },
-                value: "X + Y".into()
+                value: vec![id("X"), __, P::Plus.into(), __, id("Y")].into()
             })))
         );
+    }
+
+    #[test]
+    fn include_angle() {
+        assert_eq!(
+            parser::directive("#include <foo/bar/baz.h>"),
+            Ok(Some(Directive::Include(Include::System(
+                "foo/bar/baz.h".into()
+            ))))
+        )
+    }
+
+    #[test]
+    fn include_quoted() {
+        assert_eq!(
+            parser::directive(r#"#include "shared/um/sure.h""#),
+            Ok(Some(Directive::Include(Include::Quoted(
+                "shared/um/sure.h".into()
+            ))))
+        )
     }
 }
 
 pub trait PreprocessorIdent {
     fn ident(&self) -> Vec<String>;
-}
-
-impl<T: PreprocessorIdent> PreprocessorIdent for lang_c::span::Node<T> {
-    fn ident(&self) -> Vec<String> {
-        self.node.ident()
-    }
-}
-
-impl PreprocessorIdent for lang_c::ast::Identifier {
-    fn ident(&self) -> Vec<String> {
-        vec![self.name.clone()]
-    }
-}
-
-impl PreprocessorIdent for lang_c::ast::UnaryOperatorExpression {
-    fn ident(&self) -> Vec<String> {
-        self.operand.ident()
-    }
-}
-
-impl PreprocessorIdent for lang_c::ast::BinaryOperatorExpression {
-    fn ident(&self) -> Vec<String> {
-        let mut vec = vec![];
-        vec.append(&mut self.lhs.ident());
-        vec.append(&mut self.rhs.ident());
-        vec
-    }
-}
-
-impl PreprocessorIdent for lang_c::ast::ConditionalExpression {
-    fn ident(&self) -> Vec<String> {
-        let mut vec = vec![];
-        vec.append(&mut self.condition.ident());
-        vec.append(&mut self.then_expression.ident());
-        vec.append(&mut self.else_expression.ident());
-        vec
-    }
-}
-
-impl PreprocessorIdent for lang_c::ast::CallExpression {
-    fn ident(&self) -> Vec<String> {
-        let mut vec = vec![];
-        // vec.append(&mut self.callee.ident());
-        vec.append(&mut self.arguments.iter().map(|x| x.ident()).flatten().collect());
-        vec
-    }
-}
-
-impl PreprocessorIdent for lang_c::ast::Expression {
-    fn ident(&self) -> Vec<String> {
-        use lang_c::ast::Expression::*;
-        match self {
-            Identifier(x) => x.ident(),
-            Call(x) => x.ident(),
-            UnaryOperator(x) => x.ident(),
-            BinaryOperator(x) => x.ident(),
-            Conditional(x) => x.ident(),
-            _ => vec![],
-        }
-    }
 }

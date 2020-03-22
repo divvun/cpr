@@ -1,7 +1,7 @@
 use std::{
     collections::{BTreeMap, VecDeque},
     hash::Hash,
-    ops::{BitAnd, BitOr, Range},
+    ops::{BitAnd, Range},
 };
 
 /// An ordered, non-overlapping set of `Range<usize>` associated to values.
@@ -62,7 +62,10 @@ use std::{
 /// ```
 ///
 #[derive(Debug)]
-pub struct RangeSet<V: Default> {
+pub struct RangeSet<V> {
+    /// Initial value
+    initial: V,
+
     /// Stack of pushed values, last pushed is the current active
     stack: Vec<V>,
 
@@ -73,16 +76,17 @@ pub struct RangeSet<V: Default> {
 
 impl<V> RangeSet<V>
 where
-    V: Default + Clone + PartialEq + Eq + Hash + BitAnd<Output = V> + BitOr<Output = V>,
+    V: Clone + PartialEq + Eq + Hash + BitAnd<Output = V>,
 {
-    /// Construct a set with a signle range, starting at zero,
+    /// Construct a set with a single range, starting at zero,
     /// with the `V`'s default value
-    pub fn new() -> RangeSet<V> {
+    pub fn new(initial: V) -> RangeSet<V> {
         let mut set = RangeSet {
+            initial: initial.clone(),
             stack: vec![],
             vec: BTreeMap::new(),
         };
-        set.vec.insert(0, V::default());
+        set.vec.insert(0, initial);
         set
     }
 
@@ -134,7 +138,11 @@ where
         assert!(!self.vec.keys().last().is_none() && *self.vec.keys().last().unwrap() <= index);
 
         self.stack.pop();
-        let prev_key = self.stack.last().cloned().unwrap_or_default();
+        let prev_key = self
+            .stack
+            .last()
+            .cloned()
+            .unwrap_or_else(|| self.initial.clone());
         self.vec.insert(index, prev_key);
     }
 
@@ -153,12 +161,12 @@ where
 }
 
 /// Iterates over all ranges of a RangeSet
-pub struct Iter<'a, V: Default> {
+pub struct Iter<'a, V> {
     range_set: &'a RangeSet<V>,
     keys: VecDeque<usize>,
 }
 
-impl<'a, V: Default> Iterator for Iter<'a, V> {
+impl<'a, V> Iterator for Iter<'a, V> {
     type Item = (Range<usize>, &'a V);
 
     fn next(&mut self) -> Option<Self::Item> {
