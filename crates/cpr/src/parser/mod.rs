@@ -19,6 +19,56 @@ use std::{
 };
 use strand::{Atom, Strand};
 
+/// A C token
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum Token {
+    Keyword(String),
+    Identifier(String),
+    Punctuator(Punctuator),
+    Integer(i64),
+    StringLiteral(String),
+    Whitespace,
+}
+
+impl From<Punctuator> for Token {
+    fn from(p: Punctuator) -> Self {
+        Self::Punctuator(p)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[repr(u8)]
+pub enum Punctuator {
+    Bang = b'!',
+    Percent = b'%',
+    Circumflex = b'^',
+    Ampersand = b'&',
+    Star = b'*',
+    ParenOpen = b'(',
+    ParenClose = b')',
+    Minus = b'-',
+    Plus = b'+',
+    Equal = b'=',
+    CurlyOpen = b'{',
+    CurlyClose = b'}',
+    Pipe = b'|',
+    Tilde = b'~',
+    SquareOpen = b'[',
+    SquareClose = b']',
+    Backslash = b'\\',
+    Semicolon = b';',
+    SingleQuote = b'\'',
+    Colon = b':',
+    DoubleQuote = b'"',
+    AngleOpen = b'<',
+    AngleClose = b'>',
+    Question = b'?',
+    Comma = b',',
+    Dot = b'.',
+    Slash = b'/',
+    Hash = b'#',
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct DefineArguments {
     values: Vec<String>,

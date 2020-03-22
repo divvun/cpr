@@ -1,6 +1,6 @@
 use std::convert::TryFrom;
 
-use super::{Define, DefineArguments, Include};
+use super::{Define, DefineArguments, Include, Punctuator, Token};
 
 use lang_c::ast::Expression;
 use regex::Regex;
@@ -118,6 +118,70 @@ peg::parser! { pub(crate) grammar parser() for str {
                 }
             }
         }
+
+    pub rule tokens() -> Vec<Token>
+        = t:token()* eof() { t }
+
+    pub rule token() -> Token
+        = __ { Token::Whitespace }
+        / k:tok_punctuator() { Token::Punctuator(k) }
+        / k:tok_keyword() { Token::Keyword(k) }
+        / k:identifier() { Token::Identifier(k) }
+        / k:tok_integer() { Token::Integer(k) }
+        / expected!("token")
+
+    rule tok_keyword() -> String
+        = e:identifier() {?
+            if env().reserved.contains(e.as_str()) {
+                Ok(e)
+            } else {
+                Err("not a keyword")
+            }
+        }
+
+    rule tok_integer() -> i64
+        = "0x" s:tok_hex_integer() {? i64::from_str_radix(&s, 16).map_err(|_| "bad hex constant") }
+        / "0" s:tok_oct_integer() {? i64::from_str_radix(&s, 8).map_err(|_| "bad oct constant") }
+        / s:tok_dec_integer() {? i64::from_str_radix(&s, 10).map_err(|_| "bad decimal constant") }
+
+    rule tok_hex_integer() -> String
+        = e:$(['0'..='9' | 'A'..='F' | 'a'..='f']) { e.into() }
+
+    rule tok_oct_integer() -> String
+        = e:$(['0'..='7']) { e.into() }
+
+    rule tok_dec_integer() -> String
+        = e:$(['0'..='9']) { e.into() }
+
+    rule tok_punctuator() -> Punctuator
+        = "!" { Punctuator::Bang }
+        / "%" { Punctuator::Percent }
+        / "^" { Punctuator::Circumflex }
+        / "&" { Punctuator::Ampersand }
+        / "*" { Punctuator::Star }
+        / "(" { Punctuator::ParenOpen }
+        / ")" { Punctuator::ParenClose }
+        / "-" { Punctuator::Minus }
+        / "+" { Punctuator::Plus }
+        / "=" { Punctuator::Equal }
+        / "{" { Punctuator::CurlyOpen }
+        / "}" { Punctuator::CurlyClose }
+        / "|" { Punctuator::Pipe }
+        / "~" { Punctuator::Tilde }
+        / "[" { Punctuator::SquareOpen }
+        / "]" { Punctuator::SquareClose }
+        / "\\" { Punctuator::Backslash }
+        / ";" { Punctuator::Semicolon }
+        / "'" { Punctuator::SingleQuote }
+        / ":" { Punctuator::Colon }
+        / "\"" { Punctuator::DoubleQuote }
+        / "<" { Punctuator::AngleOpen }
+        / ">" { Punctuator::AngleClose }
+        / "?" { Punctuator::Question }
+        / "," { Punctuator::Comma }
+        / "." { Punctuator::Dot }
+        / "/" { Punctuator::Slash }
+        / "#" { Punctuator::Hash }
 }}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -222,6 +286,41 @@ pub(crate) fn parse_directive(line: &str) -> Option<Directive> {
 mod tests {
     #[allow(unused_imports)]
     use super::*;
+
+    #[test]
+    fn token() {
+        use Punctuator as P;
+        use Token as T;
+        use T::Whitespace as __;
+
+        fn id(s: &str) -> T {
+            T::Identifier(s.into())
+        }
+
+        fn int(i: i64) -> T {
+            T::Integer(i)
+        }
+
+        assert_eq!(
+            parser::tokens("2 + 4"),
+            Ok(vec![int(2), __, P::Plus.into(), __, int(4)])
+        );
+
+        assert_eq!(
+            parser::tokens("f(x) = y;"),
+            Ok(vec![
+                id("f"),
+                P::ParenOpen.into(),
+                id("x"),
+                P::ParenClose.into(),
+                __,
+                P::Equal.into(),
+                __,
+                id("y"),
+                P::Semicolon.into(),
+            ])
+        );
+    }
 
     #[test]
     fn not_a_directive() {
