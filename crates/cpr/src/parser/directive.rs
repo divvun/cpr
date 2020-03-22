@@ -192,6 +192,8 @@ peg::parser! { pub(crate) grammar parser() for str {
         --
         l:(@) _ "&" _ r:@ { l & r }
         --
+        "true" { Expr::True }
+        "false" { Expr::False }
         name:identifier() { Expr::Symbol(name) }
         callee:@ _ "(" args:expr() ** (_ "," _) ")" _ { Expr::Call(Box::new(callee), args) }
         --

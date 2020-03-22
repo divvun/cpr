@@ -35,21 +35,40 @@ impl TokenStream {
     }
 
     pub fn expand_in_place(&self, ctx: &Context, output: &mut Self) {
-        'each_tok: for tok in &self.0 {
-            match &tok {
-                Token::Identifier(id) => {
+        let mut slice = &self.0[..];
+        'outer: loop {
+            match slice {
+                [] => break 'outer,
+                [Token::Identifier(id), Token::Punctuator(Punctuator::ParenOpen), ..] => {
+                    let def = ctx
+                        .defines
+                        .get(id)
+                        .expect("function-like macro should be defined");
+                    if let Define::Replacement { .. } = def {
+                        // TODO: clone value by replacing args identifiers with their passed value,
+                        // also check argument count
+                        todo!();
+                    } else {
+                        panic!("{} is not a function-like macro", id);
+                    }
+                }
+                [Token::Identifier(id), rest @ ..] => {
+                    slice = rest;
                     if let Some(def) = ctx.defines.get(id) {
                         match def {
                             Define::Value { value, .. } => {
                                 value.expand_in_place(ctx, output);
-                                continue 'each_tok;
+                                continue 'outer;
                             }
                             _ => {}
                         }
                     }
-                    output.0.push(tok.clone());
+                    output.0.push(Token::Identifier(id.clone()));
                 }
-                _ => unimplemented!(),
+                [token, rest @ ..] => {
+                    slice = rest;
+                    output.0.push(token.clone());
+                }
             }
         }
     }
