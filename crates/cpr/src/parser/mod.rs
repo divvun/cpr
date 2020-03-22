@@ -20,6 +20,12 @@ use std::{
 use strand::{Atom, Strand};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct DefineArguments {
+    values: Vec<String>,
+    has_trailing: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Define {
     Blacklist {
         name: String,
@@ -30,7 +36,7 @@ pub enum Define {
     },
     Replacement {
         name: String,
-        args: Vec<String>,
+        args: DefineArguments,
         value: String,
     },
 }
@@ -389,7 +395,7 @@ impl ParsedUnit {
             if strand.len() > 4 {
                 panic!(
                     "Trying to knit too deep, current strand =\n{}",
-                    strand.source(&mut strand.all_atoms())
+                    strand.source(ctx, &mut strand.all_atoms())
                 );
             }
 

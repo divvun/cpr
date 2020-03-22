@@ -1,14 +1,9 @@
 use std::convert::TryFrom;
 
-use super::{Define, Include};
+use super::{Define, DefineArguments, Include};
 
-use lang_c::ast::{Expression, Identifier};
+use lang_c::ast::Expression;
 use regex::Regex;
-
-struct Identifiers {
-    values: Vec<Identifier>,
-    has_trailing: bool,
-}
 
 fn env() -> lang_c::env::Env {
     let mut env = lang_c::env::Env::with_core();
@@ -21,104 +16,93 @@ fn env() -> lang_c::env::Env {
 peg::parser! { pub(crate) grammar parser() for str {
     use peg::ParseLiteral;
 
+    /// 0+ whitespace
     rule _()
         = quiet!{[' ' | '\t']*}
+    /// 1+ whitespace
     rule __()
         = quiet!{[' ' | '\t']+}
+    /// matches #name literally
     rule H(name: &str)
         = ("#" _ ##parse_string_literal(name))
-    // pub rule group()
-    //     = group_part()*
-    rule group_part()
-        = if_section()
-        / control_line()
-        / text_line()
-    rule if_section()
-        = if_group()
-        / elif_group()+
-        / else_group()
-        / endif_line()
-        / expected!("if section")
-    rule if_group()
-        = H("if") __ constant_expression() _ new_line()
-        / H("ifdef") __ identifier() _ new_line()
-        / H("ifndef") __ identifier() _ new_line()
-        / expected!("if group")
-    rule elif_group()
-        = H("elif") __ constant_expression() _ new_line()
-    rule else_group()
-        = H("else") _ new_line()
-    rule endif_line()
-        = H("endif") _ new_line()
+    /// matches name literally
+    rule N(name: &str)
+        = ##parse_string_literal(name)
+
+    /// Parses line (no CR/LF, no comments, no line continuations) as directive or None
+    pub rule directive() -> Option<Directive>
+        = _ d:directive0() { d }
+
+    rule directive0() -> Option<Directive>
+        = "#" _ d:directive1() { Some(d) }
+        / eof() { None } // empty line
+        / !"#" [_]* eof() { None } // non-directive line
+
+    rule directive1() -> Directive
+        = N("include") __ i:include() { Directive::Include(i) }
+        / N("define") __ d:define() { Directive::Define(d) }
+        / l:$(![' '][_]+) __ r:$([_]*)  { Directive::Unknown(l.into(), r.into()) }
+        / expected!("directive name")
+
+    rule include() -> Include
+        = t:include_token() eof() { t }
+
     pub rule include_line() -> Include
-        = H("include") __ t:include_token() _ new_line()? { t }
-    rule define_line0() -> Define
-        = H("define") __ i:identifier() _ new_line()? {
-            Define::Value { name: i.name, value: None }
-        }
-    rule define_line1() -> Define
-        = H("define") __ i:identifier() __ r:replacement_list() _ new_line()? {
-            Define::Value { name: i.name, value: Some(r.join(" ")) }
-        }
-    rule define_line2() -> Define
-        = H("define") __ i:identifier() "(" _ a:identifier_list() _ ")" __ r:replacement_list() new_line()? {
+        = H("include") __ t:include_token() eof() { t }
+
+    rule define() -> Define
+        = define_function_like()
+        / define_object_like()
+
+    rule define_function_like() -> Define
+        = name:identifier() "(" _ args:identifier_list() _ ")" __ value:replacement_list() eof() {
             Define::Replacement {
-                name: i.name,
-                args: a.values.into_iter().map(|x| x.name).collect(),
-                value: r.join(" ")
+                name,
+                args,
+                value: value.join(" "),
             }
         }
+
+    rule define_object_like() -> Define
+        = name:identifier() __ value:replacement_list()? eof() {
+            Define::Value {
+                name,
+                value: value.map(|x| x.join(" ")),
+            }
+        }
+
     pub rule define_line() -> Define
-        = define_line0()
-        / define_line1()
-        / define_line2()
+        = expected!("deprecated")
     rule undef_line()
-        = H("undef") __ identifier() _ new_line()
+        = H("undef") __ identifier() eof()
         / expected!("#undef")
     rule line_line()
-        = H("line") __ t:$([_]+) _ new_line()
+        = H("line") __ t:$([_]+) eof()
         / expected!("#line")
     rule error_line()
-        = H("error") (__ t:$([_]+))? _ new_line()
+        = H("error") (__ t:$([_]+))? eof()
         / expected!("#error")
     rule pragma_line()
-        = H("pragma") (__ t:$([_]+))? _ new_line()
+        = H("pragma") (__ t:$([_]+))? eof()
         / expected!("#pragma")
-    rule control_line()
-        = include_line()
-        / define_line0()
-        / define_line1()
-        / undef_line()
-        / line_line()
-        / error_line()
-        / pragma_line()
-        / ("#" _ new_line())
-        / expected!("control line")
     rule include_token() -> Include
         = "<" p:$((!['>'][_])+) ">" { Include::System(p.into()) }
         / "\"" p:$((!['"'][_])+) "\"" { Include::Quoted(p.into()) }
         / e:constant_expression() { Include::Expression(e) }
 
-    rule text_line()
-        = [_]* new_line()
-    rule non_directive()
-        = [_]+ new_line()
+    /// used for macro bodies and define values
     rule replacement_list() -> Vec<String>
         = n:$(![' '][_]+) ** (_ " " _) { n.iter().map(|x| x.to_string()).collect() }
-    rule new_line()
-        = quiet!{"\n"}?
-        / expected!("newline")
-        // / EOF()
-    rule identifier() -> Identifier
-        = e:$(!['\n'][_]+) {?
-            match lang_c::parser::identifier(e, &mut env()) {
-                Ok(v) => Ok(v.node),
-                Err(e) => Err("identifier")
-            }
+    rule eof()
+        = _ ![_] // 0+ whitespace then eof
+        / expected!("eof")
+    rule identifier() -> String
+        = n:$(['_' | 'a'..='z' | 'A'..='Z'] ['_' | 'a'..='z' | 'A'..='Z' | '0'..='9']*) {
+            n.into()
         }
-    rule identifier_list() -> Identifiers
+    rule identifier_list() -> DefineArguments
         = i:identifier() ** (_ "," _) _ e:("," _ "...")? {
-            Identifiers {
+            DefineArguments {
                 values: i,
                 has_trailing: e.is_some(),
             }
@@ -136,8 +120,8 @@ peg::parser! { pub(crate) grammar parser() for str {
         }
 }}
 
-#[derive(Debug, Clone)]
-pub(crate) enum Directive {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Directive {
     If(Expression),
     Else,
     ElseIf(Expression),
@@ -238,6 +222,49 @@ pub(crate) fn parse_directive(line: &str) -> Option<Directive> {
 mod tests {
     #[allow(unused_imports)]
     use super::*;
+
+    #[test]
+    fn not_a_directive() {
+        assert_eq!(parser::directive(""), Ok(None));
+        assert_eq!(parser::directive("int foobar();"), Ok(None));
+    }
+
+    #[test]
+    fn define_objectlike() {
+        assert_eq!(
+            parser::directive("#define FOO BAR"),
+            Ok(Some(Directive::Define(Define::Value {
+                name: "FOO".into(),
+                value: Some("BAR".into())
+            })))
+        );
+    }
+
+    #[test]
+    fn define_objectlike_2() {
+        assert_eq!(
+            parser::directive("#define FOO BAR(BAZ)"),
+            Ok(Some(Directive::Define(Define::Value {
+                name: "FOO".into(),
+                value: Some("BAR(BAZ)".into())
+            })))
+        );
+    }
+
+    #[test]
+    fn define_functionlike_1() {
+        assert_eq!(
+            parser::directive("#define FOO(X, Y) X + Y"),
+            Ok(Some(Directive::Define(Define::Replacement {
+                name: "FOO".into(),
+                args: DefineArguments {
+                    values: vec!["X".into(), "Y".into()],
+                    has_trailing: false
+                },
+                value: "X + Y".into()
+            })))
+        );
+    }
 }
 
 pub trait PreprocessorIdent {

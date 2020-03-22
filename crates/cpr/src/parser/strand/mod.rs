@@ -2,7 +2,8 @@ mod variations;
 use crate::parser::SourceString;
 use variations::variations;
 
-use super::{expr::Expr, Chunk, Context};
+use super::{directive, expr::Expr, Chunk, Context, Define};
+use directive::Directive;
 use lang_c::{driver, env::Env};
 
 pub struct Atom<'a> {
@@ -51,13 +52,57 @@ impl<'a> Strand<'a> {
     }
 
     /// Returns a single String for the source of all given atoms put together
-    pub fn source(&self, iter: &mut dyn Iterator<Item = &Atom>) -> String {
-        // TODO: expand macros
+    pub fn source(&self, init_ctx: &Context, iter: &mut dyn Iterator<Item = &Atom>) -> String {
+        let mut ctx = init_ctx.clone();
+        let mut out = String::new();
 
-        iter.map(|r| r.lines.iter().copied())
-            .flatten()
-            .collect::<Vec<_>>()
-            .join("\n")
+        for atom in iter {
+            'each_line: for &line in &atom.lines {
+                let mut line = line.to_string();
+
+                // FIXME: lex
+                // FIXME: Define::Replacement
+                // FIXME: recurse
+                for def in ctx.defines.values() {
+                    if let Define::Value { name, value } = def {
+                        if line.contains(name) {
+                            line = line.replace(
+                                name,
+                                value.as_ref().map(|x| x.as_str()).unwrap_or_default(),
+                            );
+                        }
+                    }
+                }
+
+                log::debug!("Expanded line | {}", line);
+                if let Some(directive) = directive::parse_directive(&line) {
+                    match directive {
+                        Directive::Define(d) => {
+                            log::debug!("Defining: {:?}", d);
+                            ctx.push(d);
+                            continue 'each_line;
+                        }
+                        Directive::Undefine(name) => {
+                            log::debug!("Undefining: {:?}", name);
+                            ctx.pop(&name);
+                            continue 'each_line;
+                        }
+                        _ => {
+                            log::debug!("Ignoring directive {:?}", directive);
+                        }
+                    }
+                }
+
+                out.push_str(&line);
+                out.push('\n');
+            }
+        }
+
+        // remove final newline, woo
+        if out.len() > 0 {
+            out.truncate(out.len() - 1)
+        }
+        out
     }
 
     /// Parses C code
@@ -116,7 +161,7 @@ impl<'a> Strand<'a> {
                 return;
             }
 
-            let source = self.source(&mut atoms.iter().copied());
+            let source = self.source(ctx, &mut atoms.iter().copied());
             log::debug!("Parsing source:\n{:?}", SourceString(source.clone()));
             match Self::parse(source, env) {
                 Ok(driver::Parse { source, unit }) => {
