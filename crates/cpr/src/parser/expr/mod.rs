@@ -85,7 +85,8 @@ impl TokenStream {
     }
 
     pub fn parse(&self) -> Expr {
-        directive::parser::expr(&self.to_string()).expect("all exprs should parse")
+        let source = self.to_string();
+        directive::parser::expr(&source).expect("all exprs should parse")
     }
 }
 
@@ -106,12 +107,14 @@ impl BitAnd for TokenStream {
     fn bitand(self, rhs: TokenStream) -> TokenStream {
         let mut out = Self::new();
         out.0.push(Punctuator::ParenOpen.into());
+        out.0.push(Punctuator::ParenOpen.into());
         out.0.extend(self.0);
         out.0.push(Punctuator::ParenClose.into());
         out.0.push(Punctuator::Ampersand.into());
         out.0.push(Punctuator::Ampersand.into());
         out.0.push(Punctuator::ParenOpen.into());
         out.0.extend(rhs.0);
+        out.0.push(Punctuator::ParenClose.into());
         out.0.push(Punctuator::ParenClose.into());
         out
     }
@@ -368,7 +371,8 @@ impl Expr {
                 True => False,
                 False => True,
                 Integer(i) => Integer(!i),
-                v => v,
+                Not(v) => *v,
+                v => !v,
             },
             Binary(op, l, r) => match (l.constant_fold(), r.constant_fold()) {
                 (Integer(l), Integer(r)) => match op {

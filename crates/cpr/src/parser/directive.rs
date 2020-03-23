@@ -91,12 +91,15 @@ peg::parser! { pub(crate) grammar parser() for str {
         }
 
     rule define_object_like() -> Define
-        = name:identifier() __ value:token_stream() {
+        = name:identifier() value:spaced_token_stream()? {
             Define::Value {
                 name,
-                value,
+                value: value.unwrap_or(vec![].into()),
             }
         }
+
+    rule spaced_token_stream() -> TokenStream
+        = __ value:token_stream() { value }
 
     rule eof()
         = _ ![_] // 0+ whitespace then eof
@@ -400,6 +403,36 @@ mod directive_parser_tests {
                 "shared/um/sure.h".into()
             ))))
         )
+    }
+
+    #[test]
+    fn ifdef() {
+        assert_eq!(
+            parser::directive("#ifdef FOO_BAR"),
+            Ok(Some(Directive::If(
+                vec![
+                    id("defined"),
+                    Punctuator::ParenOpen.into(),
+                    id("FOO_BAR"),
+                    Punctuator::ParenClose.into()
+                ]
+                .into()
+            ))),
+        );
+
+        assert_eq!(
+            parser::directive("#ifndef FOO_BAR"),
+            Ok(Some(Directive::If(
+                vec![
+                    Punctuator::Bang.into(),
+                    id("defined"),
+                    Punctuator::ParenOpen.into(),
+                    id("FOO_BAR"),
+                    Punctuator::ParenClose.into()
+                ]
+                .into()
+            ))),
+        );
     }
 }
 
