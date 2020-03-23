@@ -113,7 +113,7 @@ impl BitAnd for TokenStream {
 
 /// Any preprocessor expression, used in `#if` and `#elif`.
 /// Essentially a subset of valid C expressions.
-#[derive(Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Expr {
     True,
     False,
@@ -127,7 +127,7 @@ pub enum Expr {
     Not(Box<Expr>),
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum BinaryOperator {
     /// <
     Less,
@@ -143,6 +143,8 @@ pub enum BinaryOperator {
     NotEquals,
     /// |
     BitwiseOr,
+    /// &
+    BitwiseAnd,
 }
 
 impl BinaryOperator {
@@ -156,11 +158,12 @@ impl BinaryOperator {
             Equals => "==",
             NotEquals => "!=",
             BitwiseOr => "|",
+            BitwiseAnd => "&",
         }
     }
 }
 
-impl fmt::Debug for Expr {
+impl fmt::Display for Expr {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use Expr::*;
 
@@ -168,13 +171,13 @@ impl fmt::Debug for Expr {
             True => write!(f, "true"),
             False => write!(f, "false"),
             Integer(i) => write!(f, "{}", i),
-            Binary(op, l, r) => write!(f, "({:?} {} {:?})", l, op.sign(), r),
+            Binary(op, l, r) => write!(f, "({} {} {})", l, op.sign(), r),
             Call(callee, args) => {
-                write!(f, "({:?}(", callee)?;
+                write!(f, "({}(", callee)?;
                 for (i, arg) in args.iter().enumerate() {
                     match i {
-                        0 => write!(f, "{:?}", arg),
-                        _ => write!(f, ", {:?}", arg),
+                        0 => write!(f, "{}", arg),
+                        _ => write!(f, ", {}", arg),
                     }?;
                 }
                 write!(f, "))")
@@ -185,8 +188,8 @@ impl fmt::Debug for Expr {
                 write!(f, "(")?;
                 for (i, v) in c.iter().enumerate() {
                     match i {
-                        0 => write!(f, "{:?}", v),
-                        _ => write!(f, " && {:?}", v),
+                        0 => write!(f, "{}", v),
+                        _ => write!(f, " && {}", v),
                     }?;
                 }
                 write!(f, ")")
@@ -195,13 +198,13 @@ impl fmt::Debug for Expr {
                 write!(f, "(")?;
                 for (i, v) in c.iter().enumerate() {
                     match i {
-                        0 => write!(f, "{:?}", v),
-                        _ => write!(f, " || {:?}", v),
+                        0 => write!(f, "{}", v),
+                        _ => write!(f, " || {}", v),
                     }?;
                 }
                 write!(f, ")")
             }
-            Not(v) => write!(f, "(!{:?})", v),
+            Not(v) => write!(f, "(!{})", v),
         }
     }
 }
