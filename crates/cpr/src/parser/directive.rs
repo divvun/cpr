@@ -1,5 +1,5 @@
 use super::{
-    expr::{BinaryOperator, TokenStream},
+    expr::{BinaryOperator as BO, TokenStream},
     Define, DefineArguments, Expr, Include, Punctuator, Token,
 };
 use peg::ParseLiteral;
@@ -193,23 +193,45 @@ peg::parser! { pub(crate) grammar parser() for str {
         = e:expr0() eof() { e }
 
     pub rule expr0() -> Expr = precedence!{
-        // lowest precedence
+        // precedence 15 (lowest)
         l:(@) _ "||" _ r:@ { l | r }
         --
+        // precedence 14
         l:(@) _ "&&" _ r:@ { l & r }
         --
-        l:(@) _ "|" _ r:@ { Expr::Binary(BinaryOperator::BitwiseOr, Box::new(l), Box::new(r)) }
+        // precedence 13
+        l:(@) _ "|"  _ r:@ { BO::BitwiseOr.build(l, r) }
         --
-        l:(@) _ "&" _ r:@ { Expr::Binary(BinaryOperator::BitwiseAnd, Box::new(l), Box::new(r)) }
+        // precedence 12
+        l:(@) _ "^"  _ r:@ { BO::BitwiseXor.build(l, r) }
         --
-        l:(@) _ "==" _ r:@ { Expr::Binary(BinaryOperator::Equals, Box::new(l), Box::new(r)) }
-        l:(@) _ "!=" _ r:@ { Expr::Binary(BinaryOperator::NotEquals, Box::new(l), Box::new(r)) }
+        // precedence 11
+        l:(@) _ "&"  _ r:@ { BO::BitwiseAnd.build(l, r)  }
         --
-        l:(@) _ ">" _ r:@ { Expr::Binary(BinaryOperator::Greater, Box::new(l), Box::new(r)) }
-        l:(@) _ ">=" _ r:@ { Expr::Binary(BinaryOperator::GreaterOrEqual, Box::new(l), Box::new(r)) }
-        l:(@) _ "<" _ r:@ { Expr::Binary(BinaryOperator::Less, Box::new(l), Box::new(r)) }
-        l:(@) _ "<=" _ r:@ { Expr::Binary(BinaryOperator::LessOrEqual, Box::new(l), Box::new(r)) }
+        // precedence 10
+        l:(@) _ "==" _ r:@ { BO::Equals.build(l, r)  }
+        l:(@) _ "!=" _ r:@ { BO::NotEquals.build(l, r)  }
         --
+        // precedence 9
+        l:(@) _ ">"  _ r:@ { BO::Greater.build(l, r)  }
+        l:(@) _ ">=" _ r:@ { BO::GreaterOrEqual.build(l, r)  }
+        l:(@) _ "<"  _ r:@ { BO::Less.build(l, r)  }
+        l:(@) _ "<=" _ r:@ { BO::LessOrEqual.build(l, r)  }
+        --
+        // precedence 7
+        l:(@) _ "<<" _ r:@ { BO::LeftShift.build(l, r) }
+        l:(@) _ ">>" _ r:@ { BO::RightShift.build(l, r) }
+        --
+        // precedence 6
+        l:(@) _ "+"  _ r:@ { BO::Add.build(l, r) }
+        l:(@) _ "-"  _ r:@ { BO::Subtract.build(l, r) }
+        --
+        // precedence 5
+        l:(@) _ "*"  _ r:@ { BO::Multiply.build(l, r) }
+        l:(@) _ "/"  _ r:@ { BO::Divide.build(l, r) }
+        l:(@) _ "*"  _ r:@ { BO::Modulo.build(l, r) }
+        --
+        // precendence 3
         "!" _ x:@ { Expr::Not(Box::new(x)) }
         --
         "defined" _ name:identifier() { Expr::Defined(name) }
@@ -217,7 +239,7 @@ peg::parser! { pub(crate) grammar parser() for str {
         --
         "true" { Expr::True }
         "false" { Expr::False }
-        callee:@ _ "(" args:expr0() ** (_ "," _) ")" _ { Expr::Call(Box::new(callee), args) }
+        callee:identifier() _ "(" args:expr0() ** (_ "," _) ")" _ { Expr::Call(callee, args) }
         --
         name:identifier() { Expr::Symbol(name) }
         "(" e:expr0() ")" { e }
@@ -415,15 +437,15 @@ mod expr_parser_tests {
 
         assert_eq!(
             parser::expr("getstuff()"),
-            Ok(Expr::Call(Box::new(sym("getstuff")), vec![]))
+            Ok(Expr::Call("getstuff".to_string(), vec![]))
         );
         assert_eq!(
             parser::expr("identity(x)"),
-            Ok(Expr::Call(Box::new(sym("identity")), vec![sym("x")]))
+            Ok(Expr::Call("identity".to_string(), vec![sym("x")]))
         );
         assert_eq!(
             parser::expr("add(x, y)"),
-            Ok(Expr::Call(Box::new(sym("add")), vec![sym("x"), sym("y")]))
+            Ok(Expr::Call("add".to_string(), vec![sym("x"), sym("y")]))
         );
         assert!(parser::expr("missing_arg(x, y,)").is_err());
     }
@@ -528,7 +550,7 @@ mod expr_parser_tests {
             parser::expr("foo && bar(baz)"),
             Ok(Expr::And(vec![
                 sym("foo"),
-                Expr::Call(Box::new(sym("bar")), vec![sym("baz")]),
+                Expr::Call("bar".to_string(), vec![sym("baz")]),
             ]))
         );
         assert_eq!(

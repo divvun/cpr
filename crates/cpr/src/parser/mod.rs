@@ -386,7 +386,7 @@ impl ParsedUnit {
         self.def_ranges
             .iter()
             .filter_map(|(range, expr)| {
-                let expr = expr.parse().eval(ctx).simplify();
+                let expr = expr.expand(ctx).parse().constant_fold().simplify();
                 if matches!(expr, Expr::False) {
                     log::debug!("Eliminating range {:?} (always-false)", range);
                     return None;

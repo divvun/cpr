@@ -8,7 +8,6 @@ use std::{
     ops::{BitAnd, BitOr, Not},
 };
 
-pub mod langc_conversion;
 pub mod qmc_conversion;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -34,36 +33,42 @@ impl TokenStream {
         Self(Vec::new())
     }
 
+    // TODO: this isn't compliant because of this sample:
+    //
+    // #define FOO(x) BAR
+    // #define BAR(x) x
+    // #if FOO()(24) == 24
+    //   this_is_truthy();
+    // #endif
+    //
+    // FOO()(24) expand to BAR(24), so we need to rescan,
+    // because if FOO() is expanded in place, `(24)` won't be scanned as a
+    // macro invocation.
+    //
+    // One idea is to *not* write `FOO()`'s expansion, `BAR`, to the
+    // output, but to a temporary buffer, and have state that knows if
+    // we're reading from the buffer or from the input (slice)
     pub fn expand_in_place(&self, ctx: &Context, output: &mut Self) {
         let mut slice = &self.0[..];
         'outer: loop {
             match slice {
                 [] => break 'outer,
-                [Token::Identifier(id), Token::Punctuator(Punctuator::ParenOpen), ..] => {
-                    let def = ctx
-                        .defines
-                        .get(id)
-                        .expect("function-like macro should be defined");
-                    if let Define::Replacement { .. } = def {
-                        // TODO: clone value by replacing args identifiers with their passed value,
-                        // also check argument count
-                        todo!();
-                    } else {
-                        panic!("{} is not a function-like macro", id);
-                    }
-                }
                 [Token::Identifier(id), rest @ ..] => {
                     slice = rest;
-                    if let Some(def) = ctx.defines.get(id) {
-                        match def {
+                    match ctx.defines.get(id) {
+                        None => output.0.push(Token::Identifier(id.clone())),
+                        Some(def) => match def {
+                            Define::Replacement { .. } => {
+                                // TODO: clone value by replacing args identifiers with their passed value,
+                                // also check argument count
+                                todo!();
+                            }
                             Define::Value { value, .. } => {
                                 value.expand_in_place(ctx, output);
-                                continue 'outer;
                             }
                             _ => {}
-                        }
-                    }
-                    output.0.push(Token::Identifier(id.clone()));
+                        },
+                    };
                 }
                 [token, rest @ ..] => {
                     slice = rest;
@@ -104,6 +109,7 @@ impl BitAnd for TokenStream {
         out.0.extend(self.0);
         out.0.push(Punctuator::ParenClose.into());
         out.0.push(Punctuator::Ampersand.into());
+        out.0.push(Punctuator::Ampersand.into());
         out.0.push(Punctuator::ParenOpen.into());
         out.0.extend(rhs.0);
         out.0.push(Punctuator::ParenClose.into());
@@ -119,7 +125,7 @@ pub enum Expr {
     False,
     Defined(String),
     Symbol(String),
-    Call(Box<Expr>, Vec<Expr>),
+    Call(String, Vec<Expr>),
     Binary(BinaryOperator, Box<Expr>, Box<Expr>),
     Integer(i64),
     And(Vec<Expr>),
@@ -145,6 +151,28 @@ pub enum BinaryOperator {
     BitwiseOr,
     /// &
     BitwiseAnd,
+    /// ^
+    BitwiseXor,
+    /// +
+    Add,
+    /// -
+    Subtract,
+    /// *
+    Multiply,
+    /// /
+    Divide,
+    /// %
+    Modulo,
+    /// <<
+    LeftShift,
+    /// >>
+    RightShift,
+}
+
+impl BinaryOperator {
+    pub fn build(self, l: Expr, r: Expr) -> Expr {
+        Expr::Binary(self, Box::new(l), Box::new(r))
+    }
 }
 
 impl BinaryOperator {
@@ -159,6 +187,14 @@ impl BinaryOperator {
             NotEquals => "!=",
             BitwiseOr => "|",
             BitwiseAnd => "&",
+            BitwiseXor => "^",
+            Add => "+",
+            Subtract => "-",
+            Multiply => "*",
+            Divide => "/",
+            Modulo => "%",
+            LeftShift => "<<",
+            RightShift => ">>",
         }
     }
 }
@@ -218,7 +254,7 @@ impl PreprocessorIdent for Expr {
             Symbol(x) => vec![x.clone()],
             Integer(_) => vec![],
             Call(callee, args) => {
-                let mut res = callee.ident();
+                let mut res = vec![callee.clone()];
                 for v in args {
                     res.append(&mut v.ident());
                 }
@@ -297,44 +333,83 @@ impl Not for Expr {
 }
 
 impl Expr {
-    // Evaluate expression with the current defines
-    pub fn eval(&self, ctx: &Context) -> Expr {
+    pub fn bool(b: bool) -> Self {
+        if b {
+            Self::True
+        } else {
+            Self::False
+        }
+    }
+
+    // Fold (2 + 2) to 4, etc.
+    pub fn constant_fold(&self) -> Self {
+        use BinaryOperator as BO;
         use Expr::*;
 
+        // TODO: constant folding
         match self {
-            True | False => self.clone(),
-            And(c) => And(c.iter().map(|v| v.eval(ctx)).collect()),
-            Or(c) => Or(c.iter().map(|v| v.eval(ctx)).collect()),
-            Not(v) => !v.eval(ctx),
-            Defined(name) => match ctx.is_defined(name) {
-                Some(true) => True,
-                Some(false) => False,
-                None => {
-                    // not explicitly defined, it's impossible to tell if it's good or not
-                    self.clone()
-                }
-            },
             Symbol(_name) => {
-                // TODO: we can do better - by using lang-c to parse `Define::Value`
-                // note: we could be doing that earlier
+                // symbols are resolved during macro expansion,
+                // if we still have one we're not getting rid of it
                 self.clone()
             }
-            Call(callee, args) => {
-                // TODO: we can do better - by invoking the macro,
-                // which really should be defined at this point.
-                Call(
-                    Box::new(callee.eval(ctx)),
-                    args.iter().map(|arg| arg.eval(ctx)).collect(),
-                )
+            Defined(_) => {
+                // same a symbol
+                self.clone()
             }
-            Binary(op, l, r) => {
-                // TODO: again, we can probably do some maths here, if l and r are constants.
-                Binary(*op, Box::new(l.eval(ctx)), Box::new(r.eval(ctx)))
-            }
+            Call(callee, args) => Call(
+                callee.clone(),
+                args.iter().map(|arg| arg.constant_fold()).collect(),
+            ),
+            True | False => self.clone(),
+            And(c) => And(c.iter().map(|v| v.constant_fold()).collect()),
+            Or(c) => Or(c.iter().map(|v| v.constant_fold()).collect()),
+            Not(v) => match v.constant_fold() {
+                True => False,
+                False => True,
+                Integer(i) => Integer(!i),
+                v => v,
+            },
+            Binary(op, l, r) => match (l.constant_fold(), r.constant_fold()) {
+                (Integer(l), Integer(r)) => match op {
+                    BO::Add => Integer(l + r),
+                    BO::Subtract => Integer(l - r),
+                    BO::Multiply => Integer(l * r),
+                    BO::Divide => Integer(l / r),
+                    BO::Modulo => Integer(l % r),
+                    BO::BitwiseOr => Integer(l | r),
+                    BO::BitwiseAnd => Integer(l & r),
+                    BO::BitwiseXor => Integer(l ^ r),
+                    BO::LeftShift => Integer(l << r),
+                    BO::RightShift => Integer(l >> r),
+                    BO::Greater => Self::bool(l > r),
+                    BO::GreaterOrEqual => Self::bool(l >= r),
+                    BO::Less => Self::bool(l < r),
+                    BO::LessOrEqual => Self::bool(l <= r),
+                    BO::Equals => Self::bool(l == r),
+                    BO::NotEquals => Self::bool(l != r),
+                },
+                (l, r) => op.build(l, r),
+            },
             Integer(_) => self.clone(),
         }
     }
 
+    /// Determine expression truthiness - true is truthy, non-zero integers
+    /// are truthy, false is falsy, zero is falsy, BUT anything with
+    /// an unresolved symbol, a call, whatever - that's neither, ie. None.
+    pub fn truthiness(&self) -> Option<bool> {
+        use Expr::*;
+        match self {
+            True => Some(true),
+            False => Some(false),
+            Integer(i) => Some(*i != 0),
+            _ => None,
+        }
+    }
+
+    /// Simplify "logical and" and "logical or" expressions using
+    /// Quine-McCluskey. For example, simplifies (a && !(a && b)) to (a && !b)
     pub fn simplify(&self) -> Expr {
         let mut terms = Terms::new();
         let input = self.as_bool(&mut terms);
@@ -344,5 +419,30 @@ impl Expr {
             .pop()
             .expect("simplification should yield at least one term");
         Self::from_bool(output, &terms)
+    }
+}
+
+#[cfg(test)]
+mod constant_fold_tests {
+    use super::*;
+    use BinaryOperator as BO;
+    use Expr::*;
+
+    fn i(i: i64) -> Expr {
+        Expr::Integer(i)
+    }
+
+    #[test]
+    fn test() {
+        assert_eq!(BO::Add.build(i(5), i(2)).constant_fold(), i(7),);
+        assert_eq!(BO::Subtract.build(i(3), i(4)).constant_fold(), i(-1),);
+        assert_eq!(
+            BO::Add
+                .build(i(2), BO::Multiply.build(i(3), i(6)))
+                .constant_fold(),
+            i(20),
+        );
+
+        assert_eq!(BO::Less.build(i(3), i(6)).constant_fold(), True);
     }
 }
