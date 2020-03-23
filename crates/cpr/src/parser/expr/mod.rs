@@ -66,7 +66,9 @@ impl TokenStream {
                             Define::Value { value, .. } => {
                                 value.expand_in_place(ctx, output);
                             }
-                            _ => {}
+                            Define::Blacklist { .. } => {
+                                output.0.push(Token::Identifier(id.clone()))
+                            }
                         },
                     };
                 }
@@ -86,7 +88,8 @@ impl TokenStream {
 
     pub fn parse(&self) -> Expr {
         let source = self.to_string();
-        directive::parser::expr(&source).expect("all exprs should parse")
+        let res = directive::parser::expr(&source).expect("all exprs should parse");
+        res
     }
 }
 
@@ -345,7 +348,7 @@ impl Expr {
     }
 
     // Fold (2 + 2) to 4, etc.
-    pub fn constant_fold(&self) -> Self {
+    pub fn constant_fold(&self, ctx: &Context) -> Self {
         use BinaryOperator as BO;
         use Expr::*;
 
@@ -356,25 +359,25 @@ impl Expr {
                 // if we still have one we're not getting rid of it
                 self.clone()
             }
-            Defined(_) => {
-                // same a symbol
-                self.clone()
-            }
+            Defined(name) => match ctx.is_defined(name) {
+                Some(b) => Self::bool(b),
+                None => self.clone(),
+            },
             Call(callee, args) => Call(
                 callee.clone(),
-                args.iter().map(|arg| arg.constant_fold()).collect(),
+                args.iter().map(|arg| arg.constant_fold(ctx)).collect(),
             ),
             True | False => self.clone(),
-            And(c) => And(c.iter().map(|v| v.constant_fold()).collect()),
-            Or(c) => Or(c.iter().map(|v| v.constant_fold()).collect()),
-            Not(v) => match v.constant_fold() {
+            And(c) => And(c.iter().map(|v| v.constant_fold(ctx)).collect()),
+            Or(c) => Or(c.iter().map(|v| v.constant_fold(ctx)).collect()),
+            Not(v) => match v.constant_fold(ctx) {
                 True => False,
                 False => True,
                 Integer(i) => Integer(!i),
                 Not(v) => *v,
                 v => !v,
             },
-            Binary(op, l, r) => match (l.constant_fold(), r.constant_fold()) {
+            Binary(op, l, r) => match (l.constant_fold(ctx), r.constant_fold(ctx)) {
                 (Integer(l), Integer(r)) => match op {
                     BO::Add => Integer(l + r),
                     BO::Subtract => Integer(l - r),
@@ -438,15 +441,16 @@ mod constant_fold_tests {
 
     #[test]
     fn test() {
-        assert_eq!(BO::Add.build(i(5), i(2)).constant_fold(), i(7),);
-        assert_eq!(BO::Subtract.build(i(3), i(4)).constant_fold(), i(-1),);
+        let ctx = Context::new();
+        assert_eq!(BO::Add.build(i(5), i(2)).constant_fold(&ctx), i(7),);
+        assert_eq!(BO::Subtract.build(i(3), i(4)).constant_fold(&ctx), i(-1),);
         assert_eq!(
             BO::Add
                 .build(i(2), BO::Multiply.build(i(3), i(6)))
-                .constant_fold(),
+                .constant_fold(&ctx),
             i(20),
         );
 
-        assert_eq!(BO::Less.build(i(3), i(6)).constant_fold(), True);
+        assert_eq!(BO::Less.build(i(3), i(6)).constant_fold(&ctx), True);
     }
 }

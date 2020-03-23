@@ -127,7 +127,7 @@ impl<'a> Strand<'a> {
                     !atom.expr.clone()
                 }
             });
-            let expr = base_expr.constant_fold().simplify();
+            let expr = base_expr.constant_fold(ctx).simplify();
             log::debug!(
                 "[{}] {:?} => {:?}",
                 pairs
