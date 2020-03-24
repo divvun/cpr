@@ -54,7 +54,6 @@ impl<'a> Strand<'a> {
     pub fn expand_atoms(
         &self,
         init_ctx: &Context,
-        base_expr: &Expr,
         iter: &mut dyn Iterator<Item = &Atom>,
     ) -> (Context, Vec<(Expr, Vec<String>)>) {
         let mut ctx = init_ctx.clone();
@@ -74,7 +73,7 @@ impl<'a> Strand<'a> {
                     match directive {
                         Directive::Define(d) => {
                             log::debug!("Defining: {:?}", d);
-                            ctx.push(base_expr.clone(), d);
+                            ctx.push(Expr::True, d);
                             continue 'each_line;
                         }
                         Directive::Undefine(name) => {
@@ -125,8 +124,8 @@ impl<'a> Strand<'a> {
         }
     }
 
-    pub fn chunks(&self, env: &mut Env, ctx: &Context) -> (Vec<Chunk>, Context) {
-        let mut ctx = ctx.clone();
+    pub fn chunks(&self, env: &mut Env, init_ctx: &Context) -> (Vec<Chunk>, Context) {
+        let mut ctx = init_ctx.clone();
 
         let mut chunks = Vec::new();
 
@@ -172,16 +171,21 @@ impl<'a> Strand<'a> {
                 return;
             }
 
-            let (new_ctx, combinations) =
-                self.expand_atoms(&ctx, &expr, &mut atoms.iter().copied());
-            ctx = new_ctx;
+            let (new_ctx, combinations) = self.expand_atoms(init_ctx, &mut atoms.iter().copied());
+
+            for (name, defs) in &new_ctx.defines {
+                for (def_expr, def) in defs {
+                    ctx.push(expr.clone() & def_expr.clone(), def.clone());
+                }
+            }
+
             for (exp_expr, lines) in combinations {
                 log::debug!("Combination has {} lines", lines.len());
 
                 let source = lines.join("\n");
                 let expr = expr.clone() & exp_expr.clone();
                 log::debug!("Combo expr original: {:?} :: {}", expr, expr);
-                let expr = expr.constant_fold(&ctx).simplify();
+                let expr = expr.constant_fold(&new_ctx).simplify();
                 log::debug!("Combo expr proces'd: {:?} :: {}", expr, expr);
 
                 log::debug!("Parsing source:\n{:?}", SourceString(source.clone()));

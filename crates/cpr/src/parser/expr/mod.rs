@@ -367,9 +367,9 @@ impl Expr {
                 // if we still have one we're not getting rid of it
                 self.clone()
             }
-            Defined(name) => match ctx.lookup(name) {
+            Defined(name) => match dbg!(ctx.lookup(name)) {
                 SymbolState::Blacklisted => False,
-                SymbolState::Unconditional(_) => True,
+                SymbolState::Single((cond, _def)) => cond.clone(),
                 SymbolState::Unknown => self.clone(),
             },
             Call(callee, args) => Call(

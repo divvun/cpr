@@ -106,10 +106,11 @@ pub struct Context {
     blacklist: HashSet<String>,
 }
 
+#[derive(Debug)]
 pub enum SymbolState<'a> {
     Unknown,
     Blacklisted,
-    Unconditional(&'a Define),
+    Single((&'a Expr, &'a Define)),
 }
 
 impl Context {
@@ -155,10 +156,7 @@ impl Context {
         if let Some(defs) = self.defines.get(&*name) {
             // only one def...
             if let [(expr, def)] = &defs[..] {
-                // and it's unconditional...
-                if matches!(expr, Expr::True) {
-                    return SymbolState::Unconditional(&def);
-                }
+                return SymbolState::Single((&expr, &def));
             }
         }
         SymbolState::Unknown
@@ -484,7 +482,7 @@ impl ParsedUnit {
             if strand.len() > 4 {
                 panic!(
                     "Trying to knit too deep, current strand =\n{:#?}",
-                    strand.expand_atoms(&init_ctx, &Expr::True, &mut strand.all_atoms())
+                    strand.expand_atoms(&init_ctx, &mut strand.all_atoms())
                 );
             }
 

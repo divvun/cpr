@@ -455,7 +455,7 @@ fn include_guard() {
             "
         ),
         &[(
-            !def("ROOT_H"),
+            Expr::True,
             indoc!(
                 "
                 int foobar(void);
@@ -466,7 +466,7 @@ fn include_guard() {
 }
 
 #[test]
-fn define_on_the_fly_xxx() {
+fn define_on_the_fly_1() {
     test(
         indoc!(
             "
@@ -481,6 +481,34 @@ fn define_on_the_fly_xxx() {
             (Expr::True, ""),
             (
                 Expr::True,
+                indoc!(
+                    "
+                int foobar(void);
+                "
+                ),
+            ),
+        ],
+    )
+}
+
+#[test]
+fn define_on_the_fly_2() {
+    test(
+        indoc!(
+            "
+            #ifdef ENABLE_ENABLE_FOOBAR
+            #define ENABLE_FOOBAR
+            #endif
+
+            #ifdef ENABLE_FOOBAR
+            int foobar(void);
+            #endif
+            "
+        ),
+        &[
+            (def("ENABLE_ENABLE_FOOBAR"), ""),
+            (
+                def("ENABLE_ENABLE_FOOBAR"),
                 indoc!(
                     "
                 int foobar(void);
