@@ -37,7 +37,6 @@ struct Args {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    env_logger::init();
     let args: Args = argh::from_env();
 
     let kits = args
@@ -87,4 +86,12 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 
     Ok(())
+}
+
+use ctor::ctor;
+
+#[ctor]
+fn install_extensions() {
+    color_backtrace::install();
+    env_logger::init();
 }

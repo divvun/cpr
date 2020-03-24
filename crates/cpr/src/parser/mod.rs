@@ -10,10 +10,9 @@ use thiserror::Error;
 
 use custom_debug_derive::CustomDebug;
 use expr::{Expr, TokenStream};
-use hashbrown::HashMap;
 use lang_c::{ast::Expression, driver, env::Env};
 use std::{
-    collections::{HashSet, VecDeque},
+    collections::{HashMap, HashSet, VecDeque},
     fmt, io,
     path::{Path, PathBuf},
 };
@@ -90,9 +89,6 @@ pub struct DefineArguments {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Define {
-    Blacklist {
-        name: String,
-    },
     Value {
         name: String,
         value: TokenStream,
@@ -106,44 +102,72 @@ pub enum Define {
 
 #[derive(Clone)]
 pub struct Context {
-    defines: HashMap<String, Define>,
+    defines: HashMap<String, Vec<(Expr, Define)>>,
+    blacklist: HashSet<String>,
+}
+
+pub enum SymbolState<'a> {
+    Unknown,
+    Blacklisted,
+    Unconditional(&'a Define),
 }
 
 impl Context {
     pub fn new() -> Self {
-        let mut res = Context {
+        let mut blacklist = HashSet::new();
+        blacklist.insert("__cplusplus".to_string());
+
+        let res = Context {
             defines: HashMap::new(),
+            blacklist,
         };
-        res.push(Define::Blacklist {
-            name: "__cplusplus".into(),
-        });
         res
     }
 
-    pub fn push(&mut self, d: Define) {
-        self.defines.insert(d.name().to_string(), d);
+    pub fn push(&mut self, expr: Expr, def: Define) {
+        let name = def.name().to_string();
+        let bucket = match self.defines.get_mut(&name) {
+            Some(bucket) => bucket,
+            None => {
+                self.defines.insert(name.clone(), Vec::new());
+                self.defines.get_mut(&name).unwrap()
+            }
+        };
+        bucket.push((expr, def));
     }
 
     pub fn pop(&mut self, name: &str) {
         self.defines.remove(name);
     }
 
-    /// Returns None if we don't know, Some(bool) if we know by now
-    pub fn is_defined(&self, name: &str) -> Option<bool> {
-        match self.defines.get(name) {
-            Some(def) => match def {
-                Define::Value { .. } | Define::Replacement { .. } => Some(true),
-                Define::Blacklist { .. } => Some(false),
-            },
-            None => None,
+    pub fn extend(&mut self, other: &Context) {
+        for (_, bucket) in &other.defines {
+            for (expr, def) in bucket {
+                self.push(expr.clone(), def.clone());
+            }
         }
+    }
+
+    pub fn lookup(&self, name: &str) -> SymbolState<'_> {
+        if self.blacklist.contains(name) {
+            return SymbolState::Blacklisted;
+        }
+        if let Some(defs) = self.defines.get(&*name) {
+            // only one def...
+            if let [(expr, def)] = &defs[..] {
+                // and it's unconditional...
+                if matches!(expr, Expr::True) {
+                    return SymbolState::Unconditional(&def);
+                }
+            }
+        }
+        SymbolState::Unknown
     }
 }
 
 impl Define {
     fn name(&self) -> &str {
         match self {
-            Define::Blacklist { name, .. } => name,
             Define::Value { name, .. } => name,
             Define::Replacement { name, .. } => name,
         }
@@ -313,6 +337,7 @@ where
 
 pub struct ChunkedUnit {
     pub chunks: Vec<Chunk>,
+    pub ctx: Context,
     pub typenames: HashSet<String>,
 }
 
@@ -386,7 +411,8 @@ impl ParsedUnit {
         self.def_ranges
             .iter()
             .filter_map(|(range, expr)| {
-                let expr = expr.expand(ctx).parse().constant_fold(ctx).simplify();
+                let expr = expr.parse().constant_fold(ctx).simplify();
+
                 if matches!(expr, Expr::False) {
                     log::debug!("Eliminating range {:?} (always-false)", range);
                     return None;
@@ -416,26 +442,33 @@ impl ParsedUnit {
                 }
 
                 if region_lines.is_empty() {
-                    None
+                    return None;
                 } else {
-                    Some(Atom {
+                    return Some(Atom {
                         lines: region_lines,
                         expr: expr.clone(),
-                    })
+                    });
                 }
             })
             .collect()
     }
 
-    pub fn chunkify(&self, deps: &[&ChunkedUnit], ctx: &Context) -> Result<ChunkedUnit, Error> {
-        let mut atom_queue = self.atoms(ctx);
+    pub fn chunkify(
+        &self,
+        deps: &[&ChunkedUnit],
+        init_ctx: &Context,
+    ) -> Result<ChunkedUnit, Error> {
+        let mut init_ctx = init_ctx.clone();
+
         let mut env = Env::with_msvc();
         for dep in deps {
             for typename in &dep.typenames {
                 env.add_typename(typename)
             }
+            init_ctx.extend(&dep.ctx);
         }
 
+        let mut atom_queue = self.atoms(&init_ctx);
         let mut strands: Vec<Strand> = Vec::new();
         let mut strand = Strand::new();
 
@@ -451,7 +484,7 @@ impl ParsedUnit {
             if strand.len() > 4 {
                 panic!(
                     "Trying to knit too deep, current strand =\n{}",
-                    strand.source(ctx, &mut strand.all_atoms())
+                    strand.source(&init_ctx, &mut strand.all_atoms()).0
                 );
             }
 
@@ -464,7 +497,13 @@ impl ParsedUnit {
                 continue;
             }
 
-            if strand.has_complete_variants(&mut env, ctx) {
+            // rebuild context up to this point
+            let mut ctx = init_ctx.clone();
+            for strand in &strands {
+                ctx = strand.chunks(&mut env, &ctx).1;
+            }
+
+            if strand.has_complete_variants(&mut env, &ctx) {
                 log::debug!("Strand complete (len {})", strand.len());
                 strands.push(strand);
 
@@ -504,17 +543,20 @@ impl ParsedUnit {
             }
         }
 
-        let chunks = strands
-            .iter()
-            .map(|strand| strand.chunks(&mut env, ctx))
-            .flatten()
-            .collect();
+        let mut ctx = init_ctx.clone();
+        let mut chunks = Vec::new();
+        for strand in &strands {
+            let (chunks2, ctx2) = strand.chunks(&mut env, &ctx);
+            chunks.extend(chunks2);
+            ctx = ctx2;
+        }
 
-        let chunks = ChunkedUnit {
+        let unit = ChunkedUnit {
             chunks,
+            ctx,
             typenames: env.typenames.drain(..).next().unwrap(),
         };
-        Ok(chunks)
+        Ok(unit)
     }
 }
 

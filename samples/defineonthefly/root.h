@@ -1,10 +1,10 @@
-// #define ENABLE_FOOBAR
+#define ENABLE_FOOBAR
 
-// #ifdef ENABLE_FOOBAR
-// int foobar(void);
-// #endif
+#ifdef ENABLE_FOOBAR
+int foobar(void);
+#endif
 
-#define WHY
-#define MYINT int
+// #define WHY
+// #define MYINT int
 
-MYINT foobar(void);
+// MYINT foobar(void);

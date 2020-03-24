@@ -466,7 +466,7 @@ fn include_guard() {
 }
 
 #[test]
-fn define_on_the_fly() {
+fn define_on_the_fly_xxx() {
     test(
         indoc!(
             "

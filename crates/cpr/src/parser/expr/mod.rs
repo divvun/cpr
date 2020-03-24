@@ -1,11 +1,11 @@
 use super::{
     directive::{self, PreprocessorIdent},
-    Context, Define, Punctuator, Token,
+    Context, Define, Punctuator, SymbolState, Token,
 };
 use qmc_conversion::*;
 use std::{
     fmt,
-    ops::{BitAnd, BitOr, Not},
+    ops::{Add, BitAnd, BitOr, Not},
 };
 
 pub mod qmc_conversion;
@@ -28,66 +28,74 @@ impl fmt::Display for TokenStream {
     }
 }
 
+impl Add for TokenStream {
+    type Output = TokenStream;
+    fn add(mut self, mut rhs: TokenStream) -> Self::Output {
+        self.0.append(&mut rhs.0);
+        self
+    }
+}
+
 impl TokenStream {
     pub fn new() -> Self {
         Self(Vec::new())
     }
 
-    // TODO: this isn't compliant because of this sample:
-    //
-    // #define FOO(x) BAR
-    // #define BAR(x) x
-    // #if FOO()(24) == 24
-    //   this_is_truthy();
-    // #endif
-    //
-    // FOO()(24) expand to BAR(24), so we need to rescan,
-    // because if FOO() is expanded in place, `(24)` won't be scanned as a
-    // macro invocation.
-    //
-    // One idea is to *not* write `FOO()`'s expansion, `BAR`, to the
-    // output, but to a temporary buffer, and have state that knows if
-    // we're reading from the buffer or from the input (slice)
-    pub fn expand_in_place(&self, ctx: &Context, output: &mut Self) {
+    pub fn expand(&self, ctx: &Context) -> Vec<(Expr, Self)> {
+        let mut output = vec![(Expr::True, Self::new())];
         let mut slice = &self.0[..];
+
+        fn push(output: &mut Vec<(Expr, TokenStream)>, token: Token) {
+            for (_expr, stream) in output.iter_mut() {
+                stream.0.push(token.clone());
+            }
+        }
+
         'outer: loop {
             match slice {
                 [] => break 'outer,
                 [Token::Identifier(id), rest @ ..] => {
                     slice = rest;
+
                     match ctx.defines.get(id) {
-                        None => output.0.push(Token::Identifier(id.clone())),
-                        Some(def) => match def {
-                            Define::Replacement { .. } => {
-                                // TODO: clone value by replacing args identifiers with their passed value,
-                                // also check argument count
-                                todo!();
+                        None => {} // can't replace,
+                        Some(defs) => {
+                            let mut combined_output = vec![];
+                            for (l_expr, l_stream) in output {
+                                for (r_expr, r_def) in defs {
+                                    match r_def {
+                                        Define::Value {
+                                            value: r_stream, ..
+                                        } => {
+                                            combined_output.push((
+                                                l_expr.clone() & r_expr.clone(),
+                                                l_stream.clone() + r_stream.clone(),
+                                            ));
+                                        }
+                                        Define::Replacement { .. } => todo!(),
+                                    }
+                                }
                             }
-                            Define::Value { value, .. } => {
-                                value.expand_in_place(ctx, output);
-                            }
-                            Define::Blacklist { .. } => {
-                                output.0.push(Token::Identifier(id.clone()))
-                            }
-                        },
+                            output = combined_output;
+                            continue 'outer;
+                        }
                     };
+
+                    push(&mut output, Token::Identifier(id.clone()));
                 }
                 [token, rest @ ..] => {
                     slice = rest;
-                    output.0.push(token.clone());
+                    push(&mut output, token.clone());
                 }
             }
         }
-    }
-
-    pub fn expand(&self, ctx: &Context) -> Self {
-        let mut res = Self::new();
-        self.expand_in_place(ctx, &mut res);
-        res
+        output
     }
 
     pub fn parse(&self) -> Expr {
+        log::debug!("self = {:?}", self);
         let source = self.to_string();
+        log::debug!("source = {:?}", source);
         let res = directive::parser::expr(&source).expect("all exprs should parse");
         res
     }
@@ -348,7 +356,7 @@ impl Expr {
     }
 
     // Fold (2 + 2) to 4, etc.
-    pub fn constant_fold(&self, ctx: &Context) -> Self {
+    pub fn constant_fold(&self, ctx: &Context) -> Expr {
         use BinaryOperator as BO;
         use Expr::*;
 
@@ -359,9 +367,10 @@ impl Expr {
                 // if we still have one we're not getting rid of it
                 self.clone()
             }
-            Defined(name) => match ctx.is_defined(name) {
-                Some(b) => Self::bool(b),
-                None => self.clone(),
+            Defined(name) => match ctx.lookup(name) {
+                SymbolState::Blacklisted => False,
+                SymbolState::Unconditional(_) => True,
+                SymbolState::Unknown => self.clone(),
             },
             Call(callee, args) => Call(
                 callee.clone(),

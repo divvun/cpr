@@ -1,11 +1,17 @@
 
+#ifdef SIZED
+#define RET int
+#else
+#define RET int64_t
+#endif
+
 #ifdef UNICODE
 #define STRING_TYPE wchar_t*
 #else
 #define STRING_TYPE char*
 #endif // UNICODE
 
-int strlen(STRING_TYPE s);
+RET strlen(STRING_TYPE s);
 
 // =====================
 

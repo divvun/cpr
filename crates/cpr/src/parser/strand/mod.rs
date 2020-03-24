@@ -40,7 +40,7 @@ impl<'a> Strand<'a> {
     /// Returns true if all atoms put together parse as a series of C external
     /// declarations
     pub fn has_complete_variants(&self, env: &mut Env, ctx: &Context) -> bool {
-        !self.chunks(env, ctx).is_empty()
+        !self.chunks(env, ctx).0.is_empty()
     }
 
     pub fn all_atoms(&self) -> impl Iterator<Item = &Atom> {
@@ -52,7 +52,11 @@ impl<'a> Strand<'a> {
     }
 
     /// Returns a single String for the source of all given atoms put together
-    pub fn source(&self, init_ctx: &Context, iter: &mut dyn Iterator<Item = &Atom>) -> String {
+    pub fn source(
+        &self,
+        init_ctx: &Context,
+        iter: &mut dyn Iterator<Item = &Atom>,
+    ) -> (String, Context) {
         let mut ctx = init_ctx.clone();
         let mut out = String::new();
 
@@ -64,7 +68,7 @@ impl<'a> Strand<'a> {
                     match directive {
                         Directive::Define(d) => {
                             log::debug!("Defining: {:?}", d);
-                            ctx.push(d);
+                            ctx.push(Expr::True, d);
                             continue 'each_line;
                         }
                         Directive::Undefine(name) => {
@@ -81,7 +85,12 @@ impl<'a> Strand<'a> {
                     // non-directive line
                     let tokens =
                         directive::parser::token_stream(line).expect("should tokenize all lines");
-                    let line = tokens.expand(&ctx).to_string();
+
+                    let mut res = tokens.expand(&ctx);
+                    assert_eq!(res.len(), 1);
+                    let (expr, stream) = res.pop().unwrap();
+                    assert_eq!(Expr::True, expr);
+                    let line = stream.to_string();
 
                     log::debug!("Expanded line | {}", &line);
                     out.push_str(&line);
@@ -94,7 +103,7 @@ impl<'a> Strand<'a> {
         if out.len() > 0 {
             out.truncate(out.len() - 1)
         }
-        out
+        (out, ctx)
     }
 
     /// Parses C code
@@ -111,7 +120,9 @@ impl<'a> Strand<'a> {
         }
     }
 
-    pub fn chunks(&self, env: &mut Env, ctx: &Context) -> Vec<Chunk> {
+    pub fn chunks(&self, env: &mut Env, ctx: &Context) -> (Vec<Chunk>, Context) {
+        let mut ctx = ctx.clone();
+
         let mut chunks = Vec::new();
         variations(self.len(), &mut |toggles| {
             let pairs: Vec<_> = self.atoms.iter().zip(toggles).collect();
@@ -127,7 +138,7 @@ impl<'a> Strand<'a> {
                     !atom.expr.clone()
                 }
             });
-            let expr = base_expr.constant_fold(ctx).simplify();
+            let expr = base_expr.constant_fold(&ctx).simplify();
             log::debug!(
                 "[{}] {:?} => {:?}",
                 pairs
@@ -153,7 +164,9 @@ impl<'a> Strand<'a> {
                 return;
             }
 
-            let source = self.source(ctx, &mut atoms.iter().copied());
+            let (source, new_ctx) = self.source(&ctx, &mut atoms.iter().copied());
+            // this is extremely wrong.
+            ctx = new_ctx;
             log::debug!("Parsing source:\n{:?}", SourceString(source.clone()));
             match Self::parse(source, env) {
                 Ok(driver::Parse { source, unit }) => {
@@ -172,6 +185,6 @@ impl<'a> Strand<'a> {
         if !chunks.is_empty() {
             log::debug!("Found {} complete chunks", chunks.len());
         }
-        chunks
+        (chunks, ctx)
     }
 }
