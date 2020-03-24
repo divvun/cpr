@@ -100,7 +100,7 @@ pub enum Define {
     },
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct Context {
     defines: HashMap<String, Vec<(Expr, Define)>>,
     blacklist: HashSet<String>,
@@ -484,7 +484,7 @@ impl ParsedUnit {
             if strand.len() > 4 {
                 panic!(
                     "Trying to knit too deep, current strand =\n{:#?}",
-                    strand.expand_atoms(&init_ctx, &mut strand.all_atoms())
+                    strand.expand_atoms(&init_ctx, &Expr::True, &mut strand.all_atoms())
                 );
             }
 
@@ -539,6 +539,8 @@ impl ParsedUnit {
                             ));
                         }
                     }
+                } else {
+                    log::debug!("No complete variants, knitting some more");
                 }
             }
         }

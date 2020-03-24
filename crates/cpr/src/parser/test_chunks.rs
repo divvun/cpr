@@ -477,13 +477,16 @@ fn define_on_the_fly_xxx() {
             #endif
             "
         ),
-        &[(
-            Expr::True,
-            indoc!(
-                "
+        &[
+            (Expr::True, ""),
+            (
+                Expr::True,
+                indoc!(
+                    "
                 int foobar(void);
                 "
+                ),
             ),
-        )],
+        ],
     )
 }

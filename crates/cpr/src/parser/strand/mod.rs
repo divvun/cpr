@@ -54,8 +54,9 @@ impl<'a> Strand<'a> {
     pub fn expand_atoms(
         &self,
         init_ctx: &Context,
+        base_expr: &Expr,
         iter: &mut dyn Iterator<Item = &Atom>,
-    ) -> Vec<(Expr, Vec<String>)> {
+    ) -> (Context, Vec<(Expr, Vec<String>)>) {
         let mut ctx = init_ctx.clone();
         let mut output = vec![(Expr::True, Vec::new())];
 
@@ -73,7 +74,7 @@ impl<'a> Strand<'a> {
                     match directive {
                         Directive::Define(d) => {
                             log::debug!("Defining: {:?}", d);
-                            ctx.push(Expr::True, d);
+                            ctx.push(base_expr.clone(), d);
                             continue 'each_line;
                         }
                         Directive::Undefine(name) => {
@@ -107,7 +108,7 @@ impl<'a> Strand<'a> {
                 }
             }
         }
-        output
+        (ctx, output)
     }
 
     /// Parses C code
@@ -128,6 +129,9 @@ impl<'a> Strand<'a> {
         let mut ctx = ctx.clone();
 
         let mut chunks = Vec::new();
+
+        log::debug!("Chunking ({} atoms)", self.len());
+        log::debug!("Context = {:#?}", ctx);
         variations(self.len(), &mut |toggles| {
             let pairs: Vec<_> = self.atoms.iter().zip(toggles).collect();
             if let Some((_, false)) = pairs.get(0) {
@@ -168,9 +172,17 @@ impl<'a> Strand<'a> {
                 return;
             }
 
-            for (exp_expr, lines) in self.expand_atoms(&ctx, &mut atoms.iter().copied()) {
+            let (new_ctx, combinations) =
+                self.expand_atoms(&ctx, &expr, &mut atoms.iter().copied());
+            ctx = new_ctx;
+            for (exp_expr, lines) in combinations {
+                log::debug!("Combination has {} lines", lines.len());
+
                 let source = lines.join("\n");
                 let expr = expr.clone() & exp_expr.clone();
+                log::debug!("Combo expr original: {:?} :: {}", expr, expr);
+                let expr = expr.constant_fold(&ctx).simplify();
+                log::debug!("Combo expr proces'd: {:?} :: {}", expr, expr);
 
                 log::debug!("Parsing source:\n{:?}", SourceString(source.clone()));
                 match Self::parse(source, env) {
@@ -190,6 +202,7 @@ impl<'a> Strand<'a> {
         });
         if !chunks.is_empty() {
             log::debug!("Found {} complete chunks", chunks.len());
+            log::debug!("Resulting context: {:#?}", ctx);
         }
         (chunks, ctx)
     }
