@@ -51,14 +51,19 @@ impl<'a> Strand<'a> {
         self.atoms
     }
 
-    /// Returns a single String for the source of all given atoms put together
-    pub fn source(
+    pub fn expand_atoms(
         &self,
         init_ctx: &Context,
         iter: &mut dyn Iterator<Item = &Atom>,
-    ) -> (String, Context) {
+    ) -> Vec<(Expr, Vec<String>)> {
         let mut ctx = init_ctx.clone();
-        let mut out = String::new();
+        let mut output = vec![(Expr::True, Vec::new())];
+
+        fn push(output: &mut Vec<(Expr, Vec<String>)>, line: String) {
+            for (_expr, lines) in output.iter_mut() {
+                lines.push(line.clone())
+            }
+        }
 
         for atom in iter {
             'each_line: for &line in &atom.lines {
@@ -86,24 +91,23 @@ impl<'a> Strand<'a> {
                     let tokens =
                         directive::parser::token_stream(line).expect("should tokenize all lines");
 
-                    let mut res = tokens.expand(&ctx);
-                    assert_eq!(res.len(), 1);
-                    let (expr, stream) = res.pop().unwrap();
-                    assert_eq!(Expr::True, expr);
-                    let line = stream.to_string();
-
-                    log::debug!("Expanded line | {}", &line);
-                    out.push_str(&line);
-                    out.push('\n');
+                    let expansions = tokens.expand(&ctx);
+                    // TODO: add fast path (expansions.len() == 1, expr is True)
+                    let mut combined_output = Vec::new();
+                    for (l_expr, l_lines) in output.drain(..) {
+                        for (r_expr, r_stream) in &expansions {
+                            let line = r_stream.to_string();
+                            log::debug!("Expanded line | {}", &line);
+                            let mut lines = l_lines.clone();
+                            lines.push(line);
+                            combined_output.push((l_expr.clone() & r_expr.clone(), lines));
+                        }
+                    }
+                    output = combined_output;
                 }
             }
         }
-
-        // remove final newline, woo
-        if out.len() > 0 {
-            out.truncate(out.len() - 1)
-        }
-        (out, ctx)
+        output
     }
 
     /// Parses C code
@@ -164,21 +168,23 @@ impl<'a> Strand<'a> {
                 return;
             }
 
-            let (source, new_ctx) = self.source(&ctx, &mut atoms.iter().copied());
-            // this is extremely wrong.
-            ctx = new_ctx;
-            log::debug!("Parsing source:\n{:?}", SourceString(source.clone()));
-            match Self::parse(source, env) {
-                Ok(driver::Parse { source, unit }) => {
-                    log::debug!("(✔) Valid chunk");
-                    chunks.push(Chunk {
-                        source: SourceString(source),
-                        unit,
-                        expr,
-                    })
-                }
-                Err(e) => {
-                    log::debug!("(!) Incomplete strand: {:?}", e);
+            for (exp_expr, lines) in self.expand_atoms(&ctx, &mut atoms.iter().copied()) {
+                let source = lines.join("\n");
+                let expr = expr.clone() & exp_expr.clone();
+
+                log::debug!("Parsing source:\n{:?}", SourceString(source.clone()));
+                match Self::parse(source, env) {
+                    Ok(driver::Parse { source, unit }) => {
+                        log::debug!("(✔) Valid chunk");
+                        chunks.push(Chunk {
+                            source: SourceString(source),
+                            unit,
+                            expr,
+                        })
+                    }
+                    Err(e) => {
+                        log::debug!("(!) Incomplete strand: {:?}", e);
+                    }
                 }
             }
         });

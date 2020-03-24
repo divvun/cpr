@@ -483,8 +483,8 @@ impl ParsedUnit {
 
             if strand.len() > 4 {
                 panic!(
-                    "Trying to knit too deep, current strand =\n{}",
-                    strand.source(&init_ctx, &mut strand.all_atoms()).0
+                    "Trying to knit too deep, current strand =\n{:#?}",
+                    strand.expand_atoms(&init_ctx, &mut strand.all_atoms())
                 );
             }
 
