@@ -173,7 +173,7 @@ impl<'a> Strand<'a> {
 
             let (new_ctx, combinations) = self.expand_atoms(init_ctx, &mut atoms.iter().copied());
 
-            for (name, defs) in &new_ctx.defines {
+            for (_name, defs) in &new_ctx.defines {
                 for (def_expr, def) in defs {
                     ctx.push(expr.clone() & def_expr.clone(), def.clone());
                 }
