@@ -103,26 +103,29 @@ pub enum Define {
 #[derive(Debug, Clone)]
 pub struct Context {
     defines: HashMap<String, Vec<(Expr, Define)>>,
-    blacklist: HashSet<String>,
+    unknowns: HashSet<String>,
 }
 
 #[derive(Debug)]
 pub enum SymbolState<'a> {
     Unknown,
-    Blacklisted,
-    Single((&'a Expr, &'a Define)),
+    Undefined,
+    Defined((&'a Expr, &'a Define)),
+    MultipleDefines(Vec<(&'a Expr, &'a Define)>),
 }
 
 impl Context {
     pub fn new() -> Self {
-        let mut blacklist = HashSet::new();
-        blacklist.insert("__cplusplus".to_string());
-
+        let mut unknowns = HashSet::new();
         let res = Context {
             defines: HashMap::new(),
-            blacklist,
+            unknowns,
         };
         res
+    }
+
+    pub fn add_unknown(&mut self, unknown: &str) {
+        self.unknowns.insert(unknown.into());
     }
 
     pub fn push(&mut self, expr: Expr, def: Define) {
@@ -150,16 +153,18 @@ impl Context {
     }
 
     pub fn lookup(&self, name: &str) -> SymbolState<'_> {
-        if self.blacklist.contains(name) {
-            return SymbolState::Blacklisted;
+        if self.unknowns.contains(name) {
+            return SymbolState::Undefined;
         }
         if let Some(defs) = self.defines.get(&*name) {
             // only one def...
             if let [(expr, def)] = &defs[..] {
-                return SymbolState::Single((&expr, &def));
+                return SymbolState::Defined((&expr, &def));
+            } else {
+                panic!("Multiple defines are unsupported for now: {:?}", defs)
             }
         }
-        SymbolState::Unknown
+        SymbolState::Undefined
     }
 }
 
@@ -593,7 +598,7 @@ impl Parser {
             ordered_includes: vec![root.clone()],
             root,
         };
-        parser.parse_all()?;
+        parser.parse_all_2()?;
 
         Ok(parser)
     }
@@ -611,6 +616,83 @@ impl Parser {
         log::debug!("=== {:?} ===", &path);
 
         Ok(std::fs::read_to_string(&path)?)
+    }
+
+    fn parse_all_2(&mut self) -> Result<(), Error> {
+        let mut env = Env::with_msvc();
+        let mut ctx = Context::new();
+        self.parse_2(&mut ctx, &mut env, self.root.clone())?;
+        Ok(())
+    }
+
+    fn parse_2(&mut self, ctx: &mut Context, env: &mut Env, incl: Include) -> Result<(), Error> {
+        let source = self.read_include(&incl)?;
+        let source = utils::process_line_continuations_and_comments(&source);
+        let mut lines = source.lines();
+        let mut block: Vec<String> = Vec::new();
+
+        'each_line: loop {
+            let line = match lines.next() {
+                Some(line) => line,
+                None => break 'each_line,
+            }
+            .trim();
+            if line.is_empty() {
+                continue 'each_line;
+            }
+
+            log::debug!("line | {}", line);
+            let dir = directive::parser::directive(line).expect("should parse all directives");
+            match dir {
+                Some(dir) => {
+                    log::debug!("directive | {:?}", dir);
+                    match dir {
+                        Directive::Define(def) => {
+                            log::debug!("defining {}", def.name());
+                            ctx.push(Expr::True, def);
+                        }
+                        _ => {
+                            log::debug!("todo: handle that directive");
+                        }
+                    }
+                }
+                None => {
+                    log::debug!("not a directive");
+                    let tokens =
+                        directive::parser::token_stream(line).expect("should tokenize everything");
+                    log::debug!("tokens = {:?}", tokens);
+                    let mut expansions = tokens.expand(ctx);
+                    assert_eq!(
+                        expansions.len(),
+                        1,
+                        "more than one expansion: not supported for now"
+                    );
+                    assert_eq!(expansions[0].0, Expr::True);
+                    let tokens = expansions.pop().unwrap().1;
+                    log::debug!("expanded tokens = {:?}", tokens);
+                    let line = tokens.to_string();
+                    log::debug!("expanded line | {}", line);
+
+                    block.push(line);
+                    let block_str = block.join("\n");
+                    match lang_c::parser::declaration(&block_str, env) {
+                        Ok(node) => {
+                            log::debug!("parse result (input len={}) | {:?}", block.len(), node);
+                            block.clear();
+                        }
+                        Err(e) => {
+                            log::debug!("parse error: {:?}", e);
+                        }
+                    }
+                }
+            }
+        }
+
+        if !block.is_empty() {
+            panic!("Unprocessed lines: {:#?}", block);
+        }
+
+        Ok(())
     }
 
     /// Parse the roots and all its included dependencies,

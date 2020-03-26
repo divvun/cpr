@@ -367,11 +367,10 @@ impl Expr {
                 // if we still have one we're not getting rid of it
                 self.clone()
             }
-            Defined(name) => match dbg!(ctx.lookup(name)) {
-                SymbolState::Blacklisted => False,
-                SymbolState::Single((cond, _def)) => cond.clone(),
-                SymbolState::Unknown => self.clone(),
-            },
+            Defined(name) => {
+                // TODO
+                self.clone()
+            }
             Call(callee, args) => Call(
                 callee.clone(),
                 args.iter().map(|arg| arg.constant_fold(ctx)).collect(),
