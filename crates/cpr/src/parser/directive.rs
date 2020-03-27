@@ -75,7 +75,7 @@ peg::parser! { pub(crate) grammar parser() for str {
     rule include_token() -> Include
         = "<" p:$((!['>'][_])+) ">" { Include::System(p.into()) }
         / "\"" p:$((!['"'][_])+) "\"" { Include::Quoted(p.into()) }
-        / e:constant_expression() { Include::Expression(e) }
+        / t:token_stream() { Include::TokenStream(t) }
 
     rule define() -> Define
         = define_function_like()

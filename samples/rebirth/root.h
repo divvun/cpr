@@ -2,10 +2,10 @@
 #ifndef ROOT_H
 #define ROOT_H
 
-#include <dep.h>
+#include "dep.h"
 
 #ifdef UNICODE
-#define STR wchar_t *
+#define STR unsigned long int *
 #else
 #define STR char *
 #endif

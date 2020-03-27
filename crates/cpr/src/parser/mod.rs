@@ -10,7 +10,7 @@ use thiserror::Error;
 
 use custom_debug_derive::CustomDebug;
 use expr::{Expr, TokenStream};
-use lang_c::{ast::Expression, driver, env::Env};
+use lang_c::{driver, env::Env};
 use std::{
     collections::{HashMap, HashSet, VecDeque},
     fmt, io,
@@ -180,21 +180,7 @@ impl Define {
 pub enum Include {
     System(PathBuf),
     Quoted(PathBuf),
-    Expression(Expression),
-}
-
-impl PartialOrd for Include {
-    fn partial_cmp(&self, other: &Include) -> Option<std::cmp::Ordering> {
-        match (self, other) {
-            (Include::System(ref x), Include::System(ref y)) => x.partial_cmp(y),
-            (Include::Quoted(ref x), Include::Quoted(ref y)) => x.partial_cmp(y),
-            (Include::System(_), Include::Quoted(_)) => Some(std::cmp::Ordering::Greater),
-            (Include::Quoted(_), Include::System(_)) => Some(std::cmp::Ordering::Less),
-            (Include::Expression(_), Include::Expression(_)) => Some(std::cmp::Ordering::Equal),
-            (_, Include::Expression(_)) => Some(std::cmp::Ordering::Greater),
-            (Include::Expression(_), _) => Some(std::cmp::Ordering::Less),
-        }
-    }
+    TokenStream(TokenStream),
 }
 
 impl Include {
@@ -238,15 +224,15 @@ impl Include {
         working_path: &Path,
     ) -> Option<PathBuf> {
         match self {
-            Include::System(ref path) => Self::resolve_system(path, system_paths),
-            Include::Quoted(ref path) => {
+            Include::System(path) => Self::resolve_system(path, system_paths),
+            Include::Quoted(path) => {
                 // Fallback to system lookup
                 Self::resolve_quoted(path, quoted_paths, working_path)
                     // Fallback to system lookup
                     .or_else(|| Self::resolve_system(path, system_paths))
             }
-            Include::Expression(ref expr) => {
-                unimplemented!("Expression: {:?}", expr);
+            Include::TokenStream(tokens) => {
+                unimplemented!("tokens: {:?}", tokens);
             }
         }
     }
@@ -660,6 +646,14 @@ impl Parser {
                 Some(dir) => {
                     log::debug!("directive | {:?}", dir);
                     match dir {
+                        Directive::Include(inc) => {
+                            if taken {
+                                log::debug!("including {:?}", inc);
+                                self.parse_2(ctx, env, inc)?;
+                            } else {
+                                log::debug!("path not taken, not including");
+                            }
+                        }
                         Directive::Define(def) => {
                             if taken {
                                 log::debug!("defining {}", def.name());
