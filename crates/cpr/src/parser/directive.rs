@@ -242,6 +242,7 @@ peg::parser! { pub(crate) grammar parser() for str {
         --
         "true" { Expr::True }
         "false" { Expr::False }
+        i:tok_integer() { Expr::Integer(i) }
         callee:identifier() _ "(" args:expr0() ** (_ "," _) ")" _ { Expr::Call(callee, args) }
         --
         name:identifier() { Expr::Symbol(name) }

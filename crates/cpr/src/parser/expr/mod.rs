@@ -41,6 +41,20 @@ impl TokenStream {
         Self(Vec::new())
     }
 
+    pub fn must_expand_single(&self, ctx: &Context) -> Self {
+        let mut expansions = self.expand(ctx);
+        assert_eq!(
+            expansions.len(),
+            1,
+            "more than one expansion: not supported for now. expansions = {:?}",
+            expansions,
+        );
+        assert_eq!(expansions[0].0, Expr::True);
+        let tokens = expansions.pop().unwrap().1;
+        log::debug!("expanded tokens = {:?}", tokens);
+        tokens
+    }
+
     pub fn expand(&self, ctx: &Context) -> Vec<(Expr, Self)> {
         let mut output = vec![(Expr::True, Self::new())];
         let mut slice = &self.0[..];
@@ -56,6 +70,31 @@ impl TokenStream {
                 [] => break 'outer,
                 [Token::Identifier(id), rest @ ..] => {
                     slice = rest;
+
+                    if id == "defined" {
+                        match slice {
+                            [Token::Punctuator(Punctuator::ParenOpen), Token::Identifier(id), Token::Punctuator(Punctuator::ParenClose), rest @ ..] =>
+                            {
+                                log::debug!("expanding defined({:?})", id);
+                                match ctx.lookup(id) {
+                                    SymbolState::Unknown => {
+                                        // don't replace anything
+                                    }
+                                    SymbolState::Undefined => {
+                                        slice = rest;
+                                        push(&mut output, Token::Keyword("false".into()));
+                                        continue 'outer;
+                                    }
+                                    SymbolState::Defined(_) | SymbolState::MultipleDefines(_) => {
+                                        slice = rest;
+                                        push(&mut output, Token::Keyword("true".into()));
+                                        continue 'outer;
+                                    }
+                                };
+                            }
+                            _ => {}
+                        }
+                    }
 
                     match ctx.defines.get(id) {
                         None => {} // can't replace,
@@ -356,7 +395,7 @@ impl Expr {
     }
 
     // Fold (2 + 2) to 4, etc.
-    pub fn constant_fold(&self, ctx: &Context) -> Expr {
+    pub fn constant_fold(&self) -> Expr {
         use BinaryOperator as BO;
         use Expr::*;
 
@@ -367,25 +406,25 @@ impl Expr {
                 // if we still have one we're not getting rid of it
                 self.clone()
             }
-            Defined(name) => {
+            Defined(_name) => {
                 // TODO
                 self.clone()
             }
             Call(callee, args) => Call(
                 callee.clone(),
-                args.iter().map(|arg| arg.constant_fold(ctx)).collect(),
+                args.iter().map(|arg| arg.constant_fold()).collect(),
             ),
             True | False => self.clone(),
-            And(c) => And(c.iter().map(|v| v.constant_fold(ctx)).collect()),
-            Or(c) => Or(c.iter().map(|v| v.constant_fold(ctx)).collect()),
-            Not(v) => match v.constant_fold(ctx) {
+            And(c) => And(c.iter().map(|v| v.constant_fold()).collect()),
+            Or(c) => Or(c.iter().map(|v| v.constant_fold()).collect()),
+            Not(v) => match v.constant_fold() {
                 True => False,
                 False => True,
                 Integer(i) => Integer(!i),
                 Not(v) => *v,
                 v => !v,
             },
-            Binary(op, l, r) => match (l.constant_fold(ctx), r.constant_fold(ctx)) {
+            Binary(op, l, r) => match (l.constant_fold(), r.constant_fold()) {
                 (Integer(l), Integer(r)) => match op {
                     BO::Add => Integer(l + r),
                     BO::Subtract => Integer(l - r),
@@ -449,16 +488,15 @@ mod constant_fold_tests {
 
     #[test]
     fn test() {
-        let ctx = Context::new();
-        assert_eq!(BO::Add.build(i(5), i(2)).constant_fold(&ctx), i(7),);
-        assert_eq!(BO::Subtract.build(i(3), i(4)).constant_fold(&ctx), i(-1),);
+        assert_eq!(BO::Add.build(i(5), i(2)).constant_fold(), i(7),);
+        assert_eq!(BO::Subtract.build(i(3), i(4)).constant_fold(), i(-1),);
         assert_eq!(
             BO::Add
                 .build(i(2), BO::Multiply.build(i(3), i(6)))
-                .constant_fold(&ctx),
+                .constant_fold(),
             i(20),
         );
 
-        assert_eq!(BO::Less.build(i(3), i(6)).constant_fold(&ctx), True);
+        assert_eq!(BO::Less.build(i(3), i(6)).constant_fold(), True);
     }
 }

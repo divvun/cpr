@@ -176,7 +176,6 @@ dependencies = [
  "color-backtrace",
  "ctor",
  "custom_debug_derive",
- "env_logger",
  "hashbrown",
  "indoc",
  "lang-c",
@@ -185,6 +184,7 @@ dependencies = [
  "matches",
  "once_cell",
  "peg",
+ "pretty_env_logger",
  "quine-mc_cluskey",
  "regex",
  "thiserror",
@@ -427,6 +427,16 @@ name = "plain"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b4596b6d070b27117e987119b4dac604f3c58cfb0b191112e24771b2faeac1a6"
+
+[[package]]
+name = "pretty_env_logger"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "926d36b9553851b8b0005f1275891b392ee4d2d833852c417ed025477350fb9d"
+dependencies = [
+ "env_logger",
+ "log",
+]
 
 [[package]]
 name = "proc-macro-hack"

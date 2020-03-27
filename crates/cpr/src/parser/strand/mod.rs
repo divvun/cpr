@@ -145,7 +145,7 @@ impl<'a> Strand<'a> {
                     !atom.expr.clone()
                 }
             });
-            let expr = base_expr.constant_fold(&ctx).simplify();
+            let expr = base_expr.constant_fold().simplify();
             log::debug!(
                 "[{}] {:?} => {:?}",
                 pairs
@@ -185,7 +185,7 @@ impl<'a> Strand<'a> {
                 let source = lines.join("\n");
                 let expr = expr.clone() & exp_expr.clone();
                 log::debug!("Combo expr original: {:?} :: {}", expr, expr);
-                let expr = expr.constant_fold(&new_ctx).simplify();
+                let expr = expr.constant_fold().simplify();
                 log::debug!("Combo expr proces'd: {:?} :: {}", expr, expr);
 
                 log::debug!("Parsing source:\n{:?}", SourceString(source.clone()));

@@ -93,5 +93,5 @@ use ctor::ctor;
 #[ctor]
 fn install_extensions() {
     color_backtrace::install();
-    env_logger::init();
+    pretty_env_logger::init();
 }

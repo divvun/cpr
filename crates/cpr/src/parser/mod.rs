@@ -116,10 +116,9 @@ pub enum SymbolState<'a> {
 
 impl Context {
     pub fn new() -> Self {
-        let mut unknowns = HashSet::new();
         let res = Context {
             defines: HashMap::new(),
-            unknowns,
+            unknowns: HashSet::new(),
         };
         res
     }
@@ -408,13 +407,13 @@ impl ParsedUnit {
         })
     }
 
-    fn atoms(&self, ctx: &Context) -> VecDeque<Atom<'_>> {
+    fn atoms(&self, _ctx: &Context) -> VecDeque<Atom<'_>> {
         let lines = self.source.lines().collect::<Vec<&str>>();
 
         self.def_ranges
             .iter()
             .filter_map(|(range, expr)| {
-                let expr = expr.parse().constant_fold(ctx).simplify();
+                let expr = expr.parse().constant_fold().simplify();
 
                 if matches!(expr, Expr::False) {
                     log::debug!("Eliminating range {:?} (always-false)", range);
@@ -631,6 +630,17 @@ impl Parser {
         let mut lines = source.lines();
         let mut block: Vec<String> = Vec::new();
 
+        let mut stack: Vec<(bool, Expr)> = Vec::new();
+        fn path_taken(stack: &[(bool, Expr)]) -> bool {
+            stack.iter().all(|(b, _)| *b == true)
+        }
+
+        fn parse_expr(ctx: &Context, tokens: TokenStream) -> Expr {
+            let expr_string = tokens.must_expand_single(ctx).to_string();
+            log::debug!("expanded expr string | {}", expr_string);
+            directive::parser::expr(&expr_string).expect("all expressions should parse")
+        }
+
         'each_line: loop {
             let line = match lines.next() {
                 Some(line) => line,
@@ -641,6 +651,9 @@ impl Parser {
                 continue 'each_line;
             }
 
+            let taken = path_taken(&stack);
+
+            log::debug!("====================================");
             log::debug!("line | {}", line);
             let dir = directive::parser::directive(line).expect("should parse all directives");
             match dir {
@@ -648,8 +661,39 @@ impl Parser {
                     log::debug!("directive | {:?}", dir);
                     match dir {
                         Directive::Define(def) => {
-                            log::debug!("defining {}", def.name());
-                            ctx.push(Expr::True, def);
+                            if taken {
+                                log::debug!("defining {}", def.name());
+                                ctx.push(Expr::True, def);
+                            } else {
+                                log::debug!("path not taken, not defining");
+                            }
+                        }
+                        Directive::Undefine(name) => {
+                            if taken {
+                                log::debug!("undefining {}", name);
+                                ctx.pop(&name);
+                            } else {
+                                log::debug!("path not taken, not undefining");
+                            }
+                        }
+                        Directive::If(tokens) => {
+                            let expr = parse_expr(ctx, tokens);
+                            let b = match expr.constant_fold().simplify().truthiness() {
+                                Some(b) => b,
+                                None => panic!("can't establish truthiness: {:?}", expr),
+                            };
+                            let tup = (b, expr);
+                            log::debug!("if | {:?}", tup);
+                            stack.push(tup)
+                        }
+                        Directive::Else => {
+                            let mut tup = stack.pop().expect("else without if");
+                            tup.0 = !tup.0;
+                            log::debug!("else | {:?}", tup);
+                            stack.push(tup);
+                        }
+                        Directive::EndIf => {
+                            stack.pop().expect("endif without if");
                         }
                         _ => {
                             log::debug!("todo: handle that directive");
@@ -657,20 +701,16 @@ impl Parser {
                     }
                 }
                 None => {
+                    if !taken {
+                        log::debug!("not taken | {}", line);
+                        continue 'each_line;
+                    }
+
                     log::debug!("not a directive");
                     let tokens =
                         directive::parser::token_stream(line).expect("should tokenize everything");
                     log::debug!("tokens = {:?}", tokens);
-                    let mut expansions = tokens.expand(ctx);
-                    assert_eq!(
-                        expansions.len(),
-                        1,
-                        "more than one expansion: not supported for now"
-                    );
-                    assert_eq!(expansions[0].0, Expr::True);
-                    let tokens = expansions.pop().unwrap().1;
-                    log::debug!("expanded tokens = {:?}", tokens);
-                    let line = tokens.to_string();
+                    let line = tokens.must_expand_single(ctx).to_string();
                     log::debug!("expanded line | {}", line);
 
                     block.push(line);
