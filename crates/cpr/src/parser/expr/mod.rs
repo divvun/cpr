@@ -65,36 +65,69 @@ impl TokenStream {
             }
         }
 
+        struct ParseResult<'a, T> {
+            rest: &'a [Token],
+            data: T,
+        }
+
+        fn skip_ws(mut input: &[Token]) -> &[Token] {
+            loop {
+                match input {
+                    [Token::Whitespace, rest @ ..] => {
+                        input = rest;
+                    }
+                    rest => return rest,
+                }
+            }
+        }
+
+        fn parse_defined(mut input: &[Token]) -> Option<ParseResult<&String>> {
+            match input {
+                [Token::Keyword(kw), rest @ ..] if kw == "defined" => {
+                    input = skip_ws(rest);
+                }
+                _ => return None,
+            }
+
+            match input {
+                [Token::Punctuator(Punctuator::ParenOpen), rest @ ..] => match skip_ws(rest) {
+                    [Token::Identifier(id), rest @ ..] => match skip_ws(rest) {
+                        [Token::Punctuator(Punctuator::ParenClose), rest @ ..] => {
+                            return Some(ParseResult { rest, data: id });
+                        }
+                        _ => None,
+                    },
+                    _ => None,
+                },
+                [Token::Identifier(id), rest @ ..] => return Some(ParseResult { rest, data: id }),
+                _ => None,
+            }
+        }
+
         'outer: loop {
+            if let Some(res) = parse_defined(slice) {
+                log::debug!("expanding defined({:?})", res.data);
+                match ctx.lookup(res.data) {
+                    SymbolState::Unknown => {
+                        // don't replace anything
+                    }
+                    SymbolState::Undefined => {
+                        slice = res.rest;
+                        push(&mut output, Token::bool(false));
+                        continue 'outer;
+                    }
+                    SymbolState::Defined(_) | SymbolState::MultipleDefines(_) => {
+                        slice = res.rest;
+                        push(&mut output, Token::bool(true));
+                        continue 'outer;
+                    }
+                };
+            }
+
             match slice {
                 [] => break 'outer,
                 [Token::Identifier(id), rest @ ..] => {
                     slice = rest;
-
-                    if id == "defined" {
-                        match slice {
-                            [Token::Punctuator(Punctuator::ParenOpen), Token::Identifier(id), Token::Punctuator(Punctuator::ParenClose), rest @ ..] =>
-                            {
-                                log::debug!("expanding defined({:?})", id);
-                                match ctx.lookup(id) {
-                                    SymbolState::Unknown => {
-                                        // don't replace anything
-                                    }
-                                    SymbolState::Undefined => {
-                                        slice = rest;
-                                        push(&mut output, Token::Keyword("false".into()));
-                                        continue 'outer;
-                                    }
-                                    SymbolState::Defined(_) | SymbolState::MultipleDefines(_) => {
-                                        slice = rest;
-                                        push(&mut output, Token::Keyword("true".into()));
-                                        continue 'outer;
-                                    }
-                                };
-                            }
-                            _ => {}
-                        }
-                    }
 
                     match ctx.defines.get(id) {
                         None => {} // can't replace,
@@ -399,12 +432,10 @@ impl Expr {
         use BinaryOperator as BO;
         use Expr::*;
 
-        // TODO: constant folding
         match self {
             Symbol(_name) => {
-                // symbols are resolved during macro expansion,
-                // if we still have one we're not getting rid of it
-                self.clone()
+                // anything that's not defined is zero
+                Integer(0)
             }
             Defined(_name) => {
                 // TODO
@@ -458,6 +489,10 @@ impl Expr {
             True => Some(true),
             False => Some(false),
             Integer(i) => Some(*i != 0),
+            Symbol(_) => {
+                // if we still have a symbol that wasn't expanded, it's 0
+                Some(false)
+            }
             _ => None,
         }
     }

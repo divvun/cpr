@@ -42,7 +42,7 @@ peg::parser! { pub(crate) grammar parser() for str {
         / N("elif") __ t:token_stream() { Directive::ElseIf(t) }
         / N("ifdef") __ i:identifier() { Directive::If(
             vec![
-                Token::Identifier("defined".into()),
+                Token::defined(),
                 Punctuator::ParenOpen.into(),
                 Token::Identifier(i),
                 Punctuator::ParenClose.into(),
@@ -51,7 +51,7 @@ peg::parser! { pub(crate) grammar parser() for str {
         / N("ifndef") __ i:identifier() { Directive::If(
             vec![
                 Punctuator::Bang.into(),
-                Token::Identifier("defined".into()),
+                Token::defined(),
                 Punctuator::ParenOpen.into(),
                 Token::Identifier(i),
                 Punctuator::ParenClose.into(),

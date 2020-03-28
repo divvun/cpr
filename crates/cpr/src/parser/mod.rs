@@ -19,7 +19,7 @@ use std::{
 use strand::{Atom, Strand};
 
 /// A C token
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub enum Token {
     Keyword(String),
     Identifier(String),
@@ -27,6 +27,30 @@ pub enum Token {
     Integer(i64),
     StringLiteral(String),
     Whitespace,
+}
+
+impl Token {
+    fn defined() -> Self {
+        Self::Keyword("defined".into())
+    }
+
+    fn bool(b: bool) -> Self {
+        Self::Keyword(if b { "true" } else { "false" }.into())
+    }
+}
+
+impl fmt::Debug for Token {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use Token::*;
+        match self {
+            Keyword(s) => write!(f, "Kw({})", s),
+            Identifier(s) => write!(f, "Id({})", s),
+            Punctuator(s) => write!(f, "Pun({:?})", (*s as u8) as char),
+            Integer(i) => write!(f, "Int({})", i),
+            StringLiteral(s) => write!(f, "Str({:?})", s),
+            Whitespace => write!(f, "Ws"),
+        }
+    }
 }
 
 impl From<Punctuator> for Token {
@@ -336,8 +360,7 @@ impl ParsedUnit {
         let source = utils::process_line_continuations_and_comments(source);
 
         let mut dependencies = HashMap::new();
-        let mut def_ranges =
-            RangeSet::<TokenStream>::new(vec![Token::Keyword("true".into())].into());
+        let mut def_ranges = RangeSet::<TokenStream>::new(vec![Token::bool(true)].into());
         let mut n = 0usize;
         let mut last_if: Option<TokenStream> = None;
 
@@ -613,7 +636,7 @@ impl Parser {
     fn parse_2(&mut self, ctx: &mut Context, env: &mut Env, incl: Include) -> Result<(), Error> {
         let source = self.read_include(&incl)?;
         let source = utils::process_line_continuations_and_comments(&source);
-        let mut lines = source.lines();
+        let mut lines = source.lines().enumerate();
         let mut block: Vec<String> = Vec::new();
 
         let mut stack: Vec<(bool, Expr)> = Vec::new();
@@ -628,11 +651,11 @@ impl Parser {
         }
 
         'each_line: loop {
-            let line = match lines.next() {
+            let (line_number, line) = match lines.next() {
                 Some(line) => line,
                 None => break 'each_line,
-            }
-            .trim();
+            };
+            let line = line.trim();
             if line.is_empty() {
                 continue 'each_line;
             }
@@ -640,7 +663,7 @@ impl Parser {
             let taken = path_taken(&stack);
 
             log::debug!("====================================");
-            log::debug!("line | {}", line);
+            log::debug!("line {} | {}", line_number, line);
             let dir = directive::parser::directive(line).expect("should parse all directives");
             match dir {
                 Some(dir) => {

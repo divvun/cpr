@@ -5,10 +5,8 @@ mod parser;
 mod translator;
 
 use argh::*;
-use parser::{ChunkedUnit, Context, Include, Parser};
-use std::error::Error;
-
-use std::{collections::HashMap, path::PathBuf};
+use parser::Parser;
+use std::{error::Error, path::PathBuf};
 
 #[derive(FromArgs)]
 /// Parse a C header file and its includes and dump info about it
@@ -59,31 +57,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     ];
 
     log::debug!("System paths: {:#?}", system_paths);
-
-    let parser = Parser::new(args.file, system_paths, vec![]).unwrap();
-
+    Parser::new(args.file, system_paths, vec![]).unwrap();
     log::debug!("Done parsing!");
-
-    // let ctx = Context::new();
-    // let sources: Vec<_> = parser.iter().collect();
-    // let mut parsed: HashMap<Include, ChunkedUnit> = HashMap::new();
-
-    // for (include, unit) in sources.iter().rev() {
-    //     log::debug!("## CHUNKING {:?}", include);
-
-    //     let mut deps = Vec::new();
-    //     for (inc, _expr) in &unit.dependencies {
-    //         log::debug!("Adding dep {:?}", inc);
-    //         deps.push(parsed.get(inc).unwrap());
-    //     }
-    //     let cu = unit.chunkify(&deps[..], &ctx).unwrap();
-
-    //     log::debug!("{:?}: {} chunks", include, cu.chunks.len());
-    //     for chunk in &cu.chunks {
-    //         println!("{:#?}", chunk);
-    //     }
-    //     parsed.insert((*include).clone(), cu);
-    // }
 
     Ok(())
 }
