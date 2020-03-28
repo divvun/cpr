@@ -82,11 +82,11 @@ peg::parser! { pub(crate) grammar parser() for str {
         / define_object_like()
 
     rule define_function_like() -> Define
-        = name:identifier() "(" _ args:identifier_list() _ ")" __ value:token_stream() {
+        = name:identifier() "(" _ args:identifier_list() _ ")" value:spaced_token_stream()? {
             Define::Replacement {
                 name,
                 args,
-                value,
+                value: value.unwrap_or(vec![].into()),
             }
         }
 
@@ -246,7 +246,7 @@ peg::parser! { pub(crate) grammar parser() for str {
         callee:identifier() _ "(" args:expr0() ** (_ "," _) ")" _ { Expr::Call(callee, args) }
         --
         name:identifier() { Expr::Symbol(name) }
-        "(" e:expr0() ")" { e }
+        "(" _ e:expr0() _ ")" { e }
         // highest precedence
     }
 }}
@@ -596,5 +596,10 @@ mod expr_parser_tests {
             Ok(Expr::And(vec![sym("foo"), def("bar"),]))
         );
         assert!(parser::expr("defined add(x, y)").is_err())
+    }
+
+    #[test]
+    fn regression() {
+        parser::expr("0 && ( false || false || false || !false )").unwrap();
     }
 }
