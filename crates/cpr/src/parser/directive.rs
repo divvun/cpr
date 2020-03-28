@@ -191,6 +191,7 @@ peg::parser! { pub(crate) grammar parser() for str {
         / "." { Punctuator::Dot }
         / "/" { Punctuator::Slash }
         / "#" { Punctuator::Hash }
+        / "@" { Punctuator::At }
 
     pub rule expr() -> Expr
         = e:expr0() eof() { e }
@@ -307,6 +308,12 @@ mod lexer_tests {
             ]
             .into())
         );
+    }
+
+    #[test]
+    fn regression_1() {
+        let input = "#define API_SET_BY_ORDINAL(X,O,PO)                  X @##O NONAME PRIVATE";
+        parser::token_stream(input).unwrap();
     }
 }
 
@@ -599,7 +606,7 @@ mod expr_parser_tests {
     }
 
     #[test]
-    fn regression() {
+    fn regression_1() {
         parser::expr("0 && ( false || false || false || !false )").unwrap();
     }
 }

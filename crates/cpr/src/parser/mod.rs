@@ -103,6 +103,8 @@ pub enum Punctuator {
     Dot = b'.',
     Slash = b'/',
     Hash = b'#',
+    /// Not a C punctuator, but appears in Windows headers
+    At = b'@',
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -613,15 +615,12 @@ impl Parser {
 
     /// Find a file on disk corresponding to an `Include`, read it
     fn read_include(&self, include: &Include) -> Result<String, Error> {
-        log::debug!("=== {:?} ===", include);
-
         let path =
             match include.resolve(&*self.system_paths, &self.quoted_paths, &self.working_path) {
                 Some(v) => v,
                 None => return Err(Error::NotFound(include.clone())),
             };
-
-        log::debug!("=== {:?} ===", &path);
+        log::debug!("=== {:?} => {:?} ===", include, path);
 
         Ok(std::fs::read_to_string(&path)?)
     }
@@ -634,8 +633,16 @@ impl Parser {
     }
 
     fn parse_2(&mut self, ctx: &mut Context, env: &mut Env, incl: Include) -> Result<(), Error> {
+        use std::cmp::min;
         let source = self.read_include(&incl)?;
+        let max_show = 120;
+        log::debug!("---------------------------------------");
+        log::debug!("orig' source: {}", &source[..min(max_show, source.len())]);
+        log::debug!("---------------------------------------");
         let source = utils::process_line_continuations_and_comments(&source);
+        log::debug!("---------------------------------------");
+        log::debug!("proc' source: {}", &source[..min(max_show, source.len())]);
+        log::debug!("---------------------------------------");
         let mut lines = source.lines().enumerate();
         let mut block: Vec<String> = Vec::new();
 
@@ -663,7 +670,7 @@ impl Parser {
             let taken = path_taken(&stack);
 
             log::debug!("====================================");
-            log::debug!("line {} | {}", line_number, line);
+            log::debug!("{:?}:{} | {}", incl, line_number, line);
             let dir = directive::parser::directive(line).expect("should parse all directives");
             match dir {
                 Some(dir) => {
@@ -749,6 +756,7 @@ impl Parser {
             panic!("Unprocessed lines: {:#?}", block);
         }
 
+        log::debug!("=== {:?} (end) ===", incl);
         Ok(())
     }
 

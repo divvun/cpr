@@ -14,6 +14,7 @@ struct LProcessor<'a> {
     sink: &'a mut dyn Sink,
 }
 
+#[derive(Debug)]
 enum LState {
     Normal,
     Backslash,
@@ -55,6 +56,7 @@ struct CProcessor<'a> {
     sink: &'a mut dyn Sink,
 }
 
+#[derive(Debug)]
 enum CState {
     Normal,
     NormalSlash,
@@ -152,6 +154,10 @@ impl<'a> Sink for CProcessor<'a> {
                     self.sink.push(' ');
                     self.state = CState::Normal;
                 }
+                '*' => {
+                    // still in multi-line comment, still possibly ending
+                    // multi-line comment
+                }
                 _ => {
                     // was just a regular star, keep skipping
                     self.state = CState::Multi;
@@ -180,4 +186,26 @@ pub fn process_line_continuations_and_comments(input: &str) -> String {
         lcproc.push(c);
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use indoc::indoc;
+
+    #[test]
+    fn process_block_comments() {
+        let input = indoc!(
+            "
+            /******
+            ******/
+            int foobar();
+            "
+        );
+        assert_eq!(
+            process_line_continuations_and_comments(&input),
+            // comment block is reduced to 'one space'
+            " \nint foobar();\n"
+        );
+    }
 }
