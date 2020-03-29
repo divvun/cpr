@@ -149,9 +149,9 @@ peg::parser! { pub(crate) grammar parser() for str {
         }
 
     rule tok_integer() -> i64
-        = "0x" s:tok_hex_integer() {? i64::from_str_radix(&s, 16).map_err(|_| "bad hex constant") }
-        / "0" s:tok_oct_integer() {? i64::from_str_radix(&s, 8).map_err(|_| "bad oct constant") }
-        / s:tok_dec_integer() {? i64::from_str_radix(&s, 10).map_err(|_| "bad decimal constant") }
+        = "0x" s:$(tok_hex_integer()+) {? i64::from_str_radix(&s, 16).map_err(|_| "bad hex constant") }
+        / "0" s:$(tok_oct_integer()+) {? i64::from_str_radix(&s, 8).map_err(|_| "bad oct constant") }
+        / s:$(tok_dec_integer()+) {? i64::from_str_radix(&s, 10).map_err(|_| "bad decimal constant") }
 
     rule tok_hex_integer() -> String
         = e:$(['0'..='9' | 'A'..='F' | 'a'..='f']) { e.into() }
@@ -288,6 +288,10 @@ mod lexer_tests {
 
     #[test]
     fn tokens() {
+        assert_eq!(parser::token_stream("123"), Ok(vec![int(123)].into()));
+        assert_eq!(parser::token_stream("0x123"), Ok(vec![int(0x123)].into()));
+        assert_eq!(parser::token_stream("0123"), Ok(vec![int(0o123)].into()));
+
         assert_eq!(
             parser::token_stream("2 + 4"),
             Ok(vec![int(2), __, P::Plus.into(), __, int(4)].into())
