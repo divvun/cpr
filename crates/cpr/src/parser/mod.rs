@@ -541,6 +541,12 @@ impl Parser {
                         Directive::Define(def) => {
                             if taken {
                                 log::debug!("defining {}", def.name());
+                                match &def {
+                                    Define::Value { value, .. } => {
+                                        log::debug!("...to {:?}", value);
+                                    }
+                                    _ => {}
+                                }
                                 ctx.push(Expr::bool(true), def);
                             } else {
                                 log::debug!("path not taken, not defining");
@@ -602,8 +608,14 @@ impl Parser {
             }
         }
 
-        if !block.is_empty() {
-            panic!("Unprocessed lines: {:#?}", block);
+        let unprocessed_lines: Vec<_> = block
+            .iter()
+            .map(|x| x.trim())
+            .filter(|x| !x.is_empty())
+            .collect();
+
+        if !unprocessed_lines.is_empty() {
+            panic!("Unprocessed lines: {:#?}", unprocessed_lines);
         }
 
         log::debug!("=== {:?} (end) ===", incl);
