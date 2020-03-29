@@ -1,6 +1,5 @@
 use super::*;
 use BinaryOperator as BO;
-use Expr::*;
 
 fn i(i: i64) -> Expr {
     Expr::Integer(i)
@@ -17,5 +16,5 @@ fn naive() {
         i(20),
     );
 
-    assert_eq!(BO::Less.build(i(3), i(6)).constant_fold(), True);
+    assert_eq!(BO::Less.build(i(3), i(6)).constant_fold(), i(1));
 }

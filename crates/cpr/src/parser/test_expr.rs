@@ -53,7 +53,7 @@ fn test_simplify_and_1() {
 
 #[test]
 fn test_simplify_and_1b() {
-    assert_simplifies(ape() & !ape(), Expr::False);
+    assert_simplifies(ape() & !ape(), Expr::bool(false));
 }
 
 #[test]
@@ -73,17 +73,17 @@ fn test_simplify_or_1() {
 
 #[test]
 fn test_simplify_or_2() {
-    assert_simplifies(ape() | !ape(), Expr::True);
+    assert_simplifies(ape() | !ape(), Expr::bool(true));
 }
 
 #[test]
 fn test_simplify_or_3() {
-    assert_simplifies(ape() | Expr::False, ape());
+    assert_simplifies(ape() | Expr::bool(false), ape());
 }
 
 #[test]
 fn test_simplify_or_4() {
-    assert_simplifies(Expr::False | ape(), ape());
+    assert_simplifies(Expr::bool(false) | ape(), ape());
 }
 
 #[test]
@@ -107,14 +107,14 @@ fn test_simplify_nested_negated_2() {
 
     assert_simplifies(a() & b() & c(), ape() & bar() & chai());
     assert_simplifies(a() & b() & !c(), ape() & bar() & !chai());
-    assert_simplifies(a() & !b() & c(), Expr::False);
+    assert_simplifies(a() & !b() & c(), Expr::bool(false));
     assert_simplifies(a() & !b() & !c(), ape() & !bar());
 }
 
 #[test]
 fn test_simplify_nested_negated_3() {
     let init = ape() & (ape() & bar()) & (ape() & !bar()) & ape();
-    assert_simplifies(init, Expr::False);
+    assert_simplifies(init, Expr::bool(false));
 }
 
 #[test]
@@ -132,5 +132,5 @@ fn test_simplify_nested_negated_5() {
 #[test]
 fn test_simplify_nested_negated_6() {
     let init = ape() & !(ape() & bar()) & !(ape() & !bar()) & ape();
-    assert_simplifies(init, Expr::False);
+    assert_simplifies(init, Expr::bool(false));
 }

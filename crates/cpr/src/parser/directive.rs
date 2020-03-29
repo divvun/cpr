@@ -241,8 +241,6 @@ peg::parser! { pub(crate) grammar parser() for str {
         "defined" _ name:identifier() { Expr::Defined(name) }
         "defined" _ "(" _ name:identifier() _ ")" { Expr::Defined(name) }
         --
-        "true" { Expr::True }
-        "false" { Expr::False }
         i:tok_integer() { Expr::Integer(i) }
         callee:identifier() _ "(" args:expr0() ** (_ "," _) ")" _ { Expr::Call(callee, args) }
         --
@@ -467,8 +465,6 @@ mod expr_parser_tests {
 
         assert_eq!(parser::expr("(foobar)"), Ok(sym("foobar")));
         assert_eq!(parser::expr("((foobar))"), Ok(sym("foobar")));
-        assert_eq!(parser::expr("true"), Ok(Expr::True));
-        assert_eq!(parser::expr("false"), Ok(Expr::False));
         assert_eq!(
             parser::expr("a && b"),
             Ok(Expr::And(vec![sym("a"), sym("b")]))

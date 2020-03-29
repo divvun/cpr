@@ -12,7 +12,7 @@ fn defined() {
 
     let mut ctx = Context::new();
     ctx.push(
-        Expr::True,
+        Expr::bool(true),
         Define::Value {
             name: "FOO".into(),
             value: vec![].into(),

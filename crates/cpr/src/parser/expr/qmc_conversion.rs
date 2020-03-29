@@ -45,12 +45,12 @@ impl AsBool for Expr {
         use Expr::*;
 
         match self {
-            True => Bool::True,
-            False => Bool::False,
+            Integer(0) => Bool::False,
+            Integer(_) => Bool::True,
             And(c) => Bool::And(c.into_iter().map(|v| v.as_bool(terms)).collect()),
             Or(c) => Bool::Or(c.into_iter().map(|v| v.as_bool(terms)).collect()),
             Not(v) => Bool::Not(Box::new(v.as_bool(terms))),
-            Defined(_) | Symbol(_) | Call(_, _) | Binary(_, _, _) | Integer(_) => terms.add(self),
+            Defined(_) | Symbol(_) | Call(_, _) | Binary(_, _, _) => terms.add(self),
         }
     }
 }
@@ -61,13 +61,14 @@ impl FromBool for Expr {
         use Expr::*;
 
         match v {
-            Bool::True => True,
-            Bool::False => False,
+            Bool::True => Integer(1),
+            Bool::False => Integer(0),
             Bool::And(c) => And(c.into_iter().map(|v| Self::from_bool(v, terms)).collect()),
             Bool::Or(c) => Or(c.into_iter().map(|v| Self::from_bool(v, terms)).collect()),
             Bool::Not(v) => Not(Box::new(Self::from_bool(*v, terms))),
             Bool::Term(t) => {
-                // todo: reverse terms once
+                // TODO: performance: build a reverse term lookup map once
+                // instead of this O(n) lookup
                 for (k, &v) in &terms.map {
                     if v == t {
                         return k.clone();

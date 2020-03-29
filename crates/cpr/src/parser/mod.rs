@@ -1,7 +1,6 @@
 mod directive;
 mod expr;
 mod rangeset;
-mod strand;
 mod utils;
 
 use directive::Directive;
@@ -16,7 +15,6 @@ use std::{
     fmt, io,
     path::{Path, PathBuf},
 };
-use strand::{Atom, Strand};
 
 /// A C token
 #[derive(Clone, PartialEq, Eq, Hash)]
@@ -47,7 +45,7 @@ impl Token {
     }
 
     fn bool(b: bool) -> Self {
-        Self::kw(if b { "true" } else { "false" })
+        Self::int(if b { 1 } else { 0 })
     }
 }
 
@@ -429,162 +427,6 @@ impl ParsedUnit {
             dependencies,
         })
     }
-
-    fn atoms(&self, _ctx: &Context) -> VecDeque<Atom<'_>> {
-        let lines = self.source.lines().collect::<Vec<&str>>();
-
-        self.def_ranges
-            .iter()
-            .filter_map(|(range, expr)| {
-                let expr = expr.parse().constant_fold().simplify();
-
-                if matches!(expr, Expr::False) {
-                    log::debug!("Eliminating range {:?} (always-false)", range);
-                    return None;
-                }
-
-                let mut region_lines = Vec::new();
-                'each_line: for &line in &lines[range] {
-                    let line = line.trim();
-                    if line.is_empty() {
-                        continue;
-                    }
-                    let res =
-                        directive::parser::directive(line).expect("should parse all directives");
-                    if let Some(directive) = res {
-                        match directive {
-                            Directive::Define(_) | Directive::Undefine(_) => {
-                                // leave them in!
-                                log::debug!("In atoms, found directive: {:?}", directive);
-                            }
-                            _ => {
-                                // skip'em
-                                continue 'each_line;
-                            }
-                        }
-                    }
-                    region_lines.push(line);
-                }
-
-                if region_lines.is_empty() {
-                    return None;
-                } else {
-                    return Some(Atom {
-                        lines: region_lines,
-                        expr: expr.clone(),
-                    });
-                }
-            })
-            .collect()
-    }
-
-    pub fn chunkify(
-        &self,
-        deps: &[&ChunkedUnit],
-        init_ctx: &Context,
-    ) -> Result<ChunkedUnit, Error> {
-        let mut init_ctx = init_ctx.clone();
-
-        let mut env = Env::with_msvc();
-        for dep in deps {
-            for typename in &dep.typenames {
-                env.add_typename(typename)
-            }
-            init_ctx.extend(&dep.ctx);
-        }
-
-        let mut atom_queue = self.atoms(&init_ctx);
-        let mut strands: Vec<Strand> = Vec::new();
-        let mut strand = Strand::new();
-
-        'knit: loop {
-            log::debug!("Knitting...");
-
-            let mut must_finish = false;
-            match atom_queue.pop_front() {
-                Some(atom) => strand.push(atom),
-                None => must_finish = true,
-            }
-
-            if strand.len() > 4 {
-                panic!(
-                    "Trying to knit too deep, current strand =\n{:#?}",
-                    strand.expand_atoms(&init_ctx, &mut strand.all_atoms())
-                );
-            }
-
-            if strand.is_empty() {
-                if must_finish {
-                    log::debug!("Finished with empty strand");
-                    break 'knit;
-                }
-                log::debug!("Strand empty so far, continuing");
-                continue;
-            }
-
-            // rebuild context up to this point
-            let mut ctx = init_ctx.clone();
-            for strand in &strands {
-                ctx = strand.chunks(&mut env, &ctx).1;
-            }
-
-            if strand.has_complete_variants(&mut env, &ctx) {
-                log::debug!("Strand complete (len {})", strand.len());
-                strands.push(strand);
-
-                log::debug!("Resetting strand..");
-                strand = Strand::new();
-            } else {
-                if must_finish {
-                    log::debug!(
-                        "Ran out of atoms while trying to make a complete strand (got {} so far)",
-                        strand.len()
-                    );
-
-                    match strands.pop() {
-                        Some(prev) => {
-                            log::debug!(
-                                "Trying to backtrack by extending previous strand (len {})",
-                                prev.len()
-                            );
-                            atom_queue.extend(strand.into_atoms());
-                            strand = prev;
-                            continue 'knit;
-                        }
-                        None => {
-                            log::debug!("No previous strand, can't backtrack");
-                            return Err(Error::CouldNotKnit(
-                                strand
-                                    .all_atoms()
-                                    .map(|atom| {
-                                        format!("// ~> {:?}\n{}", atom.expr, atom.lines.join("\n"))
-                                    })
-                                    .collect::<Vec<_>>()
-                                    .join("\n"),
-                            ));
-                        }
-                    }
-                } else {
-                    log::debug!("No complete variants, knitting some more");
-                }
-            }
-        }
-
-        let mut ctx = init_ctx.clone();
-        let mut chunks = Vec::new();
-        for strand in &strands {
-            let (chunks2, ctx2) = strand.chunks(&mut env, &ctx);
-            chunks.extend(chunks2);
-            ctx = ctx2;
-        }
-
-        let unit = ChunkedUnit {
-            chunks,
-            ctx,
-            typenames: env.typenames.drain(..).next().unwrap(),
-        };
-        Ok(unit)
-    }
 }
 
 #[derive(Debug)]
@@ -699,7 +541,7 @@ impl Parser {
                         Directive::Define(def) => {
                             if taken {
                                 log::debug!("defining {}", def.name());
-                                ctx.push(Expr::True, def);
+                                ctx.push(Expr::bool(true), def);
                             } else {
                                 log::debug!("path not taken, not defining");
                             }
@@ -714,11 +556,7 @@ impl Parser {
                         }
                         Directive::If(tokens) => {
                             let expr = parse_expr(ctx, tokens);
-                            let b = match expr.constant_fold().simplify().truthiness() {
-                                Some(b) => b,
-                                None => panic!("can't establish truthiness: {:?}", expr),
-                            };
-                            let tup = (b, expr);
+                            let tup = (expr.truthy(), expr);
                             log::debug!("if | {:?}", tup);
                             stack.push(tup)
                         }
@@ -808,9 +646,6 @@ impl Parser {
             .map(move |inc| (inc, self.sources.get(inc).unwrap()))
     }
 }
-
-#[cfg(test)]
-mod test_parse;
 
 #[cfg(test)]
 mod test_expr;

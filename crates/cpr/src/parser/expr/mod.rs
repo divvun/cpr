@@ -49,14 +49,14 @@ impl TokenStream {
             "more than one expansion: not supported for now. expansions = {:?}",
             expansions,
         );
-        assert_eq!(expansions[0].0, Expr::True);
-        let tokens = expansions.pop().unwrap().1;
+        let (expr, tokens) = expansions.pop().unwrap();
+        assert!(expr.truthy());
         log::debug!("expanded tokens = {:?}", tokens);
         tokens
     }
 
     pub fn expand(&self, ctx: &Context) -> Vec<(Expr, Self)> {
-        let mut output = vec![(Expr::True, Self::new())];
+        let mut output = vec![(Expr::bool(true), Self::new())];
         let mut slice = &self.0[..];
 
         fn push(output: &mut Vec<(Expr, TokenStream)>, token: Token) {
@@ -207,8 +207,6 @@ impl BitAnd for TokenStream {
 /// Essentially a subset of valid C expressions.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Expr {
-    True,
-    False,
     Defined(String),
     Symbol(String),
     Call(String, Vec<Expr>),
@@ -259,6 +257,36 @@ impl BinaryOperator {
     pub fn build(self, l: Expr, r: Expr) -> Expr {
         Expr::Binary(self, Box::new(l), Box::new(r))
     }
+
+    pub fn eval(&self, l: i64, r: i64) -> i64 {
+        use BinaryOperator::*;
+        fn bool(b: bool) -> i64 {
+            if b {
+                1
+            } else {
+                0
+            }
+        }
+
+        match self {
+            Add => l + r,
+            Subtract => l - r,
+            Multiply => l * r,
+            Divide => l / r,
+            Modulo => l % r,
+            BitwiseOr => l | r,
+            BitwiseAnd => l & r,
+            BitwiseXor => l ^ r,
+            LeftShift => l << r,
+            RightShift => l >> r,
+            Greater => bool(l > r),
+            GreaterOrEqual => bool(l >= r),
+            Less => bool(l < r),
+            LessOrEqual => bool(l <= r),
+            Equals => bool(l == r),
+            NotEquals => bool(l != r),
+        }
+    }
 }
 
 impl BinaryOperator {
@@ -290,8 +318,6 @@ impl fmt::Display for Expr {
         use Expr::*;
 
         match self {
-            True => write!(f, "true"),
-            False => write!(f, "false"),
             Integer(i) => write!(f, "{}", i),
             Binary(op, l, r) => write!(f, "({} {} {})", l, op.sign(), r),
             Call(callee, args) => {
@@ -360,14 +386,13 @@ impl PreprocessorIdent for Expr {
                 res
             }
             Not(c) => c.ident(),
-            True | False => vec![],
         }
     }
 }
 
 impl Default for Expr {
     fn default() -> Expr {
-        Expr::True
+        Expr::Integer(1)
     }
 }
 
@@ -379,8 +404,8 @@ impl BitAnd for Expr {
         use Expr::*;
 
         match (self, rhs) {
-            (_, False) | (False, _) => False,
-            (v, True) | (True, v) => v,
+            (_, Integer(0)) | (Integer(0), _) => Expr::bool(false),
+            (v, Integer(_)) | (Integer(_), v) => v,
             (And(l), And(r)) => And(l.into_iter().chain(r.into_iter()).collect()),
             (And(c), v) | (v, And(c)) => And(c.into_iter().chain(once(v)).collect()),
             (l, r) => And(vec![l, r]),
@@ -396,8 +421,8 @@ impl BitOr for Expr {
         use Expr::*;
 
         match (self, rhs) {
-            (_, True) | (True, _) => True,
-            (v, False) | (False, v) => v,
+            (v, Integer(0)) | (Integer(0), v) => v,
+            (_, Integer(_)) | (Integer(_), _) => Expr::bool(true),
             (Or(l), Or(r)) => Or(l.into_iter().chain(r.into_iter()).collect()),
             (Or(c), v) | (v, Or(c)) => Or(c.into_iter().chain(once(v)).collect()),
             (l, r) => Or(vec![l, r]),
@@ -420,81 +445,61 @@ impl Not for Expr {
 
 impl Expr {
     pub fn bool(b: bool) -> Self {
-        if b {
-            Self::True
-        } else {
-            Self::False
-        }
+        Self::Integer(if b { 1 } else { 0 })
     }
 
     // Fold (2 + 2) to 4, etc.
     pub fn constant_fold(&self) -> Expr {
-        use BinaryOperator as BO;
         use Expr::*;
 
         match self {
-            Symbol(_name) => {
-                // anything that's not defined is zero
-                Integer(0)
-            }
-            Defined(_name) => {
-                // TODO
-                self.clone()
-            }
+            Symbol(_name) => self.clone(),
+            Defined(_name) => self.clone(),
             Call(callee, args) => Call(
                 callee.clone(),
                 args.iter().map(|arg| arg.constant_fold()).collect(),
             ),
-            True | False => self.clone(),
             And(c) => And(c.iter().map(|v| v.constant_fold()).collect()),
             Or(c) => Or(c.iter().map(|v| v.constant_fold()).collect()),
             Not(v) => match v.constant_fold() {
-                True => False,
-                False => True,
                 Integer(i) => Integer(!i),
                 Not(v) => *v,
                 v => !v,
             },
             Binary(op, l, r) => match (l.constant_fold(), r.constant_fold()) {
-                (Integer(l), Integer(r)) => match op {
-                    BO::Add => Integer(l + r),
-                    BO::Subtract => Integer(l - r),
-                    BO::Multiply => Integer(l * r),
-                    BO::Divide => Integer(l / r),
-                    BO::Modulo => Integer(l % r),
-                    BO::BitwiseOr => Integer(l | r),
-                    BO::BitwiseAnd => Integer(l & r),
-                    BO::BitwiseXor => Integer(l ^ r),
-                    BO::LeftShift => Integer(l << r),
-                    BO::RightShift => Integer(l >> r),
-                    BO::Greater => Self::bool(l > r),
-                    BO::GreaterOrEqual => Self::bool(l >= r),
-                    BO::Less => Self::bool(l < r),
-                    BO::LessOrEqual => Self::bool(l <= r),
-                    BO::Equals => Self::bool(l == r),
-                    BO::NotEquals => Self::bool(l != r),
-                },
+                (Integer(l), Integer(r)) => Integer(op.eval(l, r)),
                 (l, r) => op.build(l, r),
             },
             Integer(_) => self.clone(),
         }
     }
 
-    /// Determine expression truthiness - true is truthy, non-zero integers
-    /// are truthy, false is falsy, zero is falsy, BUT anything with
-    /// an unresolved symbol, a call, whatever - that's neither, ie. None.
-    pub fn truthiness(&self) -> Option<bool> {
+    // Fold expression to a single i64 value, assuming any symbols, calls, etc. are undefined
+    pub fn assume_undefined(&self) -> i64 {
         use Expr::*;
-        match self {
-            True => Some(true),
-            False => Some(false),
-            Integer(i) => Some(*i != 0),
-            Symbol(_) => {
-                // if we still have a symbol that wasn't expanded, it's 0
-                Some(false)
+        fn bool(b: bool) -> i64 {
+            if b {
+                1
+            } else {
+                0
             }
-            _ => None,
         }
+
+        match self {
+            Defined(_) => 0,
+            Symbol(_) => 0,
+            Call(_, _) => 0,
+            Binary(op, l, r) => op.eval(l.assume_undefined(), r.assume_undefined()),
+            Integer(i) => *i,
+            And(c) => bool(c.iter().all(|v| v.assume_undefined() != 0)),
+            Or(c) => bool(c.iter().any(|v| v.assume_undefined() != 0)),
+            Not(v) => !v.assume_undefined(),
+        }
+    }
+
+    /// Return truthiness of expression, assuming
+    pub fn truthy(&self) -> bool {
+        self.assume_undefined() != 0
     }
 
     /// Simplify "logical and" and "logical or" expressions using
