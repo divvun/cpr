@@ -1,6 +1,6 @@
 use super::{
     expr::{BinaryOperator as BO, TokenStream},
-    Define, DefineArguments, Expr, Include, Punctuator, Token,
+    Define, Expr, Include, MacroParams, Punctuator, Token,
 };
 use peg::ParseLiteral;
 
@@ -82,10 +82,10 @@ peg::parser! { pub(crate) grammar parser() for str {
         / define_object_like()
 
     rule define_function_like() -> Define
-        = name:identifier() "(" _ args:identifier_list() _ ")" value:spaced_token_stream()? {
+        = name:identifier() "(" _ params:macro_params() _ ")" value:spaced_token_stream()? {
             Define::Replacement {
                 name,
-                args,
+                params,
                 value: value.unwrap_or(vec![].into()),
             }
         }
@@ -109,9 +109,9 @@ peg::parser! { pub(crate) grammar parser() for str {
         = n:$(['_' | 'a'..='z' | 'A'..='Z'] ['_' | 'a'..='z' | 'A'..='Z' | '0'..='9']*) {
             n.into()
         }
-    rule identifier_list() -> DefineArguments
+    rule macro_params() -> MacroParams
         = names:identifier() ** (_ "," _) _ e:("," _ "...")? {
-            DefineArguments {
+            MacroParams {
                 names,
                 has_trailing: e.is_some(),
             }
@@ -386,7 +386,7 @@ mod directive_parser_tests {
             parser::directive("#define FOO(X, Y) X + Y"),
             Ok(Some(Directive::Define(Define::Replacement {
                 name: "FOO".into(),
-                args: DefineArguments {
+                params: MacroParams {
                     names: vec!["X".into(), "Y".into()],
                     has_trailing: false
                 },

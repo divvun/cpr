@@ -118,7 +118,7 @@ pub enum Punctuator {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct DefineArguments {
+pub struct MacroParams {
     names: Vec<String>,
     has_trailing: bool,
 }
@@ -131,7 +131,7 @@ pub enum Define {
     },
     Replacement {
         name: String,
-        args: DefineArguments,
+        params: MacroParams,
         value: TokenStream,
     },
 }

@@ -4,6 +4,7 @@ use super::{
 };
 use qmc_conversion::*;
 use std::{
+    collections::HashMap,
     fmt,
     ops::{Add, BitAnd, BitOr, Not},
 };
@@ -51,7 +52,6 @@ impl TokenStream {
         );
         let (expr, tokens) = expansions.pop().unwrap();
         assert!(expr.truthy());
-        log::debug!("expanded tokens = {:?}", tokens);
         tokens
     }
 
@@ -104,6 +104,89 @@ impl TokenStream {
             }
         }
 
+        fn parse_arglist<'a, 'b>(
+            name: &'a str,
+            mut input: &'b [Token],
+        ) -> ParseResult<'b, Vec<TokenStream>> {
+            let original_input = input;
+
+            let mut depth;
+            input = skip_ws(input);
+
+            match input {
+                [Token::Punctuator(Punctuator::ParenOpen), rest @ ..] => {
+                    input = rest;
+                    depth = 1;
+                }
+                _ => panic!(
+                    "macro call to {}: missing opening paren, found instead: {:?}",
+                    name, input
+                ),
+            }
+
+            let mut args: Vec<TokenStream> = vec![vec![].into()];
+
+            fn push(args: &mut Vec<TokenStream>, tok: Token) {
+                args.last_mut().unwrap().0.push(tok);
+            }
+
+            fn new_arg(args: &mut Vec<TokenStream>) {
+                args.push(vec![].into());
+            }
+
+            while depth > 0 {
+                input = skip_ws(input);
+
+                match depth {
+                    1 => match input {
+                        [Token::Punctuator(Punctuator::Comma), rest @ ..] => {
+                            new_arg(&mut args);
+                            input = rest;
+                        }
+                        [tok @ Token::Punctuator(Punctuator::ParenOpen), rest @ ..] => {
+                            depth += 1;
+                            push(&mut args, tok.clone());
+                            input = rest;
+                        }
+                        [Token::Punctuator(Punctuator::ParenClose), rest @ ..] => {
+                            depth -= 1;
+                            input = rest;
+                        }
+                        [tok, rest @ ..] => {
+                            push(&mut args, tok.clone());
+                            input = rest;
+                        }
+                        [] => panic!("unterminated call to macro {}: {:?}", name, original_input),
+                    },
+                    _ => match input {
+                        [tok @ Token::Punctuator(Punctuator::ParenOpen), rest @ ..] => {
+                            depth += 1;
+                            push(&mut args, tok.clone());
+                            input = rest;
+                        }
+                        [tok @ Token::Punctuator(Punctuator::ParenClose), rest @ ..] => {
+                            depth -= 1;
+                            push(&mut args, tok.clone());
+                            input = rest;
+                        }
+                        [tok, rest @ ..] => {
+                            push(&mut args, tok.clone());
+                            input = rest;
+                        }
+                        [] => panic!(
+                            "unterminated paren in call to macro {}: {:?}",
+                            name, original_input
+                        ),
+                    },
+                }
+            }
+
+            ParseResult {
+                data: args,
+                rest: input,
+            }
+        }
+
         'outer: loop {
             if let Some(res) = parse_defined(slice) {
                 log::debug!("expanding defined({:?})", res.data);
@@ -144,7 +227,64 @@ impl TokenStream {
                                                 l_stream.clone() + r_stream.clone(),
                                             ));
                                         }
-                                        Define::Replacement { .. } => todo!(),
+                                        Define::Replacement {
+                                            name,
+                                            params,
+                                            value,
+                                        } => {
+                                            let res = parse_arglist(name, slice);
+                                            slice = res.rest;
+                                            let args = res.data;
+
+                                            log::debug!("name = {:?}", name);
+                                            log::debug!("params = {:?}", params);
+                                            log::debug!("args = {:?}", args);
+                                            log::debug!("value = {:?}", value);
+
+                                            let args: Vec<TokenStream> = args
+                                                .into_iter()
+                                                .map(|x| x.must_expand_single(ctx))
+                                                .collect();
+                                            log::debug!("expanded args = {:?}", args);
+
+                                            let param_map = if params.names.len() == 0 {
+                                                HashMap::new()
+                                            } else {
+                                                // TODO: variadic macros
+                                                assert_eq!(params.names.len(), args.len(), "must pass exact number of arguments when invoking macro");
+                                                params
+                                                    .names
+                                                    .iter()
+                                                    .zip(args.iter())
+                                                    .map(|(name, arg)| (name.to_string(), arg))
+                                                    .collect()
+                                            };
+
+                                            let mut res: TokenStream = vec![].into();
+                                            for tok in &value.0 {
+                                                match tok {
+                                                    Token::Identifier(id) => {
+                                                        if let Some(arg) = param_map.get(id) {
+                                                            res.0.extend(arg.0.iter().cloned());
+                                                        } else {
+                                                            res.0.push(Token::Identifier(
+                                                                id.clone(),
+                                                            ));
+                                                        }
+                                                    }
+                                                    tok => res.0.push(tok.clone()),
+                                                }
+                                            }
+
+                                            for (r2_expr, r2_stream) in res.expand(ctx) {
+                                                combined_output.push((
+                                                    l_expr.clone()
+                                                        & r_expr.clone()
+                                                        & r2_expr.clone(),
+                                                    l_stream.clone() + r2_stream.clone(),
+                                                ));
+                                            }
+                                        }
                                     }
                                 }
                             }
