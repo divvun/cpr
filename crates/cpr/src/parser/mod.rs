@@ -30,12 +30,24 @@ pub enum Token {
 }
 
 impl Token {
+    fn kw(s: &str) -> Self {
+        Self::Keyword(s.to_string())
+    }
+
+    fn id(s: &str) -> Self {
+        Self::Identifier(s.to_string())
+    }
+
+    fn int(i: i64) -> Self {
+        Self::Integer(i)
+    }
+
     fn defined() -> Self {
         Self::Keyword("defined".into())
     }
 
     fn bool(b: bool) -> Self {
-        Self::Keyword(if b { "true" } else { "false" }.into())
+        Self::kw(if b { "true" } else { "false" })
     }
 }
 
