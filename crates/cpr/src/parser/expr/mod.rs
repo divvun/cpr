@@ -4,7 +4,7 @@ use super::{
 };
 use qmc_conversion::*;
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fmt,
     ops::{Add, BitAnd, BitOr, Not},
 };
@@ -43,7 +43,15 @@ impl TokenStream {
     }
 
     pub fn must_expand_single(&self, ctx: &Context) -> Self {
-        let mut expansions = self.expand(ctx);
+        self.must_expand_single_with_blacklist(ctx, &HashSet::new())
+    }
+
+    pub fn must_expand_single_with_blacklist(
+        &self,
+        ctx: &Context,
+        blacklist: &HashSet<String>,
+    ) -> Self {
+        let mut expansions = self.expand_with_blacklist(ctx, blacklist);
         assert_eq!(
             expansions.len(),
             1,
@@ -56,6 +64,14 @@ impl TokenStream {
     }
 
     pub fn expand(&self, ctx: &Context) -> Vec<(Expr, Self)> {
+        self.expand_with_blacklist(ctx, &HashSet::new())
+    }
+
+    pub fn expand_with_blacklist(
+        &self,
+        ctx: &Context,
+        blacklist: &HashSet<String>,
+    ) -> Vec<(Expr, Self)> {
         let mut output = vec![(Expr::bool(true), Self::new())];
         let mut slice = &self.0[..];
 
@@ -209,7 +225,7 @@ impl TokenStream {
 
             match slice {
                 [] => break 'outer,
-                [Token::Identifier(id), rest @ ..] => {
+                [Token::Identifier(id), rest @ ..] if !blacklist.contains(id) => {
                     slice = rest;
 
                     match ctx.defines.get(id) {
@@ -241,9 +257,17 @@ impl TokenStream {
                                             log::debug!("args = {:?}", args);
                                             log::debug!("value = {:?}", value);
 
+                                            let mut macro_blacklist = blacklist.clone();
+                                            macro_blacklist.insert(name.clone());
+
                                             let args: Vec<TokenStream> = args
                                                 .into_iter()
-                                                .map(|x| x.must_expand_single(ctx))
+                                                .map(|x| {
+                                                    x.must_expand_single_with_blacklist(
+                                                        ctx,
+                                                        &macro_blacklist,
+                                                    )
+                                                })
                                                 .collect();
                                             log::debug!("expanded args = {:?}", args);
 
@@ -276,7 +300,9 @@ impl TokenStream {
                                                 }
                                             }
 
-                                            for (r2_expr, r2_stream) in res.expand(ctx) {
+                                            for (r2_expr, r2_stream) in
+                                                res.expand_with_blacklist(ctx, &macro_blacklist)
+                                            {
                                                 combined_output.push((
                                                     l_expr.clone()
                                                         & r_expr.clone()

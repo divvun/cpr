@@ -218,11 +218,12 @@ fn readable_tests() {
     def(&mut ctx, "#define IDENTITY(x) x");
     def(&mut ctx, "#define ADD(x, y) x+y");
     def(&mut ctx, "#define MUL(x, y) x*y");
+    def(&mut ctx, "#define FOO(x) FOO()");
 
     exp(&ctx, "EMPTY()", "");
     exp(&ctx, "1+EMPTY()3", "1+3");
     exp(&ctx, "IDENTITY(9)+IDENTITY(2)", "9+2");
     exp(&ctx, "ADD(MUL(1,2),3)", "1*2+3");
     exp(&ctx, "ADD(ADD(ADD(ADD(1, 2), 3), 4), 5)", "1+2+3+4+5");
-    exp(&ctx, "ADD(MUL(1,2),MUL(3,4))", "1*2+3*4");
+    exp(&ctx, "FOO(y)", "FOO()");
 }

@@ -11,7 +11,8 @@ fn def(s: &str) -> Expr {
 #[test]
 fn simple_exprs() {
     assert_eq!(parser::expr("azAZ09_"), Ok(sym("azAZ09_")));
-    assert!(parser::expr("not$asymbol").is_err());
+    assert_eq!(parser::expr("__$USD"), Ok(sym("__$USD")));
+    assert!(parser::expr("sorry🔥no_emoji").is_err());
 
     assert_eq!(parser::expr("(foobar)"), Ok(sym("foobar")));
     assert_eq!(parser::expr("((foobar))"), Ok(sym("foobar")));

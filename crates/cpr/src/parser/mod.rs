@@ -172,6 +172,11 @@ impl Context {
                 self.defines.get_mut(&name).unwrap()
             }
         };
+        // TODO: change if we start supporting multiple defines again
+        if !bucket.is_empty() {
+            log::warn!("re-defining {:?}", name);
+            bucket.clear();
+        }
         bucket.push((expr, def));
     }
 
@@ -196,7 +201,12 @@ impl Context {
             if let [(expr, def)] = &defs[..] {
                 return SymbolState::Defined((&expr, &def));
             } else {
-                panic!("Multiple defines are unsupported for now: {:?}", defs)
+                log::debug!(
+                    "Multiple defines are unsupported for now, returning last: {:?}",
+                    defs
+                );
+                let (expr, def) = &defs[defs.len() - 1];
+                return SymbolState::Defined((&expr, &def));
             }
         }
         SymbolState::Undefined

@@ -106,7 +106,8 @@ peg::parser! { pub(crate) grammar parser() for str {
         / expected!("eof")
 
     rule identifier() -> String
-        = n:$(['_' | 'a'..='z' | 'A'..='Z'] ['_' | 'a'..='z' | 'A'..='Z' | '0'..='9']*) {
+        // note: '$' is accepted by MSVC, Clang and GCC in identifiers, see C99 Standard, Annex J, J.5.2
+        = n:$(['_' | '$' | 'a'..='z' | 'A'..='Z'] ['_' | '$' | 'a'..='z' | 'A'..='Z' | '0'..='9']*) {
             n.into()
         }
     rule macro_params() -> MacroParams
