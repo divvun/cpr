@@ -801,7 +801,4 @@ impl Parser {
 mod test_parse;
 
 #[cfg(test)]
-mod test_chunks;
-
-#[cfg(test)]
 mod test_expr;

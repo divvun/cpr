@@ -423,7 +423,7 @@ mod directive_parser_tests {
             parser::directive("#ifdef FOO_BAR"),
             Ok(Some(Directive::If(
                 vec![
-                    id("defined"),
+                    Token::defined(),
                     Punctuator::ParenOpen.into(),
                     id("FOO_BAR"),
                     Punctuator::ParenClose.into()
@@ -437,7 +437,7 @@ mod directive_parser_tests {
             Ok(Some(Directive::If(
                 vec![
                     Punctuator::Bang.into(),
-                    id("defined"),
+                    Token::defined(),
                     Punctuator::ParenOpen.into(),
                     id("FOO_BAR"),
                     Punctuator::ParenClose.into()
