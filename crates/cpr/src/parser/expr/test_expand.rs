@@ -1,5 +1,6 @@
 use super::*;
 use crate::parser::MacroParams;
+use directive::Directive;
 use Punctuator::*;
 
 fn expands_to(ctx: &Context, src: &[Token], dst: &[Token], msg: &str) {
@@ -166,4 +167,62 @@ fn function_like_two_args() {
         &[Token::int(2), Plus.into(), Token::int(4)],
         "two args",
     );
+
+    expands_to(
+        &ctx,
+        &[
+            Token::id("ADD"),
+            ParenOpen.into(),
+            Token::id("MUL"),
+            ParenOpen.into(),
+            Token::int(2),
+            Comma.into(),
+            Token::int(3),
+            ParenClose.into(),
+            Comma.into(),
+            Token::int(4),
+            ParenClose.into(),
+        ],
+        &[
+            Token::int(2),
+            Star.into(),
+            Token::int(3),
+            Plus.into(),
+            Token::int(4),
+        ],
+        "nested calls",
+    );
+}
+
+#[test]
+fn readable_tests() {
+    fn def(ctx: &mut Context, input: &str) {
+        let dir = directive::parser::directive(input)
+            .expect("test directive must be parsable")
+            .expect("test must specify exactly one directive");
+        let def = match dir {
+            Directive::Define(d) => d,
+            _ => panic!(),
+        };
+        ctx.push(Expr::bool(true), def)
+    }
+
+    fn exp(ctx: &Context, input: &str, output: &str) {
+        let input = directive::parser::token_stream(input).unwrap();
+        let output = directive::parser::token_stream(output).unwrap();
+        expands_to(ctx, &input.0, &output.0, "");
+    }
+
+    let mut ctx = Context::new();
+    def(&mut ctx, "#define EMPTY() ");
+    def(&mut ctx, "#define IDENTITY(x) x");
+    def(&mut ctx, "#define ADD(x, y) x+y");
+    def(&mut ctx, "#define MUL(x, y) x*y");
+
+    exp(&ctx, "EMPTY()", "");
+    exp(&ctx, "1+EMPTY()3", "1+3");
+    exp(&ctx, "IDENTITY(9)+IDENTITY(2)", "9+2");
+    exp(&ctx, "ADD(MUL(1,2),3)", "1*2+3");
+    exp(&ctx, "ADD(ADD(ADD(ADD(1, 2), 3), 4), 5)", "1+2+3+4+5");
+    exp(&ctx, "ADD(MUL(1,2),MUL(3,4))", "1*2+3*4");
 }
