@@ -135,10 +135,23 @@ peg::parser! { pub(crate) grammar parser() for str {
     pub rule token() -> Token
         = __                 { Token::WS }
         / k:tok_operator()   { k }
+        / k:tok_string()     { k }
         / k:tok_punctuator() { k }
         / k:identifier()     { Token::Name(k) }
         / k:tok_integer()    { Token::Int(k) }
         / expected!("token")
+
+    rule tok_string() -> Token
+        = "\"" n:string_tok()* string_end() { Token::Str(n.join("")) }
+
+    rule string_tok() -> &'input str
+        = n:$("\"" _ "\"") { "" }
+        / n:$("\\\"")      { n }
+        / n:$(!['"'][_])   { n }
+
+    rule string_end()
+        = "\""
+        / expected!("end of string")
 
     rule tok_keyword() -> String
         = e:identifier() {?

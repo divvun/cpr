@@ -211,3 +211,49 @@ fn readable_tests() {
     exp(&ctx, "ADD(ADD(ADD(ADD(1, 2), 3), 4), 5)", "1+2+3+4+5");
     exp(&ctx, "FOO(y)", "FOO()");
 }
+
+#[test]
+fn test_compliant() {
+    fn def(ctx: &mut Context, input: &str) {
+        let dir = directive::parser::directive(input)
+            .expect("test directive must be parsable")
+            .expect("test must specify exactly one directive");
+        let def = match dir {
+            Directive::Define(d) => d,
+            _ => panic!(),
+        };
+        ctx.push(Expr::bool(true), def)
+    }
+
+    fn exp(ctx: &Context, input: &str, output: &str) {
+        log::debug!("=============================================");
+        let input = directive::parser::token_stream(input).unwrap().as_ths();
+        let expected = directive::parser::token_stream(output).unwrap();
+        let actual = TokenStream::from_ths(expand(&input[..], ctx));
+        log::debug!("expected = {:?}", expected);
+        log::debug!("actual = {:?}", actual);
+        assert_eq!(actual, expected, "(actual is on the left)");
+    }
+
+    let mut ctx = Context::new();
+    def(&mut ctx, "#define EMPTY() ");
+    def(&mut ctx, "#define IDENTITY(x) x");
+    def(&mut ctx, "#define ADD(x, y) x+y");
+    def(&mut ctx, "#define MUL(x, y) x*y");
+    def(&mut ctx, "#define FOO(x) FOO()");
+    def(&mut ctx, "#define PASTE(x, y) x ## y");
+    def(&mut ctx, "#define STRGZ(x) # x");
+    def(&mut ctx, "#define STRGZ2(x, y) # x # y");
+
+    exp(&ctx, "EMPTY()", "");
+    exp(&ctx, "1+EMPTY()3", "1+3");
+    exp(&ctx, "IDENTITY(9)+IDENTITY(2)", "9+2");
+    exp(&ctx, "ADD(MUL(1,2),3)", "1*2+3");
+    exp(&ctx, "ADD(ADD(ADD(1,2),3),4)", "1+2+3+4");
+    exp(&ctx, "FOO(y)", "FOO()");
+    exp(&ctx, "PASTE(foo,bar)", "foobar");
+    exp(&ctx, "PASTE(123,456)", "123456");
+    exp(&ctx, "STRGZ(2 + 3)", r#""2 + 3""#);
+    exp(&ctx, "STRGZ(   2 + 3        )", r#""2 + 3""#);
+    exp(&ctx, "STRGZ2(  foo ,  bar )", r#""foo" "bar""#);
+}

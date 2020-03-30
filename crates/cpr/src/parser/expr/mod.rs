@@ -41,8 +41,14 @@ impl Add for TokenStream {
 pub type HS = HashSet<String>;
 
 /// THS = Token + Hide set
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct THS(Token, HS);
+
+impl fmt::Debug for THS {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?}", self.0)
+    }
+}
 
 impl THS {
     fn hides(&self, tok: &Token) -> bool {
@@ -87,11 +93,23 @@ pub fn concat(l: &[THS], r: &[THS]) -> Vec<THS> {
     l.iter().cloned().chain(r.iter().cloned()).collect()
 }
 
-fn skip_ws(is: &[THS]) -> &[THS] {
+fn ws_triml(is: &[THS]) -> &[THS] {
     match is {
-        [THS(Token::WS, _), rest @ ..] => skip_ws(rest),
+        [THS(Token::WS, _), rest @ ..] => ws_triml(rest),
         rest => rest,
     }
+}
+
+fn ws_trimr(is: &[THS]) -> &[THS] {
+    if is.len() >= 2 && matches!(is[is.len() - 1], THS(Token::WS, _)) {
+        &is[..is.len() - 1]
+    } else {
+        is
+    }
+}
+
+fn ws_trimboth(is: &[THS]) -> &[THS] {
+    ws_triml(ws_trimr(is))
 }
 
 // See X3J11/86-196, annotated and corrected version available at:
@@ -101,6 +119,8 @@ fn skip_ws(is: &[THS]) -> &[THS] {
 // ts = token stream
 // hs = hide set
 pub fn expand(ts: &[THS], ctx: &Context) -> Vec<THS> {
+    log::debug!("expand {:?}", ts);
+
     // First, if TS is the empty set, the result is the empty set.
     if ts.is_empty() {
         return vec![];
@@ -112,6 +132,7 @@ pub fn expand(ts: &[THS], ctx: &Context) -> Vec<THS> {
     // expand on the rest of the token sequence.
     let (t, ts_p) = (&ts[0], &ts[1..]);
     if t.hides(&t.0) {
+        log::debug!("macro {} is hidden by hideset of {:?}", t.0, t);
         return concat(&[t.clone()], expand(ts_p, ctx).as_ref());
     }
 
@@ -123,27 +144,24 @@ pub fn expand(ts: &[THS], ctx: &Context) -> Vec<THS> {
     if let Token::Name(name) = &t.0 {
         if let SymbolState::Defined((_expr, def)) = ctx.lookup(name) {
             if let Define::ObjectLike { value, .. } = def {
+                log::debug!("object-like macro");
                 let mut hs = t.1.clone();
                 hs.insert(name.clone());
-                let sub = subst(
-                    value.as_expand_tokens().as_ref(),
-                    &[],
-                    &[],
-                    &hs,
-                    Default::default(),
-                );
+                let sub = subst(value.as_ths().as_ref(), &[], &[], &hs, Default::default());
                 return expand(concat(sub.as_ref(), ts_p.as_ref()).as_ref(), ctx);
             }
         }
     }
 
-    match skip_ws(ts_p) {
+    match ws_triml(ts_p) {
         [THS(Token::Pun('('), _), rest @ ..] => {
             if let Token::Name(name) = &t.0 {
                 if let SymbolState::Defined((_expr, def)) = ctx.lookup(name) {
                     if let Define::FunctionLike { value, params, .. } = def {
+                        log::debug!("function-like macro");
+
                         let mut input = rest;
-                        let mut actuals: Vec<Vec<THS>> = Vec::new();
+                        let mut actuals: Vec<Vec<THS>> = vec![vec![]];
                         let mut depth = 1;
                         let mut closparen_hs = None;
 
@@ -152,7 +170,7 @@ pub fn expand(ts: &[THS], ctx: &Context) -> Vec<THS> {
                         }
 
                         while depth > 0 {
-                            input = skip_ws(input);
+                            log::debug!("depth={}, input = {:?}", depth, input);
 
                             match depth {
                                 1 => match input {
@@ -179,7 +197,7 @@ pub fn expand(ts: &[THS], ctx: &Context) -> Vec<THS> {
                                         t, rest
                                     ),
                                 },
-                                _ => match rest {
+                                _ => match input {
                                     [tok @ THS(Token::Pun('('), _), rest @ ..] => {
                                         depth += 1;
                                         push(&mut actuals, tok.clone());
@@ -202,26 +220,31 @@ pub fn expand(ts: &[THS], ctx: &Context) -> Vec<THS> {
                             }
                         }
 
+                        actuals = actuals
+                            .iter()
+                            .map(|is| ws_trimboth(is).iter().cloned().collect::<Vec<_>>())
+                            .collect();
+
                         let ts_pp = input;
                         let closparen_hs = closparen_hs.unwrap(); // note: static analysis gave up
+
                         let mut hs = HashSet::new();
                         hs.insert(name.into());
 
-                        return expand(
-                            concat(
-                                subst(
-                                    value.as_expand_tokens().as_ref(),
-                                    &params.names[..],
-                                    &actuals[..],
-                                    &hs_union(&hs_intersection(&t.1, closparen_hs), &hs),
-                                    vec![],
-                                )
-                                .as_ref(),
-                                ts_pp,
-                            )
-                            .as_ref(),
-                            ctx,
+                        let sub_hs = hs_union(&hs_intersection(&t.1, closparen_hs), &hs);
+                        // let sub_hs = &hs_intersection(&t.1, closparen_hs);
+                        log::debug!("sub_hs = {:?}", sub_hs);
+                        let sub_res = subst(
+                            value.as_ths().as_ref(),
+                            &params.names[..],
+                            &actuals[..],
+                            &sub_hs,
+                            vec![],
                         );
+                        log::debug!("sub_res = {:?}", sub_res);
+                        log::debug!("ts'' = {:?}", ts_pp);
+
+                        return expand(concat(sub_res.as_ref(), ts_pp).as_ref(), ctx);
                     }
                 }
             }
@@ -229,7 +252,23 @@ pub fn expand(ts: &[THS], ctx: &Context) -> Vec<THS> {
         _ => {}
     }
 
-    todo!()
+    match ts {
+        [THS(Token::Str(l), hs_l), rest @ ..] => match ws_triml(rest) {
+            [THS(Token::Str(r), hs_r), rest @ ..] => {
+                return concat(
+                    &[THS(Token::Str(format!("{}{}", l, r)), hs_union(hs_l, hs_r))],
+                    &expand(rest, ctx),
+                )
+            }
+            _ => {}
+        },
+        _ => {}
+    }
+
+    match ts {
+        [tok, ts_p @ ..] => concat(&[tok.clone()], &expand(ts_p, ctx)),
+        _ => unreachable!(),
+    }
 }
 
 // fp = formal params (parameter names)
@@ -241,15 +280,21 @@ pub fn subst(
     hs: &HashSet<String>,
     os: Vec<THS>,
 ) -> Vec<THS> {
+    log::debug!("## subst");
+    log::debug!("is = {:?}", is);
+    log::debug!("os = {:?}", os);
+
     if is.is_empty() {
-        return hs_add(hs, os);
+        log::debug!("subst => empty");
+        return os;
     }
 
     // Stringizing
     match is {
-        [THS(Token::Stringize, _), rest @ ..] => match skip_ws(rest) {
+        [THS(Token::Stringize, _), rest @ ..] => match ws_triml(rest) {
             [THS(Token::Name(name), _), rest @ ..] => {
                 if let Some(i) = fp.iter().position(|x| x == name) {
+                    log::debug!("subst => stringizing");
                     return subst(
                         rest,
                         fp,
@@ -266,9 +311,10 @@ pub fn subst(
 
     // Token pasting (argument rhs)
     match is {
-        [THS(Token::Paste, _), rest @ ..] => match skip_ws(rest) {
+        [THS(Token::Paste, _), rest @ ..] => match ws_triml(rest) {
             [THS(Token::Name(name), _), rest @ ..] => {
                 if let Some(i) = fp.iter().position(|x| x == name) {
+                    log::debug!("subst => pasting (argument rhs)");
                     let sel = &ap[i];
                     if sel.is_empty() {
                         // TODO: missing cond: "only if actuals can be empty"
@@ -285,8 +331,9 @@ pub fn subst(
 
     // Token pasting (non-argument)
     match is {
-        [THS(Token::Paste, _), rest @ ..] => match skip_ws(rest) {
+        [THS(Token::Paste, _), rest @ ..] => match ws_triml(rest) {
             [t @ THS { .. }, rest @ ..] => {
+                log::debug!("subst => pasting (non-argument)");
                 return subst(rest, fp, ap, hs, glue(os.as_ref(), &[t.clone()]));
             }
             _ => {}
@@ -296,12 +343,14 @@ pub fn subst(
 
     // Token pasting (argument lhs)
     match is {
-        [THS(Token::Name(name_i), _), rest @ ..] => match skip_ws(rest) {
+        [THS(Token::Name(name_i), _), rest @ ..] => match ws_triml(rest) {
             [pastetok @ THS(Token::Paste, _), rest @ ..] => {
                 if let Some(i) = fp.iter().position(|x| x == name_i) {
+                    log::debug!("subst => pasting (argument lhs)");
+
                     let sel_i = ap[i].clone();
                     if sel_i.is_empty() {
-                        match skip_ws(rest) {
+                        match ws_triml(rest) {
                             [THS(Token::Name(name_j), _), rest @ ..] => {
                                 if let Some(j) = fp.iter().position(|x| x == name_j) {
                                     let sel_j = ap[j].clone();
@@ -339,15 +388,21 @@ pub fn subst(
         [THS(Token::Name(name), _), rest @ ..] => {
             if let Some(i) = fp.iter().position(|x| x == name) {
                 let sel = ap[i].clone();
+                log::debug!("subst => argument replacement, sel = {:?}", sel);
                 return subst(rest, fp, ap, hs, concat(os.as_ref(), sel.as_ref()));
             }
         }
         _ => {}
     }
 
-    // Non-replaced token
+    // Verbatim token
     match is {
-        [tok, rest @ ..] => return subst(rest, fp, ap, hs, concat(os.as_ref(), &[tok.clone()])),
+        [tok, rest @ ..] => {
+            log::debug!("subst => verbatim token {:?}, marking with {:?}", tok, hs);
+            let mut tok = tok.clone();
+            tok.1.extend(hs.iter().cloned());
+            return subst(rest, fp, ap, hs, concat(os.as_ref(), &[tok]));
+        }
         _ => unreachable!(),
     }
 }
@@ -397,12 +452,16 @@ impl TokenStream {
         Self(Vec::new())
     }
 
-    pub fn as_expand_tokens(&self) -> Vec<THS> {
+    pub fn as_ths(&self) -> Vec<THS> {
         self.0
             .iter()
             .cloned()
             .map(|token| THS(token, Default::default()))
             .collect()
+    }
+
+    pub fn from_ths(v: Vec<THS>) -> Self {
+        Self(v.into_iter().map(|THS(tok, _)| tok).collect())
     }
 
     pub fn must_expand_single(&self, ctx: &Context) -> Self {
