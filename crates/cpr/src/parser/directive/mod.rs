@@ -165,7 +165,7 @@ peg::parser! { pub(crate) grammar parser() for str {
 
     rule tok_operator() -> Token
         = "##"      { Token::Paste }
-        / "@#"      { Token::Charize }
+        / "#@"      { Token::Charize }
         / "#"       { Token::Stringize }
         / "defined" { Token::Defined }
 
