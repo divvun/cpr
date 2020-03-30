@@ -1,6 +1,6 @@
 use super::{
     directive::{self, PreprocessorIdent},
-    Context, Define, Punctuator, SymbolState, Token,
+    Context, Define, SymbolState, Token,
 };
 use qmc_conversion::*;
 use std::{
@@ -37,9 +37,372 @@ impl Add for TokenStream {
     }
 }
 
+/// Hide set
+pub type HS = HashSet<String>;
+
+/// THS = Token + Hide set
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct THS(Token, HS);
+
+impl THS {
+    fn hides(&self, tok: &Token) -> bool {
+        if let Token::Name(name) = tok {
+            return self.1.contains(name);
+        }
+        false
+    }
+
+    fn glue(self, rhs: Self) -> Self {
+        // weeeeeeeeeeeeeeeeee
+        let s = format!("{}{}", self.0, rhs.0);
+        let mut parsed = directive::parser::token_stream(&s)
+            .expect(&format!("while pasting tokens {:?} and {:?}", self, rhs));
+
+        assert_eq!(parsed.0.len(), 1);
+        let token = parsed.0.pop().unwrap();
+        Self(token, hs_union(&self.1, &rhs.1))
+    }
+}
+
+#[cfg(test)]
+mod test_glue {
+    use super::*;
+
+    #[test]
+    fn test_glue_identifiers() {
+        let l = THS(Token::name("foo"), Default::default());
+        let r = THS(Token::name("bar"), Default::default());
+        assert_eq!(l.glue(r), THS(Token::name("foobar"), Default::default()),);
+    }
+
+    #[test]
+    fn test_glue_integers() {
+        let l = THS(Token::Int(12), Default::default());
+        let r = THS(Token::Int(345), Default::default());
+        assert_eq!(l.glue(r), THS(Token::Int(12345), Default::default()),);
+    }
+}
+
+pub fn concat(l: &[THS], r: &[THS]) -> Vec<THS> {
+    l.iter().cloned().chain(r.iter().cloned()).collect()
+}
+
+fn skip_ws(is: &[THS]) -> &[THS] {
+    match is {
+        [THS(Token::WS, _), rest @ ..] => skip_ws(rest),
+        rest => rest,
+    }
+}
+
+// See X3J11/86-196, annotated and corrected version available at:
+// https://www.spinellis.gr/blog/20060626/cpp.algo.pdf
+//
+// t = token
+// ts = token stream
+// hs = hide set
+pub fn expand(ts: &[THS], ctx: &Context) -> Vec<THS> {
+    // First, if TS is the empty set, the result is the empty set.
+    if ts.is_empty() {
+        return vec![];
+    }
+
+    // Otherwise, if the token sequence begins with a token whose hide set
+    // contains that token, then the result is the token sequence beginning
+    // with that token (including its hide set) followed by the result of
+    // expand on the rest of the token sequence.
+    let (t, ts_p) = (&ts[0], &ts[1..]);
+    if t.hides(&t.0) {
+        return concat(&[t.clone()], expand(ts_p, ctx).as_ref());
+    }
+
+    // Otherwise, if the token sequence begins with an object-like macro, the
+    // result is the expansion of the rest of the token sequence beginning with
+    // the sequence returned by subst invoked with the replacement token
+    // sequence for the macro, two empty sets, the union of the macro’s hide set
+    // and the macro itself, and an empty set.
+    if let Token::Name(name) = &t.0 {
+        if let SymbolState::Defined((_expr, def)) = ctx.lookup(name) {
+            if let Define::ObjectLike { value, .. } = def {
+                let mut hs = t.1.clone();
+                hs.insert(name.clone());
+                let sub = subst(
+                    value.as_expand_tokens().as_ref(),
+                    &[],
+                    &[],
+                    &hs,
+                    Default::default(),
+                );
+                return expand(concat(sub.as_ref(), ts_p.as_ref()).as_ref(), ctx);
+            }
+        }
+    }
+
+    match skip_ws(ts_p) {
+        [THS(Token::Pun('('), _), rest @ ..] => {
+            if let Token::Name(name) = &t.0 {
+                if let SymbolState::Defined((_expr, def)) = ctx.lookup(name) {
+                    if let Define::FunctionLike { value, params, .. } = def {
+                        let mut input = rest;
+                        let mut actuals: Vec<Vec<THS>> = Vec::new();
+                        let mut depth = 1;
+                        let mut closparen_hs = None;
+
+                        fn push(actuals: &mut Vec<Vec<THS>>, tok: THS) {
+                            actuals.last_mut().unwrap().push(tok);
+                        }
+
+                        while depth > 0 {
+                            input = skip_ws(input);
+
+                            match depth {
+                                1 => match input {
+                                    [THS(Token::Pun(','), _), rest @ ..] => {
+                                        actuals.push(vec![]);
+                                        input = rest;
+                                    }
+                                    [tok @ THS(Token::Pun('('), _), rest @ ..] => {
+                                        depth += 1;
+                                        push(&mut actuals, tok.clone());
+                                        input = rest;
+                                    }
+                                    [THS(Token::Pun(')'), hs), rest @ ..] => {
+                                        depth -= 1;
+                                        closparen_hs = Some(hs);
+                                        input = rest;
+                                    }
+                                    [tok, rest @ ..] => {
+                                        push(&mut actuals, tok.clone());
+                                        input = rest;
+                                    }
+                                    [] => panic!(
+                                        "unterminated paren in call to macro {:?}: {:?}",
+                                        t, rest
+                                    ),
+                                },
+                                _ => match rest {
+                                    [tok @ THS(Token::Pun('('), _), rest @ ..] => {
+                                        depth += 1;
+                                        push(&mut actuals, tok.clone());
+                                        input = rest;
+                                    }
+                                    [tok @ THS(Token::Pun(')'), _), rest @ ..] => {
+                                        depth -= 1;
+                                        push(&mut actuals, tok.clone());
+                                        input = rest;
+                                    }
+                                    [tok, rest @ ..] => {
+                                        push(&mut actuals, tok.clone());
+                                        input = rest;
+                                    }
+                                    [] => panic!(
+                                        "unterminated paren in call to macro {:?}: {:?}",
+                                        t, rest
+                                    ),
+                                },
+                            }
+                        }
+
+                        let ts_pp = input;
+                        let closparen_hs = closparen_hs.unwrap(); // note: static analysis gave up
+                        let mut hs = HashSet::new();
+                        hs.insert(name.into());
+
+                        return expand(
+                            concat(
+                                subst(
+                                    value.as_expand_tokens().as_ref(),
+                                    &params.names[..],
+                                    &actuals[..],
+                                    &hs_union(&hs_intersection(&t.1, closparen_hs), &hs),
+                                    vec![],
+                                )
+                                .as_ref(),
+                                ts_pp,
+                            )
+                            .as_ref(),
+                            ctx,
+                        );
+                    }
+                }
+            }
+        }
+        _ => {}
+    }
+
+    todo!()
+}
+
+// fp = formal params (parameter names)
+// ap = actual params, aka 'actuals' (arguments)
+pub fn subst(
+    is: &[THS],
+    fp: &[String],
+    ap: &[Vec<THS>],
+    hs: &HashSet<String>,
+    os: Vec<THS>,
+) -> Vec<THS> {
+    if is.is_empty() {
+        return hs_add(hs, os);
+    }
+
+    // Stringizing
+    match is {
+        [THS(Token::Stringize, _), rest @ ..] => match skip_ws(rest) {
+            [THS(Token::Name(name), _), rest @ ..] => {
+                if let Some(i) = fp.iter().position(|x| x == name) {
+                    return subst(
+                        rest,
+                        fp,
+                        ap,
+                        hs,
+                        concat(os.as_ref(), &[stringize(ap[i].as_ref())]),
+                    );
+                }
+            }
+            _ => {}
+        },
+        _ => {}
+    }
+
+    // Token pasting (argument rhs)
+    match is {
+        [THS(Token::Paste, _), rest @ ..] => match skip_ws(rest) {
+            [THS(Token::Name(name), _), rest @ ..] => {
+                if let Some(i) = fp.iter().position(|x| x == name) {
+                    let sel = &ap[i];
+                    if sel.is_empty() {
+                        // TODO: missing cond: "only if actuals can be empty"
+                        return subst(rest, fp, ap, hs, os);
+                    } else {
+                        return subst(rest, fp, ap, hs, glue(os.as_ref(), sel));
+                    }
+                }
+            }
+            _ => {}
+        },
+        _ => {}
+    }
+
+    // Token pasting (non-argument)
+    match is {
+        [THS(Token::Paste, _), rest @ ..] => match skip_ws(rest) {
+            [t @ THS { .. }, rest @ ..] => {
+                return subst(rest, fp, ap, hs, glue(os.as_ref(), &[t.clone()]));
+            }
+            _ => {}
+        },
+        _ => {}
+    }
+
+    // Token pasting (argument lhs)
+    match is {
+        [THS(Token::Name(name_i), _), rest @ ..] => match skip_ws(rest) {
+            [pastetok @ THS(Token::Paste, _), rest @ ..] => {
+                if let Some(i) = fp.iter().position(|x| x == name_i) {
+                    let sel_i = ap[i].clone();
+                    if sel_i.is_empty() {
+                        match skip_ws(rest) {
+                            [THS(Token::Name(name_j), _), rest @ ..] => {
+                                if let Some(j) = fp.iter().position(|x| x == name_j) {
+                                    let sel_j = ap[j].clone();
+                                    return subst(
+                                        rest,
+                                        fp,
+                                        ap,
+                                        hs,
+                                        concat(os.as_ref(), sel_j.as_ref()),
+                                    );
+                                }
+                            }
+                            _ => {}
+                        }
+
+                        return subst(rest, fp, ap, hs, os);
+                    } else {
+                        return subst(
+                            concat(&[pastetok.clone()], rest).as_ref(),
+                            fp,
+                            ap,
+                            hs,
+                            concat(os.as_ref(), sel_i.as_ref()),
+                        );
+                    }
+                }
+            }
+            _ => {}
+        },
+        _ => {}
+    }
+
+    // Regular argument replacement
+    match is {
+        [THS(Token::Name(name), _), rest @ ..] => {
+            if let Some(i) = fp.iter().position(|x| x == name) {
+                let sel = ap[i].clone();
+                return subst(rest, fp, ap, hs, concat(os.as_ref(), sel.as_ref()));
+            }
+        }
+        _ => {}
+    }
+
+    // Non-replaced token
+    match is {
+        [tok, rest @ ..] => return subst(rest, fp, ap, hs, concat(os.as_ref(), &[tok.clone()])),
+        _ => unreachable!(),
+    }
+}
+
+pub fn glue(ls: &[THS], rs: &[THS]) -> Vec<THS> {
+    match ls {
+        [] => rs.iter().cloned().collect(),
+        _ => {
+            let (ls, l) = (&ls[..ls.len() - 1], ls.last().cloned().unwrap());
+            let (r, rs) = (rs[0].clone(), &rs[1..]);
+
+            let mut res = Vec::new();
+            res.extend(ls.iter().cloned());
+            res.push(l.glue(r));
+            res.extend(rs.iter().cloned());
+            res
+        }
+    }
+}
+
+pub fn stringize(input: &[THS]) -> THS {
+    let mut s = String::new();
+    use std::fmt::Write;
+    for tok in input {
+        write!(&mut s, "{}", tok.0).unwrap();
+    }
+    THS(Token::Str(s), Default::default())
+}
+
+pub fn hs_add(hs: &HS, mut os: Vec<THS>) -> Vec<THS> {
+    for t in os.iter_mut() {
+        t.1.extend(hs.iter().cloned())
+    }
+    os
+}
+
+pub fn hs_union(l: &HS, r: &HS) -> HS {
+    l.union(r).cloned().collect()
+}
+
+pub fn hs_intersection(l: &HS, r: &HS) -> HS {
+    l.intersection(r).cloned().collect()
+}
+
 impl TokenStream {
     pub fn new() -> Self {
         Self(Vec::new())
+    }
+
+    pub fn as_expand_tokens(&self) -> Vec<THS> {
+        self.0
+            .iter()
+            .cloned()
+            .map(|token| THS(token, Default::default()))
+            .collect()
     }
 
     pub fn must_expand_single(&self, ctx: &Context) -> Self {
@@ -89,7 +452,7 @@ impl TokenStream {
         fn skip_ws(mut input: &[Token]) -> &[Token] {
             loop {
                 match input {
-                    [Token::Whitespace, rest @ ..] => {
+                    [Token::WS, rest @ ..] => {
                         input = rest;
                     }
                     rest => return rest,
@@ -99,23 +462,23 @@ impl TokenStream {
 
         fn parse_defined(mut input: &[Token]) -> Option<ParseResult<&String>> {
             match input {
-                [Token::Keyword(kw), rest @ ..] if kw == "defined" => {
+                [Token::Defined, rest @ ..] => {
                     input = skip_ws(rest);
                 }
                 _ => return None,
             }
 
             match input {
-                [Token::Punctuator(Punctuator::ParenOpen), rest @ ..] => match skip_ws(rest) {
-                    [Token::Identifier(id), rest @ ..] => match skip_ws(rest) {
-                        [Token::Punctuator(Punctuator::ParenClose), rest @ ..] => {
-                            return Some(ParseResult { rest, data: id });
+                [Token::Pun('('), rest @ ..] => match skip_ws(rest) {
+                    [Token::Name(name), rest @ ..] => match skip_ws(rest) {
+                        [Token::Pun(')'), rest @ ..] => {
+                            return Some(ParseResult { rest, data: name });
                         }
                         _ => None,
                     },
                     _ => None,
                 },
-                [Token::Identifier(id), rest @ ..] => return Some(ParseResult { rest, data: id }),
+                [Token::Name(name), rest @ ..] => return Some(ParseResult { rest, data: name }),
                 _ => None,
             }
         }
@@ -130,7 +493,7 @@ impl TokenStream {
             input = skip_ws(input);
 
             match input {
-                [Token::Punctuator(Punctuator::ParenOpen), rest @ ..] => {
+                [Token::Pun('('), rest @ ..] => {
                     input = rest;
                     depth = 1;
                 }
@@ -155,16 +518,16 @@ impl TokenStream {
 
                 match depth {
                     1 => match input {
-                        [Token::Punctuator(Punctuator::Comma), rest @ ..] => {
+                        [Token::Pun(','), rest @ ..] => {
                             new_arg(&mut args);
                             input = rest;
                         }
-                        [tok @ Token::Punctuator(Punctuator::ParenOpen), rest @ ..] => {
+                        [tok @ Token::Pun('('), rest @ ..] => {
                             depth += 1;
                             push(&mut args, tok.clone());
                             input = rest;
                         }
-                        [Token::Punctuator(Punctuator::ParenClose), rest @ ..] => {
+                        [Token::Pun(')'), rest @ ..] => {
                             depth -= 1;
                             input = rest;
                         }
@@ -175,12 +538,12 @@ impl TokenStream {
                         [] => panic!("unterminated call to macro {}: {:?}", name, original_input),
                     },
                     _ => match input {
-                        [tok @ Token::Punctuator(Punctuator::ParenOpen), rest @ ..] => {
+                        [tok @ Token::Pun('('), rest @ ..] => {
                             depth += 1;
                             push(&mut args, tok.clone());
                             input = rest;
                         }
-                        [tok @ Token::Punctuator(Punctuator::ParenClose), rest @ ..] => {
+                        [tok @ Token::Pun(')'), rest @ ..] => {
                             depth -= 1;
                             push(&mut args, tok.clone());
                             input = rest;
@@ -225,17 +588,17 @@ impl TokenStream {
 
             match slice {
                 [] => break 'outer,
-                [Token::Identifier(id), rest @ ..] if !blacklist.contains(id) => {
+                [Token::Name(name), rest @ ..] if !blacklist.contains(name) => {
                     slice = rest;
 
-                    match ctx.defines.get(id) {
+                    match ctx.defines.get(name) {
                         None => {} // can't replace,
                         Some(defs) => {
                             let mut combined_output = vec![];
                             for (l_expr, l_stream) in output {
                                 for (r_expr, r_def) in defs {
                                     match r_def {
-                                        Define::Value {
+                                        Define::ObjectLike {
                                             value: r_stream, ..
                                         } => {
                                             combined_output.push((
@@ -243,7 +606,7 @@ impl TokenStream {
                                                 l_stream.clone() + r_stream.clone(),
                                             ));
                                         }
-                                        Define::Replacement {
+                                        Define::FunctionLike {
                                             name,
                                             params,
                                             value,
@@ -287,13 +650,11 @@ impl TokenStream {
                                             let mut res: TokenStream = vec![].into();
                                             for tok in &value.0 {
                                                 match tok {
-                                                    Token::Identifier(id) => {
-                                                        if let Some(arg) = param_map.get(id) {
+                                                    Token::Name(name) => {
+                                                        if let Some(arg) = param_map.get(name) {
                                                             res.0.extend(arg.0.iter().cloned());
                                                         } else {
-                                                            res.0.push(Token::Identifier(
-                                                                id.clone(),
-                                                            ));
+                                                            res.0.push(Token::Name(name.clone()));
                                                         }
                                                     }
                                                     tok => res.0.push(tok.clone()),
@@ -319,7 +680,7 @@ impl TokenStream {
                         }
                     };
 
-                    push(&mut output, Token::Identifier(id.clone()));
+                    push(&mut output, Token::Name(name.clone()));
                 }
                 [token, rest @ ..] => {
                     slice = rest;
@@ -343,10 +704,10 @@ impl Not for TokenStream {
     type Output = TokenStream;
     fn not(self) -> Self::Output {
         let mut out = Self::new();
-        out.0.push(Punctuator::Bang.into());
-        out.0.push(Punctuator::ParenOpen.into());
+        out.0.push('!'.into());
+        out.0.push('('.into());
         out.0.extend(self.0);
-        out.0.push(Punctuator::ParenClose.into());
+        out.0.push(')'.into());
         out
     }
 }
@@ -355,16 +716,16 @@ impl BitAnd for TokenStream {
     type Output = TokenStream;
     fn bitand(self, rhs: TokenStream) -> TokenStream {
         let mut out = Self::new();
-        out.0.push(Punctuator::ParenOpen.into());
-        out.0.push(Punctuator::ParenOpen.into());
+        out.0.push('('.into());
+        out.0.push('('.into());
         out.0.extend(self.0);
-        out.0.push(Punctuator::ParenClose.into());
-        out.0.push(Punctuator::Ampersand.into());
-        out.0.push(Punctuator::Ampersand.into());
-        out.0.push(Punctuator::ParenOpen.into());
+        out.0.push(')'.into());
+        out.0.push('&'.into());
+        out.0.push('&'.into());
+        out.0.push(')'.into());
         out.0.extend(rhs.0);
-        out.0.push(Punctuator::ParenClose.into());
-        out.0.push(Punctuator::ParenClose.into());
+        out.0.push(')'.into());
+        out.0.push(')'.into());
         out
     }
 }

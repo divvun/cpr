@@ -17,31 +17,39 @@ use std::{
 };
 
 /// A C token
-#[derive(Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum Token {
-    Keyword(String),
-    Identifier(String),
-    Punctuator(Punctuator),
-    Integer(i64),
-    StringLiteral(String),
-    Whitespace,
+    /// `##`
+    Paste,
+    /// `#@`
+    Charize,
+    /// `#`
+    Stringize,
+    Defined,
+    /// whitespace
+    WS,
+    /// punctuation
+    Pun(char),
+    Name(String),
+    /// integer
+    Int(i64),
+    /// string
+    Str(String),
+}
+
+impl From<char> for Token {
+    fn from(c: char) -> Self {
+        Self::Pun(c)
+    }
 }
 
 impl Token {
-    fn kw(s: &str) -> Self {
-        Self::Keyword(s.to_string())
-    }
-
-    fn id(s: &str) -> Self {
-        Self::Identifier(s.to_string())
+    fn name(s: &str) -> Self {
+        Self::Name(s.to_string())
     }
 
     fn int(i: i64) -> Self {
-        Self::Integer(i)
-    }
-
-    fn defined() -> Self {
-        Self::Keyword("defined".into())
+        Self::Int(i)
     }
 
     fn bool(b: bool) -> Self {
@@ -49,72 +57,20 @@ impl Token {
     }
 }
 
-impl fmt::Debug for Token {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        use Token::*;
-        match self {
-            Keyword(s) => write!(f, "Kw({})", s),
-            Identifier(s) => write!(f, "Id({})", s),
-            Punctuator(s) => write!(f, "Pun({:?})", (*s as u8) as char),
-            Integer(i) => write!(f, "Int({})", i),
-            StringLiteral(s) => write!(f, "Str({:?})", s),
-            Whitespace => write!(f, "Ws"),
-        }
-    }
-}
-
-impl From<Punctuator> for Token {
-    fn from(p: Punctuator) -> Self {
-        Self::Punctuator(p)
-    }
-}
-
 impl fmt::Display for Token {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Keyword(s) | Self::Identifier(s) => f.write_str(s)?,
-            Self::Punctuator(p) => write!(f, "{}", (*p as u8) as char)?,
-            Self::Integer(i) => write!(f, "{}", i)?,
-            Self::StringLiteral(s) => write!(f, "{:?}", s)?,
-            Self::Whitespace => f.write_str(" ")?,
+            Token::Paste => f.write_str("##"),
+            Token::Charize => f.write_str("#@"),
+            Token::Stringize => f.write_str("#"),
+            Token::Defined => f.write_str("defined"),
+            Token::WS => f.write_str(" "),
+            Token::Pun(c) => write!(f, "{}", c),
+            Token::Name(n) => write!(f, "{}", n),
+            Token::Int(i) => write!(f, "{}", i),
+            Token::Str(s) => write!(f, "{:?}", s),
         }
-        Ok(())
     }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[repr(u8)]
-pub enum Punctuator {
-    Bang = b'!',
-    Percent = b'%',
-    Circumflex = b'^',
-    Ampersand = b'&',
-    Star = b'*',
-    ParenOpen = b'(',
-    ParenClose = b')',
-    Minus = b'-',
-    Plus = b'+',
-    Equal = b'=',
-    CurlyOpen = b'{',
-    CurlyClose = b'}',
-    Pipe = b'|',
-    Tilde = b'~',
-    SquareOpen = b'[',
-    SquareClose = b']',
-    Backslash = b'\\',
-    Semicolon = b';',
-    SingleQuote = b'\'',
-    Colon = b':',
-    DoubleQuote = b'"',
-    AngleOpen = b'<',
-    AngleClose = b'>',
-    Question = b'?',
-    Comma = b',',
-    Dot = b'.',
-    Slash = b'/',
-    Hash = b'#',
-    /// Not a C punctuator, but appears in Windows headers
-    At = b'@',
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -125,11 +81,11 @@ pub struct MacroParams {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Define {
-    Value {
+    ObjectLike {
         name: String,
         value: TokenStream,
     },
-    Replacement {
+    FunctionLike {
         name: String,
         params: MacroParams,
         value: TokenStream,
@@ -216,8 +172,8 @@ impl Context {
 impl Define {
     fn name(&self) -> &str {
         match self {
-            Define::Value { name, .. } => name,
-            Define::Replacement { name, .. } => name,
+            Define::ObjectLike { name, .. } => name,
+            Define::FunctionLike { name, .. } => name,
         }
     }
 }
@@ -552,7 +508,7 @@ impl Parser {
                             if taken {
                                 log::debug!("defining {}", def.name());
                                 match &def {
-                                    Define::Value { value, .. } => {
+                                    Define::ObjectLike { value, .. } => {
                                         log::debug!("...to {:?}", value);
                                     }
                                     _ => {}

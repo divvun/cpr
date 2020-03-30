@@ -1,6 +1,6 @@
 use super::{
     expr::{BinaryOperator as BO, TokenStream},
-    Define, Expr, Include, MacroParams, Punctuator, Token,
+    Define, Expr, Include, MacroParams, Token,
 };
 use peg::ParseLiteral;
 
@@ -42,19 +42,19 @@ peg::parser! { pub(crate) grammar parser() for str {
         / N("elif") __ t:token_stream() { Directive::ElseIf(t) }
         / N("ifdef") __ i:identifier() { Directive::If(
             vec![
-                Token::defined(),
-                Punctuator::ParenOpen.into(),
-                Token::Identifier(i),
-                Punctuator::ParenClose.into(),
+                Token::Defined,
+                '('.into(),
+                Token::Name(i),
+                ')'.into(),
             ].into()
         ) }
         / N("ifndef") __ i:identifier() { Directive::If(
             vec![
-                Punctuator::Bang.into(),
-                Token::defined(),
-                Punctuator::ParenOpen.into(),
-                Token::Identifier(i),
-                Punctuator::ParenClose.into(),
+                Token::Pun('!'),
+                Token::Defined,
+                '('.into(),
+                Token::Name(i),
+                ')'.into(),
             ].into()
         ) }
         / N("else") eof() { Directive::Else }
@@ -83,7 +83,7 @@ peg::parser! { pub(crate) grammar parser() for str {
 
     rule define_function_like() -> Define
         = name:identifier() "(" _ params:macro_params() _ ")" value:spaced_token_stream()? {
-            Define::Replacement {
+            Define::FunctionLike {
                 name,
                 params,
                 value: value.unwrap_or(vec![].into()),
@@ -92,7 +92,7 @@ peg::parser! { pub(crate) grammar parser() for str {
 
     rule define_object_like() -> Define
         = name:identifier() value:spaced_token_stream()? {
-            Define::Value {
+            Define::ObjectLike {
                 name,
                 value: value.unwrap_or(vec![].into()),
             }
@@ -133,11 +133,11 @@ peg::parser! { pub(crate) grammar parser() for str {
         = t:token()* eof() { t.into() }
 
     pub rule token() -> Token
-        = __ { Token::Whitespace }
-        / k:tok_punctuator() { Token::Punctuator(k) }
-        / k:tok_keyword() { Token::Keyword(k) }
-        / k:identifier() { Token::Identifier(k) }
-        / k:tok_integer() { Token::Integer(k) }
+        = __                 { Token::WS }
+        / k:tok_operator()   { k }
+        / k:tok_punctuator() { k }
+        / k:identifier()     { Token::Name(k) }
+        / k:tok_integer()    { Token::Int(k) }
         / expected!("token")
 
     rule tok_keyword() -> String
@@ -163,36 +163,18 @@ peg::parser! { pub(crate) grammar parser() for str {
     rule tok_dec_integer() -> String
         = e:$(['0'..='9']) { e.into() }
 
-    rule tok_punctuator() -> Punctuator
-        = "!" { Punctuator::Bang }
-        / "%" { Punctuator::Percent }
-        / "^" { Punctuator::Circumflex }
-        / "&" { Punctuator::Ampersand }
-        / "*" { Punctuator::Star }
-        / "(" { Punctuator::ParenOpen }
-        / ")" { Punctuator::ParenClose }
-        / "-" { Punctuator::Minus }
-        / "+" { Punctuator::Plus }
-        / "=" { Punctuator::Equal }
-        / "{" { Punctuator::CurlyOpen }
-        / "}" { Punctuator::CurlyClose }
-        / "|" { Punctuator::Pipe }
-        / "~" { Punctuator::Tilde }
-        / "[" { Punctuator::SquareOpen }
-        / "]" { Punctuator::SquareClose }
-        / "\\" { Punctuator::Backslash }
-        / ";" { Punctuator::Semicolon }
-        / "'" { Punctuator::SingleQuote }
-        / ":" { Punctuator::Colon }
-        / "\"" { Punctuator::DoubleQuote }
-        / "<" { Punctuator::AngleOpen }
-        / ">" { Punctuator::AngleClose }
-        / "?" { Punctuator::Question }
-        / "," { Punctuator::Comma }
-        / "." { Punctuator::Dot }
-        / "/" { Punctuator::Slash }
-        / "#" { Punctuator::Hash }
-        / "@" { Punctuator::At }
+    rule tok_operator() -> Token
+        = "##"      { Token::Paste }
+        / "@#"      { Token::Charize }
+        / "#"       { Token::Stringize }
+        / "defined" { Token::Defined }
+
+    rule tok_punctuator() -> Token
+        = s:$([
+            '!' | '%' | '^' | '&' | '*' | '(' | ')' | '-' | '+' |
+            '=' | '{' | '}' | '|' | '~' | '[' | ']' | '\\'| ';' |
+            '\''| '"' | '<' | '>' | '?' | ',' | '.' | '/' | '@'
+          ]) { s.chars().next().unwrap().into() }
 
     pub rule expr() -> Expr
         = e:expr0() eof() { e }

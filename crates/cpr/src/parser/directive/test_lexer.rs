@@ -1,15 +1,14 @@
 use super::*;
 
-use Punctuator as P;
 use Token as T;
-use T::Whitespace as __;
+use T::WS as __;
 
-fn id(s: &str) -> T {
-    T::Identifier(s.into())
+fn name(s: &str) -> T {
+    T::Name(s.into())
 }
 
 fn int(i: i64) -> T {
-    T::Integer(i)
+    T::Int(i)
 }
 
 #[test]
@@ -20,21 +19,21 @@ fn tokens() {
 
     assert_eq!(
         parser::token_stream("2 + 4"),
-        Ok(vec![int(2), __, P::Plus.into(), __, int(4)].into())
+        Ok(vec![int(2), __, '+'.into(), __, int(4)].into())
     );
 
     assert_eq!(
         parser::token_stream("f(x) = y;"),
         Ok(vec![
-            id("f"),
-            P::ParenOpen.into(),
-            id("x"),
-            P::ParenClose.into(),
+            name("f"),
+            '('.into(),
+            name("x"),
+            ')'.into(),
             __,
-            P::Equal.into(),
+            '='.into(),
             __,
-            id("y"),
-            P::Semicolon.into(),
+            name("y"),
+            ';'.into(),
         ]
         .into())
     );

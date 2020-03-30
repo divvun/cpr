@@ -1,15 +1,14 @@
 use super::*;
 
-use Punctuator as P;
 use Token as T;
-use T::Whitespace as __;
+use T::WS as __;
 
-fn id(s: &str) -> T {
-    T::Identifier(s.into())
+fn name(s: &str) -> T {
+    T::Name(s.into())
 }
 
 fn int(i: i64) -> T {
-    T::Integer(i)
+    T::Int(i)
 }
 
 #[test]
@@ -22,7 +21,7 @@ fn not_a_directive() {
 fn define_objectlike_empty() {
     assert_eq!(
         parser::directive("#define FOO"),
-        Ok(Some(Directive::Define(Define::Value {
+        Ok(Some(Directive::Define(Define::ObjectLike {
             name: "FOO".into(),
             value: vec![].into()
         })))
@@ -33,9 +32,9 @@ fn define_objectlike_empty() {
 fn define_objectlike() {
     assert_eq!(
         parser::directive("#define FOO BAR"),
-        Ok(Some(Directive::Define(Define::Value {
+        Ok(Some(Directive::Define(Define::ObjectLike {
             name: "FOO".into(),
-            value: vec![id("BAR")].into()
+            value: vec![name("BAR")].into()
         })))
     );
 }
@@ -44,15 +43,9 @@ fn define_objectlike() {
 fn define_objectlike_2() {
     assert_eq!(
         parser::directive("#define FOO BAR(BAZ)"),
-        Ok(Some(Directive::Define(Define::Value {
+        Ok(Some(Directive::Define(Define::ObjectLike {
             name: "FOO".into(),
-            value: vec![
-                id("BAR"),
-                P::ParenOpen.into(),
-                id("BAZ"),
-                P::ParenClose.into(),
-            ]
-            .into()
+            value: vec![name("BAR"), '('.into(), name("BAZ"), ')'.into(),].into()
         })))
     );
 }
@@ -61,13 +54,13 @@ fn define_objectlike_2() {
 fn define_functionlike_1() {
     assert_eq!(
         parser::directive("#define FOO(X, Y) X + Y"),
-        Ok(Some(Directive::Define(Define::Replacement {
+        Ok(Some(Directive::Define(Define::FunctionLike {
             name: "FOO".into(),
             params: MacroParams {
                 names: vec!["X".into(), "Y".into()],
                 has_trailing: false
             },
-            value: vec![id("X"), __, P::Plus.into(), __, id("Y")].into()
+            value: vec![name("X"), __, '+'.into(), __, name("Y")].into()
         })))
     );
 }
@@ -97,13 +90,7 @@ fn ifdef() {
     assert_eq!(
         parser::directive("#ifdef FOO_BAR"),
         Ok(Some(Directive::If(
-            vec![
-                Token::defined(),
-                Punctuator::ParenOpen.into(),
-                id("FOO_BAR"),
-                Punctuator::ParenClose.into()
-            ]
-            .into()
+            vec![Token::Defined, '('.into(), name("FOO_BAR"), ')'.into()].into()
         ))),
     );
 
@@ -111,11 +98,11 @@ fn ifdef() {
         parser::directive("#ifndef FOO_BAR"),
         Ok(Some(Directive::If(
             vec![
-                Punctuator::Bang.into(),
-                Token::defined(),
-                Punctuator::ParenOpen.into(),
-                id("FOO_BAR"),
-                Punctuator::ParenClose.into()
+                '!'.into(),
+                Token::Defined,
+                '('.into(),
+                name("FOO_BAR"),
+                ')'.into()
             ]
             .into()
         ))),

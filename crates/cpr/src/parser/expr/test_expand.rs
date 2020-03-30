@@ -1,7 +1,6 @@
 use super::*;
 use crate::parser::MacroParams;
 use directive::Directive;
-use Punctuator::*;
 
 fn expands_to(ctx: &Context, src: &[Token], dst: &[Token], msg: &str) {
     let input: TokenStream = src.iter().cloned().collect::<Vec<_>>().into();
@@ -14,45 +13,35 @@ fn defined() {
     let mut ctx = Context::new();
     ctx.push(
         Expr::bool(true),
-        Define::Value {
+        Define::ObjectLike {
             name: "FOO".into(),
             value: vec![].into(),
         },
     );
 
     expands_to(&ctx, &[], &[], "empty stream should stay empty");
-    expands_to(&ctx, &[Token::id("FOO")], &[], "empty def should expand");
+    expands_to(&ctx, &[Token::name("FOO")], &[], "empty def should expand");
     expands_to(
         &ctx,
-        &[Token::defined(), Token::id("FOO")],
+        &[Token::Defined, Token::name("FOO")],
         &[Token::bool(true)],
         "empty def counts as defined (no parens)",
     );
     expands_to(
         &ctx,
-        &[
-            Token::defined(),
-            ParenOpen.into(),
-            Token::id("FOO"),
-            ParenClose.into(),
-        ],
+        &[Token::Defined, '('.into(), Token::name("FOO"), ')'.into()],
         &[Token::bool(true)],
         "empty def counts as defined (with parens)",
     );
     expands_to(
         &ctx,
-        &[Token::defined(), Token::id("BAR")],
+        &[Token::Defined, Token::name("BAR")],
         &[Token::bool(false)],
         "undefined symbol is falsy (no parens)",
     );
     expands_to(
         &ctx,
-        &[
-            Token::defined(),
-            ParenOpen.into(),
-            Token::id("BAR"),
-            ParenClose.into(),
-        ],
+        &[Token::Defined, '('.into(), Token::name("BAR"), ')'.into()],
         &[Token::bool(false)],
         "undefined symbol is falsy (with parens)",
     );
@@ -63,7 +52,7 @@ fn function_like_noargs() {
     let mut ctx = Context::new();
     ctx.push(
         Expr::bool(true),
-        Define::Replacement {
+        Define::FunctionLike {
             name: "FOO".into(),
             params: MacroParams {
                 names: vec![],
@@ -75,7 +64,7 @@ fn function_like_noargs() {
 
     expands_to(
         &ctx,
-        &[Token::id("FOO"), ParenOpen.into(), ParenClose.into()],
+        &[Token::name("FOO"), '('.into(), ')'.into()],
         &[],
         "simple macro invocation",
     );
@@ -86,44 +75,39 @@ fn function_like_one_arg() {
     let mut ctx = Context::new();
     ctx.push(
         Expr::bool(true),
-        Define::Replacement {
+        Define::FunctionLike {
             name: "FOO".into(),
             params: MacroParams {
                 names: vec!["X".into()],
                 has_trailing: false,
             },
-            value: vec![Token::id("X")].into(),
+            value: vec![Token::name("X")].into(),
         },
     );
 
     expands_to(
         &ctx,
-        &[Token::id("FOO"), ParenOpen.into(), ParenClose.into()],
+        &[Token::name("FOO"), '('.into(), ')'.into()],
         &[],
         "one arg (empty token stream)",
     );
     expands_to(
         &ctx,
-        &[
-            Token::id("FOO"),
-            ParenOpen.into(),
-            Token::id("x"),
-            ParenClose.into(),
-        ],
-        &[Token::id("x")],
+        &[Token::name("FOO"), '('.into(), Token::name("x"), ')'.into()],
+        &[Token::name("x")],
         "one arg (single token)",
     );
     expands_to(
         &ctx,
         &[
-            Token::id("FOO"),
-            ParenOpen.into(),
-            Token::id("foo"),
-            Plus.into(),
-            Token::id("bar"),
-            ParenClose.into(),
+            Token::name("FOO"),
+            '('.into(),
+            Token::name("foo"),
+            '+'.into(),
+            Token::name("bar"),
+            ')'.into(),
         ],
-        &[Token::id("foo"), Plus.into(), Token::id("bar")],
+        &[Token::name("foo"), '+'.into(), Token::name("bar")],
         "one arg (three tokens)",
     )
 }
@@ -133,61 +117,61 @@ fn function_like_two_args() {
     let mut ctx = Context::new();
     ctx.push(
         Expr::bool(true),
-        Define::Replacement {
+        Define::FunctionLike {
             name: "ADD".into(),
             params: MacroParams {
                 names: vec!["X".into(), "Y".into()],
                 has_trailing: false,
             },
-            value: vec![Token::id("X"), Plus.into(), Token::id("Y")].into(),
+            value: vec![Token::name("X"), '+'.into(), Token::name("Y")].into(),
         },
     );
     ctx.push(
         Expr::bool(true),
-        Define::Replacement {
+        Define::FunctionLike {
             name: "MUL".into(),
             params: MacroParams {
                 names: vec!["X".into(), "Y".into()],
                 has_trailing: false,
             },
-            value: vec![Token::id("X"), Star.into(), Token::id("Y")].into(),
+            value: vec![Token::name("X"), '*'.into(), Token::name("Y")].into(),
         },
     );
 
     expands_to(
         &ctx,
         &[
-            Token::id("ADD"),
-            ParenOpen.into(),
+            Token::name("ADD"),
+            '('.into(),
             Token::int(2),
-            Comma.into(),
+            ','.into(),
             Token::int(4),
-            ParenClose.into(),
+            ')'.into(),
         ],
-        &[Token::int(2), Plus.into(), Token::int(4)],
+        &[Token::int(2), '+'.into(), Token::int(4)],
         "two args",
     );
 
     expands_to(
         &ctx,
         &[
-            Token::id("ADD"),
-            ParenOpen.into(),
-            Token::id("MUL"),
-            ParenOpen.into(),
+            Token::name("ADD"),
+            '('.into(),
+            Token::name("MUL"),
+            '('.into(),
             Token::int(2),
-            Comma.into(),
+            ','.into(),
             Token::int(3),
-            ParenClose.into(),
-            Comma.into(),
+            ')'.into(),
+            ','.into(),
             Token::int(4),
-            ParenClose.into(),
+            ')'.into(),
         ],
         &[
             Token::int(2),
-            Star.into(),
+            '*'.into(),
             Token::int(3),
-            Plus.into(),
+            '+'.into(),
             Token::int(4),
         ],
         "nested calls",
