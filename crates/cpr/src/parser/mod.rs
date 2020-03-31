@@ -478,7 +478,12 @@ impl Parser {
                 .must_expand_single(ctx)
                 .expect("all expressions should expand")
                 .to_string();
-            directive::parser::expr(&expr_string).expect("all expressions should parse")
+            directive::parser::expr(&expr_string).unwrap_or_else(|e| {
+                panic!(
+                    "could not parse expression:\n\n{}\n\ngot error: {:?}",
+                    expr_string, e
+                )
+            })
         }
 
         'each_line: loop {

@@ -63,6 +63,12 @@ fn tokens_pun() {
 #[test]
 fn tokens_exprs() {
     assert_eq!(
+        parser::token_stream("201703L"),
+        Ok(vec![int(201703)].into())
+    );
+    assert_eq!(parser::token_stream("0xbull"), Ok(vec![int(0xb)].into()));
+
+    assert_eq!(
         parser::token_stream("2 + 4"),
         Ok(vec![int(2), __, '+'.into(), __, int(4)].into())
     );
