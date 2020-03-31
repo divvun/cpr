@@ -491,7 +491,7 @@ impl Parser {
         }
 
         'each_line: loop {
-            let (line_number, line) = match lines.next() {
+            let (lineno, line) = match lines.next() {
                 Some(line) => line,
                 None => break 'each_line,
             };
@@ -503,7 +503,7 @@ impl Parser {
             let taken = path_taken(&stack);
 
             log::trace!("====================================");
-            log::trace!("{:?}:{} | {}", incl, line_number, line);
+            log::trace!("{:?}:{} | {}", incl, lineno, line);
             let dir = directive::parser::directive(line).unwrap_or_else(|e| {
                 panic!("could not parse directive `{}`\n\ngot error: {:?}", line, e)
             });
@@ -514,7 +514,7 @@ impl Parser {
                             log::info!(
                                 "{}:{} including {:?}, stack = {:?}",
                                 incl,
-                                line_number,
+                                lineno,
                                 dep,
                                 stack
                             );
@@ -525,7 +525,7 @@ impl Parser {
                     }
                     Directive::Define(def) => {
                         if taken {
-                            log::info!("{}:{} defining {}", incl, line_number, def.name());
+                            log::info!("{}:{} defining {}", incl, lineno, def.name());
                             match &def {
                                 Define::ObjectLike { value, .. } => {
                                     log::debug!("...to: {}", value);
@@ -534,7 +534,7 @@ impl Parser {
                             }
                             ctx.push(Expr::bool(true), def);
                         } else {
-                            log::info!("{}:{} not defining {}", incl, line_number, def.name());
+                            log::info!("{}:{} not defining {}", incl, lineno, def.name());
                         }
                     }
                     Directive::Undefine(name) => {
@@ -551,7 +551,7 @@ impl Parser {
                         if_stack.push(vec![truthy]);
 
                         let tup = (expr.truthy(), tokens);
-                        log::debug!("{}:{} if | {} {}", incl, line_number, tup.0, tup.1);
+                        log::debug!("{}:{} if | {} {}", incl, lineno, tup.0, tup.1);
                         stack.push(tup)
                     }
                     Directive::Else => {
@@ -561,7 +561,7 @@ impl Parser {
                         v.push(branch_taken);
 
                         let tup = (branch_taken, vec![].into());
-                        log::debug!("{}:{} else | {} {}", incl, line_number, tup.0, tup.1);
+                        log::debug!("{}:{} else | {} {}", incl, lineno, tup.0, tup.1);
                         if_stack.push(v);
                         stack.push(tup);
                     }
@@ -574,7 +574,7 @@ impl Parser {
                         v.push(truthy);
 
                         let tup = (branch_taken, tokens);
-                        log::debug!("{}:{} elseif | {} {}", incl, line_number, tup.0, tup.1);
+                        log::debug!("{}:{} elseif | {} {}", incl, lineno, tup.0, tup.1);
                         if_stack.push(v);
                         stack.push(tup);
                     }
@@ -584,27 +584,31 @@ impl Parser {
                         log::debug!("endif");
                     }
                     Directive::Pragma(s) => {
-                        log::warn!("ignoring pragma: {}", s);
+                        log::warn!("{}:{} ignoring pragma: {}", incl, lineno, s);
                     }
                     Directive::Error(s) => {
                         if taken {
-                            panic!("{}:{} pragma error: {}", incl, line_number, s);
+                            panic!("{}:{} pragma error: {}", incl, lineno, s);
                         }
                     }
                     Directive::Unknown(a, b) => {
-                        log::warn!("ignoring unknown directive: {} {}\n", a, b);
+                        log::warn!(
+                            "{}:{} ignoring unknown directive: {} {}\n",
+                            incl,
+                            lineno,
+                            a,
+                            b
+                        );
                     }
                 },
                 None => {
                     if !taken {
-                        log::debug!("{}:{} not taken | {}", incl, line_number, line);
+                        log::debug!("{}:{} not taken | {}", incl, lineno, line);
                         continue 'each_line;
                     }
 
-                    log::debug!("not a directive");
                     let mut tokens =
                         directive::parser::token_stream(line).expect("should tokenize everything");
-                    log::debug!("tokens = {:?}", tokens);
 
                     let mut expanded = tokens.must_expand_single(ctx);
                     'aggregate: loop {
@@ -631,6 +635,17 @@ impl Parser {
 
                     block.push(line);
                     let block_str = block.join("\n");
+
+                    if block_str.trim() == ";" {
+                        log::debug!(
+                            "{}:{} is a single semi-colon (sloppy macro invocation), ignoring...",
+                            incl,
+                            lineno
+                        );
+                        block.clear();
+                        continue 'each_line;
+                    }
+
                     if block.len() > MAX_BLOCK_LINES {
                         panic!(
                             "suspiciously long block ({} lines):\n\n{}",
@@ -652,12 +667,12 @@ impl Parser {
 
                     match lang_c::parser::translation_unit(&block_str, env) {
                         Ok(_node) => {
-                            log::info!("{}:{} parsed C:\n{}", incl, line_number, block_str);
+                            log::info!("{}:{} parsed C:\n{}", incl, lineno, block_str);
                             block.clear();
                             continue 'each_line;
                         }
                         Err(e) => {
-                            log::debug!("parse error: {:?}", e);
+                            log::trace!("parse error (probably incomplete block): {:?}", e);
                         }
                     }
                 }
@@ -671,7 +686,11 @@ impl Parser {
             .collect();
 
         if !unprocessed_lines.is_empty() {
-            panic!("Unprocessed lines: {:#?}", unprocessed_lines);
+            panic!(
+                "Unprocessed lines: {:#?}\n\nParse result: {:#?}",
+                unprocessed_lines,
+                lang_c::parser::translation_unit(&unprocessed_lines.join("\n"), env)
+            );
         }
 
         log::debug!("=== {:?} (end) ===", incl);
