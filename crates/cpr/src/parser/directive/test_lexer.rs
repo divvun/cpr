@@ -53,6 +53,14 @@ fn tokens_str() {
 }
 
 #[test]
+fn tokens_pun() {
+    assert_eq!(
+        parser::token_stream("?:"),
+        Ok(vec!['?'.into(), ':'.into()].into())
+    );
+}
+
+#[test]
 fn tokens_exprs() {
     assert_eq!(
         parser::token_stream("2 + 4"),
@@ -79,5 +87,11 @@ fn tokens_exprs() {
 #[test]
 fn regression_1() {
     let input = "#define API_SET_BY_ORDINAL(X,O,PO)                  X @##O NONAME PRIVATE";
+    parser::token_stream(input).unwrap();
+}
+
+#[test]
+fn regression_2() {
+    let input = "#define _Analysis_mode_(mode) __pragma(warning(disable: 28110 28111 28161 28162)) typedef _Analysis_mode_impl_(mode) int __GENSYM(__prefast_analysis_mode_flag)";
     parser::token_stream(input).unwrap();
 }
