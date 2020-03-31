@@ -857,7 +857,7 @@ impl Expr {
             Integer(i) => *i,
             And(c) => bool(c.iter().all(|v| v.assume_undefined() != 0)),
             Or(c) => bool(c.iter().any(|v| v.assume_undefined() != 0)),
-            Not(v) => !v.assume_undefined(),
+            Not(v) => bool(v.assume_undefined() == 0),
         }
     }
 

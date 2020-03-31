@@ -130,7 +130,7 @@ impl Context {
         };
         // TODO: change if we start supporting multiple defines again
         if !bucket.is_empty() {
-            log::warn!("re-defining {:?}", name);
+            log::debug!("re-defining {:?}", name);
             bucket.clear();
         }
         bucket.push((expr, def));
@@ -183,6 +183,16 @@ pub enum Include {
     System(PathBuf),
     Quoted(PathBuf),
     TokenStream(TokenStream),
+}
+
+impl fmt::Display for Include {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Include::System(p) => write!(f, "<{}>", p.to_string_lossy()),
+            Include::Quoted(p) => write!(f, r#""{}""#, p.to_string_lossy()),
+            Include::TokenStream(ts) => write!(f, "{}", ts),
+        }
+    }
 }
 
 impl Include {
@@ -440,7 +450,7 @@ impl Parser {
                 Some(v) => v,
                 None => return Err(Error::NotFound(include.clone())),
             };
-        log::debug!("=== {:?} => {:?} ===", include, path);
+        log::info!("Reading {:?} ===", path);
 
         Ok(std::fs::read_to_string(&path)?)
     }
@@ -453,16 +463,8 @@ impl Parser {
     }
 
     fn parse_2(&mut self, ctx: &mut Context, env: &mut Env, incl: Include) -> Result<(), Error> {
-        use std::cmp::min;
         let source = self.read_include(&incl)?;
-        let max_show = 120;
-        log::debug!("---------------------------------------");
-        log::debug!("orig' source: {}", &source[..min(max_show, source.len())]);
-        log::debug!("---------------------------------------");
         let source = utils::process_line_continuations_and_comments(&source);
-        log::debug!("---------------------------------------");
-        log::debug!("proc' source: {}", &source[..min(max_show, source.len())]);
-        log::debug!("---------------------------------------");
         let mut lines = source.lines().enumerate();
         let mut block: Vec<String> = Vec::new();
 
@@ -473,7 +475,6 @@ impl Parser {
 
         fn parse_expr(ctx: &Context, tokens: TokenStream) -> Expr {
             let expr_string = tokens.must_expand_single(ctx).to_string();
-            log::debug!("expanded expr string | {}", expr_string);
             directive::parser::expr(&expr_string).expect("all expressions should parse")
         }
 
@@ -496,17 +497,23 @@ impl Parser {
                 Some(dir) => {
                     log::debug!("directive | {:?}", dir);
                     match dir {
-                        Directive::Include(inc) => {
+                        Directive::Include(dep) => {
                             if taken {
-                                log::debug!("including {:?}", inc);
-                                self.parse_2(ctx, env, inc)?;
+                                log::info!(
+                                    "{}:{} including {:?}, stack = {:?}",
+                                    incl,
+                                    line_number,
+                                    dep,
+                                    stack
+                                );
+                                self.parse_2(ctx, env, dep)?;
                             } else {
                                 log::debug!("path not taken, not including");
                             }
                         }
                         Directive::Define(def) => {
                             if taken {
-                                log::debug!("defining {}", def.name());
+                                log::info!("{}:{} defining {}", incl, line_number, def.name());
                                 match &def {
                                     Define::ObjectLike { value, .. } => {
                                         log::debug!("...to {:?}", value);
