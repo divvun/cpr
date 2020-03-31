@@ -1,17 +1,14 @@
 mod directive;
 mod expr;
-mod rangeset;
 mod utils;
 
 use directive::Directive;
-use rangeset::RangeSet;
 use thiserror::Error;
 
-use custom_debug_derive::CustomDebug;
 use expr::{Expr, TokenStream};
 use lang_c::{driver, env::Env};
 use std::{
-    collections::{HashMap, HashSet, VecDeque},
+    collections::{HashMap, HashSet},
     fmt, io,
     path::{Path, PathBuf},
 };
@@ -283,32 +280,6 @@ impl fmt::Display for SyntaxError {
     }
 }
 
-/// One (1) C header, split into define-dependent ranges.
-#[derive(Debug)]
-pub struct ParsedUnit {
-    pub source: String,
-    pub def_ranges: RangeSet<TokenStream>,
-    pub dependencies: HashMap<Include, TokenStream>,
-}
-
-#[derive(CustomDebug)]
-pub struct Chunk {
-    pub expr: Expr,
-    pub source: SourceString,
-    #[debug(skip)]
-    pub unit: lang_c::ast::TranslationUnit,
-}
-
-impl Chunk {
-    fn new(parse: driver::Parse, expr: Expr) -> Self {
-        Chunk {
-            source: SourceString(parse.source),
-            unit: parse.unit,
-            expr,
-        }
-    }
-}
-
 #[derive(PartialEq, Eq)]
 pub struct SourceString(pub String);
 
@@ -337,76 +308,6 @@ where
     }
 }
 
-pub struct ChunkedUnit {
-    pub chunks: Vec<Chunk>,
-    pub ctx: Context,
-    pub typenames: HashSet<String>,
-}
-
-impl ParsedUnit {
-    /// Go through each line of a source file, handling preprocessor directives
-    /// like #if, #ifdef, #include, etc.
-    fn parse(source: &str) -> Result<ParsedUnit, Error> {
-        let source = utils::process_line_continuations_and_comments(source);
-
-        let mut dependencies = HashMap::new();
-        let mut def_ranges = RangeSet::<TokenStream>::new(vec![Token::bool(true)].into());
-        let mut n = 0usize;
-        let mut last_if: Option<TokenStream> = None;
-
-        for line in source.lines() {
-            log::debug!("| {}", line);
-            let res = directive::parser::directive(line);
-            if let Some(directive) = res.expect("should be able to parse all directives") {
-                log::debug!("{}", line);
-                log::debug!("{:?}", &directive);
-
-                match directive {
-                    Directive::Include(include) => {
-                        dependencies.insert(include, def_ranges.last().1.clone());
-                    }
-                    Directive::If(pred) => {
-                        last_if = Some(pred.clone());
-                        def_ranges.push((n, pred));
-                    }
-                    Directive::ElseIf(pred) => {
-                        def_ranges.pop(n);
-                        let pred = !last_if.clone().expect("elif without last_if") & pred;
-                        last_if = Some(pred.clone());
-                        def_ranges.push((n, pred));
-                    }
-                    Directive::Else => {
-                        def_ranges.pop(n);
-                        let pred = !last_if.clone().expect("else without last_if");
-                        def_ranges.push((n, pred));
-                    }
-                    Directive::EndIf => {
-                        def_ranges.pop(n);
-                        last_if = None;
-                    }
-                    Directive::Define(_)
-                    | Directive::Undefine(_)
-                    | Directive::Error(_)
-                    | Directive::Pragma(_)
-                    | Directive::Unknown(_, _) => {
-                        // leave as-is
-                    }
-                }
-                log::trace!("STACK: {:?}", def_ranges.last());
-            }
-            n += 1;
-        }
-
-        def_ranges.pop(n);
-
-        Ok(ParsedUnit {
-            source,
-            def_ranges,
-            dependencies,
-        })
-    }
-}
-
 #[derive(Debug)]
 pub struct Parser {
     system_paths: Vec<PathBuf>,
@@ -414,7 +315,6 @@ pub struct Parser {
     working_path: PathBuf,
     root: Include,
     ordered_includes: Vec<Include>,
-    sources: HashMap<Include, ParsedUnit>,
 }
 
 impl Parser {
@@ -436,7 +336,6 @@ impl Parser {
             system_paths,
             quoted_paths,
             working_path,
-            sources: HashMap::new(),
             ordered_includes: vec![root.clone()],
             root,
         };
@@ -695,42 +594,6 @@ impl Parser {
 
         log::debug!("=== {:?} (end) ===", incl);
         Ok(())
-    }
-
-    /// Parse the roots and all its included dependencies,
-    /// breadth-first.
-    fn parse_all(&mut self) -> Result<(), Error> {
-        let mut unit_queue = VecDeque::new();
-        unit_queue.push_back(self.root.clone());
-
-        while let Some(work_unit) = unit_queue.pop_front() {
-            log::debug!("## WORK UNIT: {:?}", &work_unit);
-
-            if self.sources.contains_key(&work_unit) {
-                continue;
-            }
-
-            let source = self.read_include(&work_unit)?;
-            let parsed_unit = ParsedUnit::parse(&source[..])?;
-
-            log::trace!("{:?}", &parsed_unit);
-
-            for include in parsed_unit.dependencies.keys() {
-                self.ordered_includes.push(include.clone());
-                unit_queue.push_back(include.clone());
-            }
-
-            self.sources.insert(work_unit, parsed_unit);
-        }
-
-        Ok(())
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = (&Include, &ParsedUnit)> {
-        // TODO: that's a hack, find something better.
-        self.ordered_includes
-            .iter()
-            .map(move |inc| (inc, self.sources.get(inc).unwrap()))
     }
 }
 
