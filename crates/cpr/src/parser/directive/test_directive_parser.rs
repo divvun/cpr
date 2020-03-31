@@ -66,6 +66,36 @@ fn define_functionlike_1() {
 }
 
 #[test]
+fn define_functionlike_variadic_1() {
+    assert_eq!(
+        parser::directive("#define WHY(...) __VA_ARGS__"),
+        Ok(Some(Directive::Define(Define::FunctionLike {
+            name: "WHY".into(),
+            params: MacroParams {
+                names: vec![],
+                has_trailing: true,
+            },
+            value: vec![name("__VA_ARGS__")].into(),
+        })))
+    )
+}
+
+#[test]
+fn define_functionlike_variadic_2() {
+    assert_eq!(
+        parser::directive("#define WHY(a, b, ...) a b __VA_ARGS__"),
+        Ok(Some(Directive::Define(Define::FunctionLike {
+            name: "WHY".into(),
+            params: MacroParams {
+                names: vec!["a".into(), "b".into()],
+                has_trailing: true,
+            },
+            value: vec![name("a"), __, name("b"), __, name("__VA_ARGS__")].into(),
+        })))
+    )
+}
+
+#[test]
 fn include_angle() {
     assert_eq!(
         parser::directive("#include <foo/bar/baz.h>"),

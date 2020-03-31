@@ -111,7 +111,13 @@ peg::parser! { pub(crate) grammar parser() for str {
             n.into()
         }
     rule macro_params() -> MacroParams
-        = names:identifier() ** (_ "," _) _ e:("," _ "...")? {
+        = _ "..." {
+            MacroParams {
+                names: vec![],
+                has_trailing: true,
+            }
+        }
+        / names:identifier() ** (_ "," _) _ e:("," _ "...")? {
             MacroParams {
                 names,
                 has_trailing: e.is_some(),

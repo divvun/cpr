@@ -495,7 +495,9 @@ impl Parser {
 
             log::debug!("====================================");
             log::debug!("{:?}:{} | {}", incl, line_number, line);
-            let dir = directive::parser::directive(line).expect("should parse all directives");
+            let dir = directive::parser::directive(line).unwrap_or_else(|e| {
+                panic!("could not parse directive `{}`\n\ngot error: {:?}", line, e)
+            });
             match dir {
                 Some(dir) => {
                     log::debug!("directive | {:?}", dir);
