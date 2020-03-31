@@ -599,10 +599,23 @@ impl Parser {
 
                     block.push(line);
                     let block_str = block.join("\n");
-                    match lang_c::parser::declaration(&block_str, env) {
-                        Ok(node) => {
-                            log::debug!("parse result (input len={}) | {:?}", block.len(), node);
+
+                    match directive::parser::pragma(&block_str) {
+                        Ok(p) => {
+                            log::info!("skipping pragma:\n__pragma{}", p);
                             block.clear();
+                            continue 'each_line;
+                        }
+                        Err(_) => {
+                            // continue
+                        }
+                    }
+
+                    match lang_c::parser::declaration(&block_str, env) {
+                        Ok(_node) => {
+                            log::info!("{}:{} got decl:\n{}", incl, line_number, block_str);
+                            block.clear();
+                            continue 'each_line;
                         }
                         Err(e) => {
                             log::debug!("parse error: {:?}", e);

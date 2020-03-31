@@ -253,6 +253,9 @@ peg::parser! { pub(crate) grammar parser() for str {
         "(" _ e:expr0() _ ")" { e }
         // highest precedence
     }
+
+    pub rule pragma() -> TokenStream
+        = "__pragma" t:token_stream() { t }
 }}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
