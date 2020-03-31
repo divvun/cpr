@@ -135,7 +135,7 @@ impl ExpandError {
 // ts = token stream
 // hs = hide set
 pub fn expand(ts: &[THS], ctx: &Context) -> Result<Vec<THS>, ExpandError> {
-    log::debug!("expand {:?}", ts);
+    log::trace!("expand {:?}", ts);
 
     // First, if TS is the empty set, the result is the empty set.
     if ts.is_empty() {
@@ -148,7 +148,7 @@ pub fn expand(ts: &[THS], ctx: &Context) -> Result<Vec<THS>, ExpandError> {
     // expand on the rest of the token sequence.
     let (t, ts_p) = (&ts[0], &ts[1..]);
     if t.hides(&t.0) {
-        log::debug!("macro {} is hidden by hideset of {:?}", t.0, t);
+        log::trace!("macro {} is hidden by hideset of {:?}", t.0, t);
         return Ok(concat(&[t.clone()], expand(ts_p, ctx)?.as_ref()));
     }
 
@@ -160,7 +160,7 @@ pub fn expand(ts: &[THS], ctx: &Context) -> Result<Vec<THS>, ExpandError> {
     if let Token::Name(name) = &t.0 {
         if let SymbolState::Defined((_expr, def)) = ctx.lookup(name) {
             if let Define::ObjectLike { value, .. } = def {
-                log::debug!("object-like macro");
+                log::trace!("object-like macro");
                 let mut hs = t.1.clone();
                 hs.insert(name.clone());
                 let sub = subst(value.as_ths().as_ref(), &[], &[], &hs, Default::default());
@@ -174,7 +174,7 @@ pub fn expand(ts: &[THS], ctx: &Context) -> Result<Vec<THS>, ExpandError> {
             if let Token::Name(name) = &t.0 {
                 if let SymbolState::Defined((_expr, def)) = ctx.lookup(name) {
                     if let Define::FunctionLike { value, params, .. } = def {
-                        log::debug!("function-like macro");
+                        log::trace!("function-like macro");
 
                         let mut input = rest;
                         let mut actuals: Vec<Vec<THS>> = vec![vec![]];
@@ -186,7 +186,7 @@ pub fn expand(ts: &[THS], ctx: &Context) -> Result<Vec<THS>, ExpandError> {
                         }
 
                         while depth > 0 {
-                            log::debug!("depth={}, input = {:?}", depth, input);
+                            log::trace!("depth={}, input = {:?}", depth, input);
 
                             match depth {
                                 1 => match input {
@@ -251,7 +251,7 @@ pub fn expand(ts: &[THS], ctx: &Context) -> Result<Vec<THS>, ExpandError> {
 
                         let sub_hs = hs_union(&hs_intersection(&t.1, closparen_hs), &hs);
                         // let sub_hs = &hs_intersection(&t.1, closparen_hs);
-                        log::debug!("sub_hs = {:?}", sub_hs);
+                        log::trace!("sub_hs = {:?}", sub_hs);
                         let sub_res = subst(
                             value.as_ths().as_ref(),
                             &params.names[..],
@@ -259,8 +259,8 @@ pub fn expand(ts: &[THS], ctx: &Context) -> Result<Vec<THS>, ExpandError> {
                             &sub_hs,
                             vec![],
                         );
-                        log::debug!("sub_res = {:?}", sub_res);
-                        log::debug!("ts'' = {:?}", ts_pp);
+                        log::trace!("sub_res = {:?}", sub_res);
+                        log::trace!("ts'' = {:?}", ts_pp);
 
                         return expand(concat(sub_res.as_ref(), ts_pp).as_ref(), ctx);
                     }
@@ -354,12 +354,12 @@ pub fn subst(
     hs: &HashSet<String>,
     os: Vec<THS>,
 ) -> Vec<THS> {
-    log::debug!("## subst");
-    log::debug!("is = {:?}", is);
-    log::debug!("os = {:?}", os);
+    log::trace!("## subst");
+    log::trace!("is = {:?}", is);
+    log::trace!("os = {:?}", os);
 
     if is.is_empty() {
-        log::debug!("subst => empty");
+        log::trace!("subst => empty");
         return os;
     }
 
@@ -368,7 +368,7 @@ pub fn subst(
         [THS(Token::Stringize, _), rest @ ..] => match ws_triml(rest) {
             [THS(Token::Name(name), _), rest @ ..] => {
                 if let Some(i) = fp.iter().position(|x| x == name) {
-                    log::debug!("subst => stringizing");
+                    log::trace!("subst => stringizing");
                     return subst(
                         rest,
                         fp,
@@ -388,7 +388,7 @@ pub fn subst(
         [THS(Token::Paste, _), rest @ ..] => match ws_triml(rest) {
             [THS(Token::Name(name), _), rest @ ..] => {
                 if let Some(i) = fp.iter().position(|x| x == name) {
-                    log::debug!("subst => pasting (argument rhs)");
+                    log::trace!("subst => pasting (argument rhs)");
                     let sel = &ap[i];
                     if sel.is_empty() {
                         // TODO: missing cond: "only if actuals can be empty"
@@ -407,7 +407,7 @@ pub fn subst(
     match is {
         [THS(Token::Paste, _), rest @ ..] => match ws_triml(rest) {
             [t @ THS { .. }, rest @ ..] => {
-                log::debug!("subst => pasting (non-argument)");
+                log::trace!("subst => pasting (non-argument)");
                 return subst(rest, fp, ap, hs, glue(os.as_ref(), &[t.clone()]));
             }
             _ => {}
@@ -420,7 +420,7 @@ pub fn subst(
         [THS(Token::Name(name_i), _), rest @ ..] => match ws_triml(rest) {
             [pastetok @ THS(Token::Paste, _), rest @ ..] => {
                 if let Some(i) = fp.iter().position(|x| x == name_i) {
-                    log::debug!("subst => pasting (argument lhs)");
+                    log::trace!("subst => pasting (argument lhs)");
 
                     let sel_i = ap[i].clone();
                     if sel_i.is_empty() {
@@ -462,7 +462,7 @@ pub fn subst(
         [THS(Token::Name(name), _), rest @ ..] => {
             if let Some(i) = fp.iter().position(|x| x == name) {
                 let sel = ap[i].clone();
-                log::debug!("subst => argument replacement, sel = {:?}", sel);
+                log::trace!("subst => argument replacement, sel = {:?}", sel);
                 return subst(rest, fp, ap, hs, concat(os.as_ref(), sel.as_ref()));
             }
         }
@@ -472,7 +472,7 @@ pub fn subst(
     // Verbatim token
     match is {
         [tok, rest @ ..] => {
-            log::debug!("subst => verbatim token {:?}, marking with {:?}", tok, hs);
+            log::trace!("subst => verbatim token {:?}, marking with {:?}", tok, hs);
             let mut tok = tok.clone();
             tok.1.extend(hs.iter().cloned());
             return subst(rest, fp, ap, hs, concat(os.as_ref(), &[tok]));
@@ -559,9 +559,9 @@ impl TokenStream {
     }
 
     pub fn parse(&self) -> Expr {
-        log::debug!("self = {:?}", self);
+        log::trace!("self = {:?}", self);
         let source = self.to_string();
-        log::debug!("source = {:?}", source);
+        log::trace!("source = {:?}", source);
         let res = directive::parser::expr(&source).expect("all exprs should parse");
         res
     }

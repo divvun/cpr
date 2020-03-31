@@ -62,7 +62,7 @@ peg::parser! { pub(crate) grammar parser() for str {
         / N("define") __ d:define() { Directive::Define(d) }
         / N("undef") __ n:undef() { Directive::Undefine(n) }
         / N("error") __ s:$([_]*) { Directive::Error(s.into()) }
-        / N("pragma") __ s:$([_]*) { Directive::Error(s.into()) }
+        / N("pragma") __ s:$([_]*) { Directive::Pragma(s.into()) }
         / l:$(![' '][_]+) __ r:$([_]*)  { Directive::Unknown(l.into(), r.into()) }
         / expected!("directive name")
 

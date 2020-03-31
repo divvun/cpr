@@ -16,6 +16,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
+const MAX_BLOCK_LINES: usize = 150;
+
 /// A C token
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum Token {
@@ -468,12 +470,14 @@ impl Parser {
         let mut lines = source.lines().enumerate();
         let mut block: Vec<String> = Vec::new();
 
-        let mut stack: Vec<(bool, Expr)> = Vec::new();
-        fn path_taken(stack: &[(bool, Expr)]) -> bool {
+        let mut stack: Vec<(bool, TokenStream)> = Vec::new();
+        let mut if_stack: Vec<Vec<bool>> = Vec::new();
+
+        fn path_taken(stack: &[(bool, TokenStream)]) -> bool {
             stack.iter().all(|(b, _)| *b == true)
         }
 
-        fn parse_expr(ctx: &Context, tokens: TokenStream) -> Expr {
+        fn parse_expr(ctx: &Context, tokens: &TokenStream) -> Expr {
             let expr_string = tokens
                 .must_expand_single(ctx)
                 .expect("all expressions should expand")
@@ -498,74 +502,102 @@ impl Parser {
 
             let taken = path_taken(&stack);
 
-            log::debug!("====================================");
-            log::debug!("{:?}:{} | {}", incl, line_number, line);
+            log::trace!("====================================");
+            log::trace!("{:?}:{} | {}", incl, line_number, line);
             let dir = directive::parser::directive(line).unwrap_or_else(|e| {
                 panic!("could not parse directive `{}`\n\ngot error: {:?}", line, e)
             });
             match dir {
-                Some(dir) => {
-                    log::debug!("directive | {:?}", dir);
-                    match dir {
-                        Directive::Include(dep) => {
-                            if taken {
-                                log::info!(
-                                    "{}:{} including {:?}, stack = {:?}",
-                                    incl,
-                                    line_number,
-                                    dep,
-                                    stack
-                                );
-                                self.parse_2(ctx, env, dep)?;
-                            } else {
-                                log::debug!("path not taken, not including");
-                            }
-                        }
-                        Directive::Define(def) => {
-                            if taken {
-                                log::info!("{}:{} defining {}", incl, line_number, def.name());
-                                match &def {
-                                    Define::ObjectLike { value, .. } => {
-                                        log::debug!("...to {:?}", value);
-                                    }
-                                    _ => {}
-                                }
-                                ctx.push(Expr::bool(true), def);
-                            } else {
-                                log::debug!("path not taken, not defining");
-                            }
-                        }
-                        Directive::Undefine(name) => {
-                            if taken {
-                                log::debug!("undefining {}", name);
-                                ctx.pop(&name);
-                            } else {
-                                log::debug!("path not taken, not undefining");
-                            }
-                        }
-                        Directive::If(tokens) => {
-                            let expr = parse_expr(ctx, tokens);
-                            let tup = (expr.truthy(), expr);
-                            log::debug!("if | {:?}", tup);
-                            stack.push(tup)
-                        }
-                        Directive::Else => {
-                            let mut tup = stack.pop().expect("else without if");
-                            tup.0 = !tup.0;
-                            log::debug!("else | {:?}", tup);
-                            stack.push(tup);
-                        }
-                        Directive::EndIf => {
-                            stack.pop().expect("endif without if");
-                        }
-                        _ => {
-                            log::debug!("todo: handle that directive");
+                Some(dir) => match dir {
+                    Directive::Include(dep) => {
+                        if taken {
+                            log::info!(
+                                "{}:{} including {:?}, stack = {:?}",
+                                incl,
+                                line_number,
+                                dep,
+                                stack
+                            );
+                            self.parse_2(ctx, env, dep)?;
+                        } else {
+                            log::debug!("path not taken, not including");
                         }
                     }
-                }
+                    Directive::Define(def) => {
+                        if taken {
+                            log::info!("{}:{} defining {}", incl, line_number, def.name());
+                            match &def {
+                                Define::ObjectLike { value, .. } => {
+                                    log::debug!("...to: {}", value);
+                                }
+                                _ => {}
+                            }
+                            ctx.push(Expr::bool(true), def);
+                        } else {
+                            log::info!("{}:{} not defining {}", incl, line_number, def.name());
+                        }
+                    }
+                    Directive::Undefine(name) => {
+                        if taken {
+                            log::debug!("undefining {}", name);
+                            ctx.pop(&name);
+                        } else {
+                            log::debug!("path not taken, not undefining");
+                        }
+                    }
+                    Directive::If(tokens) => {
+                        let expr = parse_expr(ctx, &tokens);
+                        let truthy = expr.truthy();
+                        if_stack.push(vec![truthy]);
+
+                        let tup = (expr.truthy(), tokens);
+                        log::debug!("{}:{} if | {} {}", incl, line_number, tup.0, tup.1);
+                        stack.push(tup)
+                    }
+                    Directive::Else => {
+                        stack.pop().expect("else without if");
+                        let mut v = if_stack.pop().expect("else without if");
+                        let branch_taken = v.iter().copied().all(|x| x == false);
+                        v.push(branch_taken);
+
+                        let tup = (branch_taken, vec![].into());
+                        log::debug!("{}:{} else | {} {}", incl, line_number, tup.0, tup.1);
+                        if_stack.push(v);
+                        stack.push(tup);
+                    }
+                    Directive::ElseIf(tokens) => {
+                        stack.pop().expect("elseif without if");
+                        let mut v = if_stack.pop().expect("elseif without if");
+                        let expr = parse_expr(ctx, &tokens);
+                        let truthy = expr.truthy();
+                        let branch_taken = v.iter().copied().all(|x| x == false) && truthy;
+                        v.push(truthy);
+
+                        let tup = (branch_taken, tokens);
+                        log::debug!("{}:{} elseif | {} {}", incl, line_number, tup.0, tup.1);
+                        if_stack.push(v);
+                        stack.push(tup);
+                    }
+                    Directive::EndIf => {
+                        stack.pop().expect("endif without if");
+                        if_stack.pop().expect("endif without if");
+                        log::debug!("endif");
+                    }
+                    Directive::Pragma(s) => {
+                        log::warn!("ignoring pragma: {}", s);
+                    }
+                    Directive::Error(s) => {
+                        if taken {
+                            panic!("{}:{} pragma error: {}", incl, line_number, s);
+                        }
+                    }
+                    Directive::Unknown(a, b) => {
+                        log::warn!("ignoring unknown directive: {} {}\n", a, b);
+                    }
+                },
                 None => {
                     if !taken {
-                        log::debug!("not taken | {}", line);
+                        log::debug!("{}:{} not taken | {}", incl, line_number, line);
                         continue 'each_line;
                     }
 
@@ -599,6 +631,13 @@ impl Parser {
 
                     block.push(line);
                     let block_str = block.join("\n");
+                    if block.len() > MAX_BLOCK_LINES {
+                        panic!(
+                            "suspiciously long block ({} lines):\n\n{}",
+                            block.len(),
+                            block_str
+                        );
+                    }
 
                     match directive::parser::pragma(&block_str) {
                         Ok(p) => {
@@ -611,9 +650,9 @@ impl Parser {
                         }
                     }
 
-                    match lang_c::parser::declaration(&block_str, env) {
+                    match lang_c::parser::translation_unit(&block_str, env) {
                         Ok(_node) => {
-                            log::info!("{}:{} got decl:\n{}", incl, line_number, block_str);
+                            log::info!("{}:{} parsed C:\n{}", incl, line_number, block_str);
                             block.clear();
                             continue 'each_line;
                         }
