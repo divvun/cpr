@@ -5,7 +5,7 @@ use directive::Directive;
 fn expands_to(ctx: &Context, src: &[Token], dst: &[Token], msg: &str) {
     let input: TokenStream = src.iter().cloned().collect::<Vec<_>>().into();
     let output: TokenStream = dst.iter().cloned().collect::<Vec<_>>().into();
-    assert_eq!(input.must_expand_single(ctx), output, "{}", msg);
+    assert_eq!(input.must_expand_single(ctx).unwrap(), output, "{}", msg);
 }
 
 #[test]
@@ -229,7 +229,7 @@ fn test_compliant() {
         log::debug!("=============================================");
         let input = directive::parser::token_stream(input).unwrap().as_ths();
         let expected = directive::parser::token_stream(output).unwrap();
-        let actual = TokenStream::from_ths(expand(&input[..], ctx));
+        let actual = TokenStream::from_ths(expand(&input[..], ctx).unwrap());
         log::debug!("expected = {:?}", expected);
         log::debug!("actual = {:?}", actual);
         assert_eq!(actual, expected, "(actual is on the left)");

@@ -474,7 +474,10 @@ impl Parser {
         }
 
         fn parse_expr(ctx: &Context, tokens: TokenStream) -> Expr {
-            let expr_string = tokens.must_expand_single(ctx).to_string();
+            let expr_string = tokens
+                .must_expand_single(ctx)
+                .expect("all expressions should expand")
+                .to_string();
             directive::parser::expr(&expr_string).expect("all expressions should parse")
         }
 
@@ -560,10 +563,31 @@ impl Parser {
                     }
 
                     log::debug!("not a directive");
-                    let tokens =
+                    let mut tokens =
                         directive::parser::token_stream(line).expect("should tokenize everything");
                     log::debug!("tokens = {:?}", tokens);
-                    let line = tokens.must_expand_single(ctx).to_string();
+
+                    let mut expanded = tokens.must_expand_single(ctx);
+                    'aggregate: loop {
+                        match expanded {
+                            Ok(_) => break 'aggregate,
+                            Err(e) if e.needs_more() => {
+                                let (_, next_line) =
+                                    lines.next().expect("ran out of lines while aggregating");
+                                let mut next_tokens = directive::parser::token_stream(next_line)
+                                    .expect("should tokenize everything");
+                                tokens.0.push(Token::WS);
+                                tokens.0.append(&mut next_tokens.0);
+                                expanded = tokens.must_expand_single(ctx);
+                            }
+                            Err(e) => panic!(
+                                "while expanding non-directive line\n\n{}\n\ngot error: {}",
+                                tokens, e
+                            ),
+                        }
+                    }
+
+                    let line = expanded.unwrap().to_string();
                     log::debug!("expanded line | {}", line);
 
                     block.push(line);

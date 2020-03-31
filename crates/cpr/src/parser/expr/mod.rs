@@ -112,18 +112,34 @@ fn ws_trimboth(is: &[THS]) -> &[THS] {
     ws_triml(ws_trimr(is))
 }
 
+use thiserror::Error;
+
+#[derive(Debug, Error)]
+pub enum ExpandError {
+    #[error("unclosed macro invocation: {name}")]
+    UnclosedMacroInvocation { name: String },
+}
+
+impl ExpandError {
+    pub fn needs_more(&self) -> bool {
+        match self {
+            ExpandError::UnclosedMacroInvocation { .. } => true,
+        }
+    }
+}
+
 // See X3J11/86-196, annotated and corrected version available at:
 // https://www.spinellis.gr/blog/20060626/cpp.algo.pdf
 //
 // t = token
 // ts = token stream
 // hs = hide set
-pub fn expand(ts: &[THS], ctx: &Context) -> Vec<THS> {
+pub fn expand(ts: &[THS], ctx: &Context) -> Result<Vec<THS>, ExpandError> {
     log::debug!("expand {:?}", ts);
 
     // First, if TS is the empty set, the result is the empty set.
     if ts.is_empty() {
-        return vec![];
+        return Ok(vec![]);
     }
 
     // Otherwise, if the token sequence begins with a token whose hide set
@@ -133,7 +149,7 @@ pub fn expand(ts: &[THS], ctx: &Context) -> Vec<THS> {
     let (t, ts_p) = (&ts[0], &ts[1..]);
     if t.hides(&t.0) {
         log::debug!("macro {} is hidden by hideset of {:?}", t.0, t);
-        return concat(&[t.clone()], expand(ts_p, ctx).as_ref());
+        return Ok(concat(&[t.clone()], expand(ts_p, ctx)?.as_ref()));
     }
 
     // Otherwise, if the token sequence begins with an object-like macro, the
@@ -192,10 +208,11 @@ pub fn expand(ts: &[THS], ctx: &Context) -> Vec<THS> {
                                         push(&mut actuals, tok.clone());
                                         input = rest;
                                     }
-                                    [] => panic!(
-                                        "unterminated paren in call to macro {:?}: {:?}",
-                                        t, rest
-                                    ),
+                                    [] => {
+                                        return Err(ExpandError::UnclosedMacroInvocation {
+                                            name: t.0.to_string(),
+                                        })
+                                    }
                                 },
                                 _ => match input {
                                     [tok @ THS(Token::Pun('('), _), rest @ ..] => {
@@ -212,10 +229,11 @@ pub fn expand(ts: &[THS], ctx: &Context) -> Vec<THS> {
                                         push(&mut actuals, tok.clone());
                                         input = rest;
                                     }
-                                    [] => panic!(
-                                        "unterminated paren in call to macro {:?}: {:?}",
-                                        t, rest
-                                    ),
+                                    [] => {
+                                        return Err(ExpandError::UnclosedMacroInvocation {
+                                            name: t.0.to_string(),
+                                        });
+                                    }
                                 },
                             }
                         }
@@ -271,18 +289,30 @@ pub fn expand(ts: &[THS], ctx: &Context) -> Vec<THS> {
             }
             let rest = input;
 
-            return concat(&[THS(Token::Str(parts.join("")), hs)], &expand(rest, ctx));
+            return Ok(concat(
+                &[THS(Token::Str(parts.join("")), hs)],
+                &expand(rest, ctx)?,
+            ));
         }
         _ => {}
     }
 
     // Defined
-    fn expand_defined(name: &str, hs: &HS, rest: &[THS], ctx: &Context) -> Vec<THS> {
+    fn expand_defined(
+        name: &str,
+        hs: &HS,
+        rest: &[THS],
+        ctx: &Context,
+    ) -> Result<Vec<THS>, ExpandError> {
         match ctx.lookup(name) {
-            SymbolState::Undefined => concat(&[THS(Token::Int(0), hs.clone())], &expand(rest, ctx)),
-            SymbolState::Defined(_) | SymbolState::MultipleDefines(_) => {
-                concat(&[THS(Token::Int(1), hs.clone())], &expand(rest, ctx))
-            }
+            SymbolState::Undefined => Ok(concat(
+                &[THS(Token::Int(0), hs.clone())],
+                &expand(rest, ctx)?,
+            )),
+            SymbolState::Defined(_) | SymbolState::MultipleDefines(_) => Ok(concat(
+                &[THS(Token::Int(1), hs.clone())],
+                &expand(rest, ctx)?,
+            )),
             SymbolState::Unknown => panic!("todo: definedness of {:?} is unknown", name),
         }
     }
@@ -310,7 +340,7 @@ pub fn expand(ts: &[THS], ctx: &Context) -> Vec<THS> {
     }
 
     match ts {
-        [tok, ts_p @ ..] => concat(&[tok.clone()], &expand(ts_p, ctx)),
+        [tok, ts_p @ ..] => Ok(concat(&[tok.clone()], &expand(ts_p, ctx)?)),
         _ => unreachable!(),
     }
 }
@@ -508,8 +538,8 @@ impl TokenStream {
         Self(v.into_iter().map(|THS(tok, _)| tok).collect())
     }
 
-    pub fn must_expand_single(&self, ctx: &Context) -> Self {
-        let mut expansions = self.expand(ctx);
+    pub fn must_expand_single(&self, ctx: &Context) -> Result<Self, ExpandError> {
+        let mut expansions = self.expand(ctx)?;
         assert_eq!(
             expansions.len(),
             1,
@@ -518,14 +548,14 @@ impl TokenStream {
         );
         let (expr, tokens) = expansions.pop().unwrap();
         assert!(expr.truthy());
-        tokens
+        Ok(tokens)
     }
 
-    pub fn expand(&self, ctx: &Context) -> Vec<(Expr, Self)> {
-        return vec![(
+    pub fn expand(&self, ctx: &Context) -> Result<Vec<(Expr, Self)>, ExpandError> {
+        return Ok(vec![(
             Expr::bool(true),
-            Self::from_ths(expand(&self.as_ths(), ctx)),
-        )];
+            Self::from_ths(expand(&self.as_ths(), ctx)?),
+        )]);
     }
 
     pub fn parse(&self) -> Expr {
