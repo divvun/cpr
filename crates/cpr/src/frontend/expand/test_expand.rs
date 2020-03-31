@@ -1,11 +1,10 @@
 use super::*;
-use crate::parser::MacroParams;
-use directive::Directive;
+use grammar::{Directive, Expr, MacroParams, TokenSeq};
 
 fn expands_to(ctx: &Context, src: &[Token], dst: &[Token], msg: &str) {
-    let input: TokenStream = src.iter().cloned().collect::<Vec<_>>().into();
-    let output: TokenStream = dst.iter().cloned().collect::<Vec<_>>().into();
-    assert_eq!(input.must_expand_single(ctx).unwrap(), output, "{}", msg);
+    let input: TokenSeq = src.iter().cloned().collect::<Vec<_>>().into();
+    let output: TokenSeq = dst.iter().cloned().collect::<Vec<_>>().into();
+    assert_eq!(input.expand(ctx).unwrap(), output, "{}", msg);
 }
 
 #[test]
@@ -181,7 +180,7 @@ fn function_like_two_args() {
 #[test]
 fn readable_tests() {
     fn def(ctx: &mut Context, input: &str) {
-        let dir = directive::parser::directive(input)
+        let dir = grammar::directive(input)
             .expect("test directive must be parsable")
             .expect("test must specify exactly one directive");
         let def = match dir {
@@ -192,8 +191,8 @@ fn readable_tests() {
     }
 
     fn exp(ctx: &Context, input: &str, output: &str) {
-        let input = directive::parser::token_stream(input).unwrap();
-        let output = directive::parser::token_stream(output).unwrap();
+        let input = grammar::token_stream(input).unwrap();
+        let output = grammar::token_stream(output).unwrap();
         expands_to(ctx, &input.0, &output.0, "");
     }
 
@@ -215,7 +214,7 @@ fn readable_tests() {
 #[test]
 fn test_compliant() {
     fn def(ctx: &mut Context, input: &str) {
-        let dir = directive::parser::directive(input)
+        let dir = grammar::directive(input)
             .expect("test directive must be parsable")
             .expect("test must specify exactly one directive");
         let def = match dir {
@@ -227,9 +226,9 @@ fn test_compliant() {
 
     fn exp(ctx: &Context, input: &str, output: &str) {
         log::debug!("=============================================");
-        let input = directive::parser::token_stream(input).unwrap().as_ths();
-        let expected = directive::parser::token_stream(output).unwrap();
-        let actual = TokenStream::from_ths(expand(&input[..], ctx).unwrap());
+        let input = grammar::token_stream(input).unwrap();
+        let expected = grammar::token_stream(output).unwrap();
+        let actual = input.expand(&ctx).unwrap();
         log::debug!("expected = {:?}", expected);
         log::debug!("actual = {:?}", actual);
         assert_eq!(actual, expected, "(actual is on the left)");

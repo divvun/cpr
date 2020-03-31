@@ -2,12 +2,15 @@ use super::Expr;
 use quine_mc_cluskey as qmc;
 use std::collections::HashMap;
 
+// Maps cpr `Expr` to an `u8` term for Quine Mc-Cluskey simplification.
 pub struct Terms {
     map: HashMap<Expr, u8>,
 }
 
 impl Terms {
-    const MAX_TERMS: usize = 12;
+    /// Same term limit as clippy (per @oli_obk), "9 or 10 is probably still reasonable,
+    /// just not for a tool that should be fast"
+    const MAX_TERMS: usize = 8;
 
     pub fn new() -> Self {
         Self {
@@ -31,10 +34,12 @@ impl Terms {
     }
 }
 
+/// Can be turned into a QMC boolean expression
 pub trait AsBool {
     fn as_bool(&self, terms: &mut Terms) -> qmc::Bool;
 }
 
+/// Can be built form a QMC boolean expression
 pub trait FromBool {
     fn from_bool(v: qmc::Bool, terms: &Terms) -> Self;
 }

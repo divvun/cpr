@@ -1,11 +1,11 @@
 #![allow(dead_code)]
 
 mod devenv;
-mod parser;
+mod frontend;
 mod translator;
 
 use argh::*;
-use parser::Parser;
+use frontend::Parser;
 use std::{error::Error, path::PathBuf};
 
 #[derive(FromArgs)]
@@ -56,9 +56,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         PathBuf::from(r"."),
     ];
 
-    log::debug!("System paths: {:#?}", system_paths);
+    log::info!("System paths: {:#?}", system_paths);
     Parser::new(args.file, system_paths, vec![]).unwrap();
-    log::debug!("Done parsing!");
+    log::info!("Done parsing!");
 
     Ok(())
 }

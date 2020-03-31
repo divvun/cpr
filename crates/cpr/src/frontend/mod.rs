@@ -1,95 +1,19 @@
-mod directive;
-mod expr;
+//! Drives the process of preprocessing and parsing C header and its dependencies.
+
+mod expand;
+mod grammar;
 mod utils;
 
-use directive::Directive;
+use expand::Expandable;
+use grammar::{Define, Directive, Expr, Include, Token, TokenSeq};
 use thiserror::Error;
 
-use expr::{Expr, TokenStream};
 use lang_c::{driver, env::Env};
 use std::{
     collections::{HashMap, HashSet},
     fmt, io,
-    path::{Path, PathBuf},
+    path::PathBuf,
 };
-
-const MAX_BLOCK_LINES: usize = 150;
-
-/// A C token
-#[derive(Clone, PartialEq, Eq, Hash, Debug)]
-pub enum Token {
-    /// `##`
-    Paste,
-    /// `#@`
-    Charize,
-    /// `#`
-    Stringize,
-    Defined,
-    /// whitespace
-    WS,
-    /// punctuation
-    Pun(char),
-    Name(String),
-    /// integer
-    Int(i64),
-    /// string
-    Str(String),
-}
-
-impl From<char> for Token {
-    fn from(c: char) -> Self {
-        Self::Pun(c)
-    }
-}
-
-impl Token {
-    fn name(s: &str) -> Self {
-        Self::Name(s.to_string())
-    }
-
-    fn int(i: i64) -> Self {
-        Self::Int(i)
-    }
-
-    fn bool(b: bool) -> Self {
-        Self::int(if b { 1 } else { 0 })
-    }
-}
-
-impl fmt::Display for Token {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Token::Paste => f.write_str("##"),
-            Token::Charize => f.write_str("#@"),
-            Token::Stringize => f.write_str("#"),
-            Token::Defined => f.write_str("defined"),
-            Token::WS => f.write_str(" "),
-            Token::Pun(c) => write!(f, "{}", c),
-            Token::Name(n) => write!(f, "{}", n),
-            Token::Int(i) => write!(f, "{}", i),
-            Token::Str(s) => write!(f, "{:?}", s),
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct MacroParams {
-    names: Vec<String>,
-    has_trailing: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum Define {
-    ObjectLike {
-        name: String,
-        value: TokenStream,
-    },
-    FunctionLike {
-        name: String,
-        params: MacroParams,
-        value: TokenStream,
-    },
-}
 
 #[derive(Debug, Clone)]
 pub struct Context {
@@ -177,78 +101,6 @@ impl Define {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum Include {
-    System(PathBuf),
-    Quoted(PathBuf),
-    TokenStream(TokenStream),
-}
-
-impl fmt::Display for Include {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Include::System(p) => write!(f, "<{}>", p.to_string_lossy()),
-            Include::Quoted(p) => write!(f, r#""{}""#, p.to_string_lossy()),
-            Include::TokenStream(ts) => write!(f, "{}", ts),
-        }
-    }
-}
-
-impl Include {
-    #[inline]
-    fn resolve_system(candidate: &Path, system_paths: &[PathBuf]) -> Option<PathBuf> {
-        for path in system_paths {
-            let merged = path.join(candidate);
-            if merged.exists() {
-                return Some(merged);
-            }
-        }
-        None
-    }
-
-    #[inline]
-    fn resolve_quoted(
-        candidate: &Path,
-        quoted_paths: &[PathBuf],
-        working_path: &Path,
-    ) -> Option<PathBuf> {
-        // Check local path first
-        let merged = working_path.join(candidate);
-        if merged.exists() {
-            return Some(merged);
-        }
-
-        // Check quoted paths
-        for path in quoted_paths {
-            let merged = path.join(candidate);
-            if merged.exists() {
-                return Some(merged);
-            }
-        }
-        None
-    }
-
-    fn resolve(
-        &self,
-        system_paths: &[PathBuf],
-        quoted_paths: &[PathBuf],
-        working_path: &Path,
-    ) -> Option<PathBuf> {
-        match self {
-            Include::System(path) => Self::resolve_system(path, system_paths),
-            Include::Quoted(path) => {
-                // Fallback to system lookup
-                Self::resolve_quoted(path, quoted_paths, working_path)
-                    // Fallback to system lookup
-                    .or_else(|| Self::resolve_system(path, system_paths))
-            }
-            Include::TokenStream(tokens) => {
-                unimplemented!("tokens: {:?}", tokens);
-            }
-        }
-    }
-}
-
 #[derive(Error, Debug)]
 pub enum Error {
     #[error("invalid file")]
@@ -261,8 +113,6 @@ pub enum Error {
     NotFound(Include),
     #[error("C syntax error: {0}")]
     Syntax(SyntaxError),
-    #[error("Could not knit atoms together. Source = \n{0}")]
-    CouldNotKnit(String),
 }
 
 #[derive(Debug)]
@@ -339,7 +189,7 @@ impl Parser {
             ordered_includes: vec![root.clone()],
             root,
         };
-        parser.parse_all_2()?;
+        parser.parse_all()?;
 
         Ok(parser)
     }
@@ -356,32 +206,34 @@ impl Parser {
         Ok(std::fs::read_to_string(&path)?)
     }
 
-    fn parse_all_2(&mut self) -> Result<(), Error> {
+    fn parse_all(&mut self) -> Result<(), Error> {
         let mut env = Env::with_msvc();
         let mut ctx = Context::new();
-        self.parse_2(&mut ctx, &mut env, self.root.clone())?;
+        self.parse(&mut ctx, &mut env, self.root.clone())?;
         Ok(())
     }
 
-    fn parse_2(&mut self, ctx: &mut Context, env: &mut Env, incl: Include) -> Result<(), Error> {
+    fn parse(&mut self, ctx: &mut Context, env: &mut Env, incl: Include) -> Result<(), Error> {
+        const MAX_BLOCK_LINES: usize = 150;
+
         let source = self.read_include(&incl)?;
         let source = utils::process_line_continuations_and_comments(&source);
         let mut lines = source.lines().enumerate();
         let mut block: Vec<String> = Vec::new();
 
-        let mut stack: Vec<(bool, TokenStream)> = Vec::new();
+        let mut stack: Vec<(bool, TokenSeq)> = Vec::new();
         let mut if_stack: Vec<Vec<bool>> = Vec::new();
 
-        fn path_taken(stack: &[(bool, TokenStream)]) -> bool {
+        fn path_taken(stack: &[(bool, TokenSeq)]) -> bool {
             stack.iter().all(|(b, _)| *b == true)
         }
 
-        fn parse_expr(ctx: &Context, tokens: &TokenStream) -> Expr {
+        fn parse_expr(ctx: &Context, tokens: &TokenSeq) -> Expr {
             let expr_string = tokens
-                .must_expand_single(ctx)
+                .expand(ctx)
                 .expect("all expressions should expand")
                 .to_string();
-            directive::parser::expr(&expr_string).unwrap_or_else(|e| {
+            grammar::expr(&expr_string).unwrap_or_else(|e| {
                 panic!(
                     "could not parse expression:\n\n{}\n\ngot error: {:?}",
                     expr_string, e
@@ -403,7 +255,7 @@ impl Parser {
 
             log::trace!("====================================");
             log::trace!("{:?}:{} | {}", incl, lineno, line);
-            let dir = directive::parser::directive(line).unwrap_or_else(|e| {
+            let dir = grammar::directive(line).unwrap_or_else(|e| {
                 panic!("could not parse directive `{}`\n\ngot error: {:?}", line, e)
             });
             match dir {
@@ -417,7 +269,7 @@ impl Parser {
                                 dep,
                                 stack
                             );
-                            self.parse_2(ctx, env, dep)?;
+                            self.parse(ctx, env, dep)?;
                         } else {
                             log::debug!("path not taken, not including");
                         }
@@ -507,20 +359,20 @@ impl Parser {
                     }
 
                     let mut tokens =
-                        directive::parser::token_stream(line).expect("should tokenize everything");
+                        grammar::token_stream(line).expect("should tokenize everything");
 
-                    let mut expanded = tokens.must_expand_single(ctx);
+                    let mut expanded = tokens.expand(ctx);
                     'aggregate: loop {
                         match expanded {
                             Ok(_) => break 'aggregate,
                             Err(e) if e.needs_more() => {
                                 let (_, next_line) =
                                     lines.next().expect("ran out of lines while aggregating");
-                                let mut next_tokens = directive::parser::token_stream(next_line)
+                                let mut next_tokens = grammar::token_stream(next_line)
                                     .expect("should tokenize everything");
                                 tokens.0.push(Token::WS);
                                 tokens.0.append(&mut next_tokens.0);
-                                expanded = tokens.must_expand_single(ctx);
+                                expanded = tokens.expand(ctx);
                             }
                             Err(e) => panic!(
                                 "while expanding non-directive line\n\n{}\n\ngot error: {}",
@@ -553,7 +405,7 @@ impl Parser {
                         );
                     }
 
-                    match directive::parser::pragma(&block_str) {
+                    match grammar::pragma(&block_str) {
                         Ok(p) => {
                             log::info!("skipping pragma:\n__pragma{}", p);
                             block.clear();

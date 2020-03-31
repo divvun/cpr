@@ -7,20 +7,16 @@ fn name(s: &str) -> T {
     T::Name(s.into())
 }
 
-fn int(i: i64) -> T {
-    T::Int(i)
-}
-
 #[test]
 fn not_a_directive() {
-    assert_eq!(parser::directive(""), Ok(None));
-    assert_eq!(parser::directive("int foobar();"), Ok(None));
+    assert_eq!(directive(""), Ok(None));
+    assert_eq!(directive("int foobar();"), Ok(None));
 }
 
 #[test]
 fn define_objectlike_empty() {
     assert_eq!(
-        parser::directive("#define FOO"),
+        directive("#define FOO"),
         Ok(Some(Directive::Define(Define::ObjectLike {
             name: "FOO".into(),
             value: vec![].into()
@@ -31,7 +27,7 @@ fn define_objectlike_empty() {
 #[test]
 fn define_objectlike() {
     assert_eq!(
-        parser::directive("#define FOO BAR"),
+        directive("#define FOO BAR"),
         Ok(Some(Directive::Define(Define::ObjectLike {
             name: "FOO".into(),
             value: vec![name("BAR")].into()
@@ -42,7 +38,7 @@ fn define_objectlike() {
 #[test]
 fn define_objectlike_2() {
     assert_eq!(
-        parser::directive("#define FOO BAR(BAZ)"),
+        directive("#define FOO BAR(BAZ)"),
         Ok(Some(Directive::Define(Define::ObjectLike {
             name: "FOO".into(),
             value: vec![name("BAR"), '('.into(), name("BAZ"), ')'.into(),].into()
@@ -53,7 +49,7 @@ fn define_objectlike_2() {
 #[test]
 fn define_functionlike_1() {
     assert_eq!(
-        parser::directive("#define FOO(X, Y) X + Y"),
+        directive("#define FOO(X, Y) X + Y"),
         Ok(Some(Directive::Define(Define::FunctionLike {
             name: "FOO".into(),
             params: MacroParams {
@@ -68,7 +64,7 @@ fn define_functionlike_1() {
 #[test]
 fn define_functionlike_variadic_1() {
     assert_eq!(
-        parser::directive("#define WHY(...) __VA_ARGS__"),
+        directive("#define WHY(...) __VA_ARGS__"),
         Ok(Some(Directive::Define(Define::FunctionLike {
             name: "WHY".into(),
             params: MacroParams {
@@ -83,7 +79,7 @@ fn define_functionlike_variadic_1() {
 #[test]
 fn define_functionlike_variadic_2() {
     assert_eq!(
-        parser::directive("#define WHY(a, b, ...) a b __VA_ARGS__"),
+        directive("#define WHY(a, b, ...) a b __VA_ARGS__"),
         Ok(Some(Directive::Define(Define::FunctionLike {
             name: "WHY".into(),
             params: MacroParams {
@@ -98,7 +94,7 @@ fn define_functionlike_variadic_2() {
 #[test]
 fn include_angle() {
     assert_eq!(
-        parser::directive("#include <foo/bar/baz.h>"),
+        directive("#include <foo/bar/baz.h>"),
         Ok(Some(Directive::Include(Include::System(
             "foo/bar/baz.h".into()
         ))))
@@ -108,7 +104,7 @@ fn include_angle() {
 #[test]
 fn include_quoted() {
     assert_eq!(
-        parser::directive(r#"#include "shared/um/sure.h""#),
+        directive(r#"#include "shared/um/sure.h""#),
         Ok(Some(Directive::Include(Include::Quoted(
             "shared/um/sure.h".into()
         ))))
@@ -118,14 +114,14 @@ fn include_quoted() {
 #[test]
 fn ifdef() {
     assert_eq!(
-        parser::directive("#ifdef FOO_BAR"),
+        directive("#ifdef FOO_BAR"),
         Ok(Some(Directive::If(
             vec![Token::Defined, '('.into(), name("FOO_BAR"), ')'.into()].into()
         ))),
     );
 
     assert_eq!(
-        parser::directive("#ifndef FOO_BAR"),
+        directive("#ifndef FOO_BAR"),
         Ok(Some(Directive::If(
             vec![
                 '!'.into(),
