@@ -236,6 +236,12 @@ fn test_compliant() {
     }
 
     let mut ctx = Context::new();
+    exp(
+        &ctx,
+        r#""C strings" " can be" " disjoint""#,
+        r#""C strings can be disjoint""#,
+    );
+
     def(&mut ctx, "#define EMPTY() ");
     def(&mut ctx, "#define IDENTITY(x) x");
     def(&mut ctx, "#define ADD(x, y) x+y");
@@ -244,6 +250,14 @@ fn test_compliant() {
     def(&mut ctx, "#define PASTE(x, y) x ## y");
     def(&mut ctx, "#define STRGZ(x) # x");
     def(&mut ctx, "#define STRGZ2(x, y) # x # y");
+    def(&mut ctx, "#define STRGZ3(x, y, z) # x # y # z");
+    def(&mut ctx, "#define INC(x,y) INC(x,INC(x,y))");
+
+    exp(&ctx, "defined EMPTY", "1");
+    exp(&ctx, "defined (EMPTY)", "1");
+    exp(&ctx, "defined(EMPTY )", "1");
+    exp(&ctx, "defined  (    EMPTY  ) ", "1 ");
+    exp(&ctx, "defined NOTDEFINED", "0");
 
     exp(&ctx, "EMPTY()", "");
     exp(&ctx, "1+EMPTY()3", "1+3");
@@ -256,4 +270,6 @@ fn test_compliant() {
     exp(&ctx, "STRGZ(2 + 3)", r#""2 + 3""#);
     exp(&ctx, "STRGZ(   2 + 3        )", r#""2 + 3""#);
     exp(&ctx, "STRGZ2(  foo ,  bar )", r#""foo" "bar""#);
+    exp(&ctx, "STRGZ3( foo, bar , baz)", r#""foo" "bar" "baz""#);
+    exp(&ctx, "INC(1,2)", "INC(1,INC(1,2))")
 }

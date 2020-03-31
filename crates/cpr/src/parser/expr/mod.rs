@@ -4,7 +4,7 @@ use super::{
 };
 use qmc_conversion::*;
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashSet,
     fmt,
     ops::{Add, BitAnd, BitOr, Not},
 };
@@ -252,14 +252,58 @@ pub fn expand(ts: &[THS], ctx: &Context) -> Vec<THS> {
         _ => {}
     }
 
+    // Concatenate strings
     match ts {
-        [THS(Token::Str(l), hs_l), rest @ ..] => match ws_triml(rest) {
-            [THS(Token::Str(r), hs_r), rest @ ..] => {
-                return concat(
-                    &[THS(Token::Str(format!("{}{}", l, r)), hs_union(hs_l, hs_r))],
-                    &expand(rest, ctx),
-                )
+        [THS(Token::Str(l), hs_l), rest @ ..] => {
+            let mut input = rest;
+            let mut hs = hs_l.clone();
+            let mut parts = vec![l.as_str()];
+
+            'concat_strings: loop {
+                match ws_triml(input) {
+                    [THS(Token::Str(r), hs_r), rest @ ..] => {
+                        parts.push(r.as_str());
+                        hs = hs_union(&hs, &hs_r);
+                        input = rest;
+                    }
+                    _ => break 'concat_strings,
+                }
             }
+            let rest = input;
+
+            return concat(&[THS(Token::Str(parts.join("")), hs)], &expand(rest, ctx));
+        }
+        _ => {}
+    }
+
+    // Defined
+    fn expand_defined(name: &str, hs: &HS, rest: &[THS], ctx: &Context) -> Vec<THS> {
+        match ctx.lookup(name) {
+            SymbolState::Undefined => concat(&[THS(Token::Int(0), hs.clone())], &expand(rest, ctx)),
+            SymbolState::Defined(_) | SymbolState::MultipleDefines(_) => {
+                concat(&[THS(Token::Int(1), hs.clone())], &expand(rest, ctx))
+            }
+            SymbolState::Unknown => panic!("todo: definedness of {:?} is unknown", name),
+        }
+    }
+
+    match ts {
+        [THS(Token::Defined, hs), rest @ ..] => match ws_triml(rest) {
+            [THS(Token::Name(name), _), rest @ ..] => {
+                return expand_defined(name, hs, rest, ctx);
+            }
+            [THS(Token::Pun('('), _), rest @ ..] => match ws_triml(rest) {
+                [THS(Token::Name(name), _), rest @ ..] => match ws_triml(rest) {
+                    [THS(Token::Pun(')'), _), rest @ ..] => {
+                        return expand_defined(name, hs, rest, ctx);
+                    }
+                    _ => panic!("missing closing paren for `define({:?})`", name),
+                },
+                _ => panic!(
+                    "expected name or '(' after defined, but instead found {:?}",
+                    rest
+                ),
+            },
             _ => {}
         },
         _ => {}
@@ -465,15 +509,7 @@ impl TokenStream {
     }
 
     pub fn must_expand_single(&self, ctx: &Context) -> Self {
-        self.must_expand_single_with_blacklist(ctx, &HashSet::new())
-    }
-
-    pub fn must_expand_single_with_blacklist(
-        &self,
-        ctx: &Context,
-        blacklist: &HashSet<String>,
-    ) -> Self {
-        let mut expansions = self.expand_with_blacklist(ctx, blacklist);
+        let mut expansions = self.expand(ctx);
         assert_eq!(
             expansions.len(),
             1,
@@ -486,268 +522,10 @@ impl TokenStream {
     }
 
     pub fn expand(&self, ctx: &Context) -> Vec<(Expr, Self)> {
-        self.expand_with_blacklist(ctx, &HashSet::new())
-    }
-
-    pub fn expand_with_blacklist(
-        &self,
-        ctx: &Context,
-        blacklist: &HashSet<String>,
-    ) -> Vec<(Expr, Self)> {
-        let mut output = vec![(Expr::bool(true), Self::new())];
-        let mut slice = &self.0[..];
-
-        fn push(output: &mut Vec<(Expr, TokenStream)>, token: Token) {
-            for (_expr, stream) in output.iter_mut() {
-                stream.0.push(token.clone());
-            }
-        }
-
-        struct ParseResult<'a, T> {
-            rest: &'a [Token],
-            data: T,
-        }
-
-        fn skip_ws(mut input: &[Token]) -> &[Token] {
-            loop {
-                match input {
-                    [Token::WS, rest @ ..] => {
-                        input = rest;
-                    }
-                    rest => return rest,
-                }
-            }
-        }
-
-        fn parse_defined(mut input: &[Token]) -> Option<ParseResult<&String>> {
-            match input {
-                [Token::Defined, rest @ ..] => {
-                    input = skip_ws(rest);
-                }
-                _ => return None,
-            }
-
-            match input {
-                [Token::Pun('('), rest @ ..] => match skip_ws(rest) {
-                    [Token::Name(name), rest @ ..] => match skip_ws(rest) {
-                        [Token::Pun(')'), rest @ ..] => {
-                            return Some(ParseResult { rest, data: name });
-                        }
-                        _ => None,
-                    },
-                    _ => None,
-                },
-                [Token::Name(name), rest @ ..] => return Some(ParseResult { rest, data: name }),
-                _ => None,
-            }
-        }
-
-        fn parse_arglist<'a, 'b>(
-            name: &'a str,
-            mut input: &'b [Token],
-        ) -> ParseResult<'b, Vec<TokenStream>> {
-            let original_input = input;
-
-            let mut depth;
-            input = skip_ws(input);
-
-            match input {
-                [Token::Pun('('), rest @ ..] => {
-                    input = rest;
-                    depth = 1;
-                }
-                _ => panic!(
-                    "macro call to {}: missing opening paren, found instead: {:?}",
-                    name, input
-                ),
-            }
-
-            let mut args: Vec<TokenStream> = vec![vec![].into()];
-
-            fn push(args: &mut Vec<TokenStream>, tok: Token) {
-                args.last_mut().unwrap().0.push(tok);
-            }
-
-            fn new_arg(args: &mut Vec<TokenStream>) {
-                args.push(vec![].into());
-            }
-
-            while depth > 0 {
-                input = skip_ws(input);
-
-                match depth {
-                    1 => match input {
-                        [Token::Pun(','), rest @ ..] => {
-                            new_arg(&mut args);
-                            input = rest;
-                        }
-                        [tok @ Token::Pun('('), rest @ ..] => {
-                            depth += 1;
-                            push(&mut args, tok.clone());
-                            input = rest;
-                        }
-                        [Token::Pun(')'), rest @ ..] => {
-                            depth -= 1;
-                            input = rest;
-                        }
-                        [tok, rest @ ..] => {
-                            push(&mut args, tok.clone());
-                            input = rest;
-                        }
-                        [] => panic!("unterminated call to macro {}: {:?}", name, original_input),
-                    },
-                    _ => match input {
-                        [tok @ Token::Pun('('), rest @ ..] => {
-                            depth += 1;
-                            push(&mut args, tok.clone());
-                            input = rest;
-                        }
-                        [tok @ Token::Pun(')'), rest @ ..] => {
-                            depth -= 1;
-                            push(&mut args, tok.clone());
-                            input = rest;
-                        }
-                        [tok, rest @ ..] => {
-                            push(&mut args, tok.clone());
-                            input = rest;
-                        }
-                        [] => panic!(
-                            "unterminated paren in call to macro {}: {:?}",
-                            name, original_input
-                        ),
-                    },
-                }
-            }
-
-            ParseResult {
-                data: args,
-                rest: input,
-            }
-        }
-
-        'outer: loop {
-            if let Some(res) = parse_defined(slice) {
-                log::debug!("expanding defined({:?})", res.data);
-                match ctx.lookup(res.data) {
-                    SymbolState::Unknown => {
-                        // don't replace anything
-                    }
-                    SymbolState::Undefined => {
-                        slice = res.rest;
-                        push(&mut output, Token::bool(false));
-                        continue 'outer;
-                    }
-                    SymbolState::Defined(_) | SymbolState::MultipleDefines(_) => {
-                        slice = res.rest;
-                        push(&mut output, Token::bool(true));
-                        continue 'outer;
-                    }
-                };
-            }
-
-            match slice {
-                [] => break 'outer,
-                [Token::Name(name), rest @ ..] if !blacklist.contains(name) => {
-                    slice = rest;
-
-                    match ctx.defines.get(name) {
-                        None => {} // can't replace,
-                        Some(defs) => {
-                            let mut combined_output = vec![];
-                            for (l_expr, l_stream) in output {
-                                for (r_expr, r_def) in defs {
-                                    match r_def {
-                                        Define::ObjectLike {
-                                            value: r_stream, ..
-                                        } => {
-                                            combined_output.push((
-                                                l_expr.clone() & r_expr.clone(),
-                                                l_stream.clone() + r_stream.clone(),
-                                            ));
-                                        }
-                                        Define::FunctionLike {
-                                            name,
-                                            params,
-                                            value,
-                                        } => {
-                                            let res = parse_arglist(name, slice);
-                                            slice = res.rest;
-                                            let args = res.data;
-
-                                            log::debug!("name = {:?}", name);
-                                            log::debug!("params = {:?}", params);
-                                            log::debug!("args = {:?}", args);
-                                            log::debug!("value = {:?}", value);
-
-                                            let mut macro_blacklist = blacklist.clone();
-                                            macro_blacklist.insert(name.clone());
-
-                                            let args: Vec<TokenStream> = args
-                                                .into_iter()
-                                                .map(|x| {
-                                                    x.must_expand_single_with_blacklist(
-                                                        ctx,
-                                                        &macro_blacklist,
-                                                    )
-                                                })
-                                                .collect();
-                                            log::debug!("expanded args = {:?}", args);
-
-                                            let param_map = if params.names.len() == 0 {
-                                                HashMap::new()
-                                            } else {
-                                                // TODO: variadic macros
-                                                assert_eq!(params.names.len(), args.len(), "must pass exact number of arguments when invoking macro");
-                                                params
-                                                    .names
-                                                    .iter()
-                                                    .zip(args.iter())
-                                                    .map(|(name, arg)| (name.to_string(), arg))
-                                                    .collect()
-                                            };
-
-                                            let mut res: TokenStream = vec![].into();
-                                            for tok in &value.0 {
-                                                match tok {
-                                                    Token::Name(name) => {
-                                                        if let Some(arg) = param_map.get(name) {
-                                                            res.0.extend(arg.0.iter().cloned());
-                                                        } else {
-                                                            res.0.push(Token::Name(name.clone()));
-                                                        }
-                                                    }
-                                                    tok => res.0.push(tok.clone()),
-                                                }
-                                            }
-
-                                            for (r2_expr, r2_stream) in
-                                                res.expand_with_blacklist(ctx, &macro_blacklist)
-                                            {
-                                                combined_output.push((
-                                                    l_expr.clone()
-                                                        & r_expr.clone()
-                                                        & r2_expr.clone(),
-                                                    l_stream.clone() + r2_stream.clone(),
-                                                ));
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                            output = combined_output;
-                            continue 'outer;
-                        }
-                    };
-
-                    push(&mut output, Token::Name(name.clone()));
-                }
-                [token, rest @ ..] => {
-                    slice = rest;
-                    push(&mut output, token.clone());
-                }
-            }
-        }
-        output
+        return vec![(
+            Expr::bool(true),
+            Self::from_ths(expand(&self.as_ths(), ctx)),
+        )];
     }
 
     pub fn parse(&self) -> Expr {
