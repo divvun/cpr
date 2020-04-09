@@ -50,12 +50,23 @@ impl Translator<'_> {
                 node: declaration, ..
             }) = &extdecl
             {
+                dbg!(&declaration);
+                for spec in nodes(&declaration.specifiers) {
+                    match spec {
+                        ast::DeclarationSpecifier::TypeSpecifier(ts) => {
+                            self.predeclare_typespec(&ts.node);
+                        }
+                        _ => {}
+                    }
+                }
+
                 if declaration.declarators.is_empty() {
                     for spec in nodes(&declaration.specifiers[..]) {
                         self.visit_freestanding_specifier(spec);
                     }
                 } else {
                     for init_declarator in nodes(&declaration.declarators[..]) {
+                        dbg!(&init_declarator);
                         let declarator = &init_declarator.declarator.node;
                         self.visit_declarator(declaration, declarator);
                     }
@@ -63,6 +74,16 @@ impl Translator<'_> {
             } else {
                 log::debug!("visit_unit: not a Declaration: {:#?}", extdecl);
             }
+        }
+    }
+
+    fn predeclare_typespec(&mut self, ts: &ast::TypeSpecifier) {
+        match ts {
+            ast::TypeSpecifier::Struct(struty) => {
+                let sd = self.visit_struct(&struty.node);
+                self.push(sd);
+            }
+            _ => {}
         }
     }
 

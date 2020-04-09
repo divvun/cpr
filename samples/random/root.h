@@ -23,14 +23,14 @@
 // typedef signed long long SLONG_LONG;
 // typedef signed long long int SLONG_LONG_INT;
 
-struct s {
-    int a;
-    int b;
-} s;
-
 // typedef enum _EXCEPTION_DISPOSITION {
 //   ExceptionContinueExecution = 0,
 //   ExceptionContinueSearch = 1,
 //   ExceptionNestedException = 2,
 //   ExceptionCollidedUnwind = 3,
 // } EXCEPTION_DISPOSITION, *PEXCEPTION_DISPOSITION;
+
+typedef struct s {
+    int a;
+    int b;
+} s, *sp;

@@ -175,7 +175,12 @@ pub(crate) struct AliasDeclaration {
 
 impl fmt::Display for AliasDeclaration {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "type {name} = {typ};", name = self.name, typ = self.typ)
+        writeln!(
+            f,
+            "pub type {name} = {typ};",
+            name = self.name,
+            typ = self.typ
+        )
     }
 }
 
