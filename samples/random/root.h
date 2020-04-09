@@ -9,8 +9,8 @@
 
 // typedef unsigned short USHORT;
 // typedef unsigned short int USHORT_INT;
-// typedef unsigned int UINT;
-// typedef unsigned long ULONG;
+typedef unsigned int UINT;
+typedef unsigned long ULONG;
 // typedef unsigned long int ULONG_INT;
 // typedef unsigned long long ULONG_LONG;
 // typedef unsigned long long int ULONG_LONG_INT;
@@ -32,5 +32,7 @@
 
 typedef struct s {
     int a;
-    int b;
+    const struct lol {
+        int inner;
+    } *b;
 } s, *sp;
