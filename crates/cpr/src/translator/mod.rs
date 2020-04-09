@@ -1,5 +1,8 @@
-use lang_c::ast;
-use lang_c::span::Node;
+use lang_c::{ast, span::Node};
+use std::{
+    collections::hash_map::DefaultHasher,
+    hash::{Hash, Hasher},
+};
 
 mod rg;
 mod utils;
@@ -120,12 +123,12 @@ impl Translator<'_> {
     #[must_use]
     fn visit_struct(&mut self, struty: &ast::StructType) -> rg::StructDeclaration {
         let id = match struty.identifier.as_ref().map(borrow_node) {
-            Some(x) => x,
-            None => panic!("anonymous structs aren't supported"),
+            Some(x) => x.name.clone(),
+            None => self.hash_name(&struty),
         };
 
         let mut res = rg::StructDeclaration {
-            name: rg::Identifier::struct_name(&id.name),
+            name: rg::Identifier::struct_name(&id),
             fields: Default::default(),
         };
 
@@ -235,10 +238,10 @@ impl Translator<'_> {
                 let id = &struty
                     .identifier
                     .as_ref()
-                    .expect("anonymous structs are not suported")
-                    .node;
+                    .map(|x| x.node.name.clone())
+                    .unwrap_or_else(|| self.hash_name(struty));
 
-                rg::Type::Name(rg::Identifier::struct_name(&id.name))
+                rg::Type::Name(rg::Identifier::struct_name(id))
             }
             _ => unimplemented!("don't know how to translate type: {:#?}", typ),
         };
@@ -326,6 +329,15 @@ impl Translator<'_> {
         }
 
         res
+    }
+
+    fn hash_name<T>(&self, t: &T) -> String
+    where
+        T: Hash,
+    {
+        let mut h = DefaultHasher::new();
+        t.hash(&mut h);
+        format!("__hash_{:x}", h.finish())
     }
 }
 
