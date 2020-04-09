@@ -57,8 +57,21 @@ fn main() -> Result<(), Box<dyn Error>> {
     ];
 
     log::info!("System paths: {:#?}", system_paths);
-    Parser::new(args.file, system_paths, vec![]).unwrap();
+    let parser = Parser::new(args.file, system_paths, vec![]).unwrap();
     log::info!("Done parsing!");
+
+    for incl in &parser.ordered_includes {
+        let unit = parser.units.get(incl).unwrap();
+        if unit.declarations.is_empty() {
+            continue;
+        }
+        println!();
+        println!("================================");
+        println!("{:?}: {} declarations", incl, unit.declarations.len());
+
+        let unit = translator::translate_unit(&unit.declarations);
+        println!("{}", unit);
+    }
 
     Ok(())
 }

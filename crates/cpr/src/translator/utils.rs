@@ -120,7 +120,7 @@ impl VoidExt for ast::FunctionDeclarator {
     }
 }
 
-pub(crate) trait Typed {
+pub(crate) trait Typed: std::fmt::Debug {
     fn declarator(&self) -> Option<&ast::Declarator>;
     fn specifiers(&self) -> Box<dyn Iterator<Item = &dyn AsSpecifierQualifier> + '_>;
 
@@ -184,6 +184,7 @@ impl Typed for ast::ParameterDeclaration {
     }
 }
 
+#[derive(Debug)]
 pub(crate) struct DeclTuple<'a> {
     pub(crate) dtion: &'a ast::Declaration,
     pub(crate) dtor: &'a ast::Declarator,
@@ -199,6 +200,7 @@ impl<'a> Typed for DeclTuple<'a> {
     }
 }
 
+#[derive(Debug)]
 pub(crate) struct StructFieldTuple<'a> {
     pub(crate) field: &'a ast::StructField,
     pub(crate) dtor: &'a ast::Declarator,

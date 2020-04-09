@@ -15,7 +15,6 @@ static RUST_KEYWORDS: Lazy<HashSet<String>> = Lazy::new(|| {
         .map(|x| x.trim())
         .filter(|x| !x.is_empty())
     {
-        println!("Reserved keyword: {:#?}", kw);
         set.insert(kw.to_string());
     }
     set

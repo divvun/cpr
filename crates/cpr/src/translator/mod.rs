@@ -16,8 +16,8 @@ impl Translator {
         self.unit.toplevels.push(t.into());
     }
 
-    fn visit_unit(&mut self, unit: &ast::TranslationUnit) {
-        for extdecl in nodes(&unit.0) {
+    fn visit_unit(&mut self, declarations: &[ast::ExternalDeclaration]) {
+        for extdecl in declarations {
             if let ast::ExternalDeclaration::Declaration(Node {
                 node: declaration, ..
             }) = &extdecl
@@ -96,20 +96,59 @@ impl Translator {
 
     #[must_use]
     fn visit_type(&mut self, typ: &dyn Typed) -> rg::Type {
-        let ts = typ
-            .typespecs()
-            .nth(0)
-            .expect("should have exactly one typespec");
+        let mut signed = None;
+        let mut longness = 0;
+        let original_specs: Vec<_> = typ.typespecs().collect();
+        let mut specs = &original_specs[..];
+        println!("specs = {:?}", specs);
 
-        let mut res = match ts {
-            ast::TypeSpecifier::Int => rg::Type::Name(rg::Identifier::name("i32")),
-            ast::TypeSpecifier::Short => rg::Type::Name(rg::Identifier::name("i16")),
-            ast::TypeSpecifier::Char => rg::Type::Name(rg::Identifier::name("i8")),
-            ast::TypeSpecifier::Void => rg::Type::Name(rg::Identifier::name("()")),
-            ast::TypeSpecifier::TypedefName(Node { node: id, .. }) => {
+        use ast::TypeSpecifier as TS;
+        'process_prefixes: loop {
+            match specs {
+                [TS::Unsigned, rest @ ..] => {
+                    signed = Some(false);
+                    specs = rest;
+                }
+                [TS::Signed, rest @ ..] => {
+                    signed = Some(true);
+                    specs = rest;
+                }
+                [TS::Long, rest @ ..] => {
+                    longness += 1;
+                    specs = rest;
+                }
+                [] => {
+                    if longness > 0 || signed.is_some() {
+                        specs = &[TS::Int];
+                        break 'process_prefixes;
+                    } else {
+                        panic!("unrecognized typespecs: {:#?}");
+                    }
+                }
+                _ => break 'process_prefixes,
+            }
+        }
+
+        fn pick_sign(signed: Option<bool>, uver: &str, sver: &str) -> rg::Type {
+            let name = if signed.unwrap_or(true) { sver } else { uver };
+            rg::Type::Name(rg::Identifier::name(name))
+        }
+
+        let mut res = match &specs[0] {
+            TS::Int => {
+                if longness > 0 {
+                    pick_sign(signed, "u64", "i64")
+                } else {
+                    pick_sign(signed, "u32", "i32")
+                }
+            }
+            TS::Short => pick_sign(signed, "u16", "i16"),
+            TS::Char => pick_sign(signed, "u8", "i8"),
+            TS::Void => rg::Type::Name(rg::Identifier::name("()")),
+            TS::TypedefName(Node { node: id, .. }) => {
                 rg::Type::Name(rg::Identifier::name(&id.name))
             }
-            ast::TypeSpecifier::Struct(Node { node: struty, .. }) => {
+            TS::Struct(Node { node: struty, .. }) => {
                 let id = &struty
                     .identifier
                     .as_ref()
@@ -118,7 +157,7 @@ impl Translator {
 
                 rg::Type::Name(rg::Identifier::struct_name(&id.name))
             }
-            _ => unimplemented!(),
+            _ => unimplemented!("don't know how to translate type: {:#?}", typ),
         };
 
         for _d in 0..typ.pointer_depth() {
@@ -207,11 +246,11 @@ impl Translator {
     }
 }
 
-pub(crate) fn translate_unit(unit: &ast::TranslationUnit) -> rg::Unit {
+pub(crate) fn translate_unit(decls: &[ast::ExternalDeclaration]) -> rg::Unit {
     let mut translator = Translator {
         unit: rg::Unit { toplevels: vec![] },
     };
-    translator.visit_unit(unit);
+    translator.visit_unit(decls);
     translator.unit
 }
 

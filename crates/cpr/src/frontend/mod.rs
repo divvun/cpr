@@ -8,7 +8,7 @@ use expand::Expandable;
 use grammar::{Define, Directive, Expr, Include, Token, TokenSeq};
 use thiserror::Error;
 
-use lang_c::{driver, env::Env};
+use lang_c::{ast as c_ast, driver, env::Env};
 use std::{
     collections::{HashMap, HashSet},
     fmt, io,
@@ -159,12 +159,19 @@ where
 }
 
 #[derive(Debug)]
+pub struct Unit {
+    pub dependencies: Vec<Include>,
+    pub declarations: Vec<c_ast::ExternalDeclaration>,
+}
+
+#[derive(Debug)]
 pub struct Parser {
     system_paths: Vec<PathBuf>,
     quoted_paths: Vec<PathBuf>,
     working_path: PathBuf,
     root: Include,
-    ordered_includes: Vec<Include>,
+    pub ordered_includes: Vec<Include>,
+    pub units: HashMap<Include, Unit>,
 }
 
 impl Parser {
@@ -188,6 +195,7 @@ impl Parser {
             working_path,
             ordered_includes: vec![root.clone()],
             root,
+            units: Default::default(),
         };
         parser.parse_all()?;
 
@@ -215,11 +223,17 @@ impl Parser {
 
     fn parse(&mut self, ctx: &mut Context, env: &mut Env, incl: Include) -> Result<(), Error> {
         const MAX_BLOCK_LINES: usize = 150;
+        self.ordered_includes.push(incl.clone());
 
         let source = self.read_include(&incl)?;
         let source = utils::process_line_continuations_and_comments(&source);
         let mut lines = source.lines().enumerate();
         let mut block: Vec<String> = Vec::new();
+
+        let mut unit = Unit {
+            dependencies: vec![],
+            declarations: vec![],
+        };
 
         let mut stack: Vec<(bool, TokenSeq)> = Vec::new();
         let mut if_stack: Vec<Vec<bool>> = Vec::new();
@@ -417,7 +431,10 @@ impl Parser {
                     }
 
                     match lang_c::parser::translation_unit(&block_str, env) {
-                        Ok(_node) => {
+                        Ok(mut node) => {
+                            unit.declarations
+                                .extend(node.0.drain(..).map(|node| node.node));
+
                             log::info!("{}:{} parsed C:\n{}", incl, lineno, block_str);
                             block.clear();
                             continue 'each_line;
@@ -445,6 +462,7 @@ impl Parser {
         }
 
         log::debug!("=== {:?} (end) ===", incl);
+        self.units.insert(incl, unit);
         Ok(())
     }
 }
