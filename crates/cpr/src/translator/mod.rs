@@ -300,7 +300,14 @@ pub(crate) fn translate_unit(config: &Config, decls: &[ast::ExternalDeclaration]
 }
 
 pub(crate) fn prelude() -> &'static str {
-    return "
-    #![allow(non_camel_case_types)]
-    ";
+    use indoc::indoc;
+    return indoc!(
+        r#"
+        // This file is auto-generated. Kindly refrain from editing.
+        // Consider regenerating it instead? If not, at least make your edits
+        // programmatic. Think of the next person. Automate it forward.
+
+        #![allow(non_camel_case_types)]
+        "#
+    );
 }

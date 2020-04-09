@@ -23,7 +23,7 @@
 // typedef signed long long SLONG_LONG;
 // typedef signed long long int SLONG_LONG_INT;
 
-typedef struct s {
+struct s {
     int a;
     int b;
 } s;

@@ -68,6 +68,30 @@ fn main() -> Result<(), Box<dyn Error>> {
         arch: args.arch.unwrap_or_default(),
     };
 
+    use std::{fs, io::Write};
+    let manifest_path = args.output.join("Cargo.toml");
+    fs::create_dir_all(manifest_path.parent().unwrap())?;
+    use indoc::indoc;
+    std::fs::write(
+        &manifest_path,
+        indoc!(
+            r#"
+            [package]
+            name = "bindings"
+            version = "0.1.0"
+            authors = ["Jane Doe <jane@example.org>"]
+            edition = "2018"
+
+            # workaround for cpr itself being a workspace
+            [workspace]
+            "#
+        ),
+    )?;
+
+    let top_level_path = args.output.join("src").join("lib.rs");
+    fs::create_dir_all(top_level_path.parent().unwrap())?;
+    let mut top_level = fs::File::create(&top_level_path)?;
+
     for incl in &parser.ordered_includes {
         let unit = parser.units.get(incl).unwrap();
         if unit.declarations.is_empty() {
@@ -87,12 +111,16 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
         .file_stem()
         .unwrap();
+
+        // TODO: this is all kinds of wrong
+        writeln!(top_level, "pub mod {};", stem.to_string_lossy())?;
+
         let mut out_path = args.output.join("src").join(stem);
         out_path.set_extension("rs");
 
-        use std::{fs, io::Write};
         fs::create_dir_all(out_path.parent().unwrap())?;
         let mut f = fs::File::create(&out_path)?;
+        write!(f, "{}", translator::prelude())?;
         write!(f, "{}", unit)?;
         println!("{:?} => {}", incl, out_path.display());
     }
