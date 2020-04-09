@@ -30,13 +30,14 @@
 //   ExceptionCollidedUnwind = 3,
 // } EXCEPTION_DISPOSITION, *PEXCEPTION_DISPOSITION;
 
-// typedef struct s {
-//     int a;
-//     const struct lol {
-//         int inner;
-//     } *b;
-// } s, *sp;
+// enum WOOPS {
+//     A = 1,
+//     B = 2,
+// };
 
-typedef struct {
+typedef struct s {
     int a;
-} s;
+    const struct {
+        int inner;
+    } *b;
+} s, *sp;

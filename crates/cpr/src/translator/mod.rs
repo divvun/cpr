@@ -337,7 +337,9 @@ impl Translator<'_> {
     {
         let mut h = DefaultHasher::new();
         t.hash(&mut h);
-        format!("h{:0X}", h.finish())
+        let harsh = harsh::Harsh::default();
+        let h = harsh.encode(&[h.finish()]);
+        format!("_{}", h)
     }
 }
 
