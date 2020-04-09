@@ -5,10 +5,38 @@ mod rg;
 mod utils;
 use utils::*;
 
-// ==================== weeeeeeeeeeeeeeeeeee
-
 struct Translator {
     unit: rg::Unit,
+    config: Config,
+}
+
+pub struct Config {
+    pub arch: Arch,
+}
+
+/// Target architectures, named after LLVM
+#[derive(Clone, Copy)]
+pub enum Arch {
+    /// 32-bit X86: Pentium-Pro and above
+    X86,
+    /// 64-bit X86: EMT64 and AMD64
+    X86_64,
+}
+
+impl Default for Arch {
+    fn default() -> Self {
+        Self::X86_64
+    }
+}
+
+impl argh::FromArgValue for Arch {
+    fn from_arg_value(value: &str) -> Result<Self, String> {
+        match value {
+            "x86" => Ok(Self::X86),
+            "x86-64" => Ok(Self::X86_64),
+            s => Err(format!("unknown architecture: {:?}", s)),
+        }
+    }
 }
 
 impl Translator {
@@ -117,8 +145,12 @@ impl Translator {
                     longness += 1;
                     specs = rest;
                 }
+                [TS::Short, rest @ ..] => {
+                    longness -= 1;
+                    specs = rest;
+                }
                 [] => {
-                    if longness > 0 || signed.is_some() {
+                    if longness != 0 || signed.is_some() {
                         specs = &[TS::Int];
                         break 'process_prefixes;
                     } else {
@@ -135,14 +167,18 @@ impl Translator {
         }
 
         let mut res = match &specs[0] {
-            TS::Int => {
-                if longness > 0 {
-                    pick_sign(signed, "u64", "i64")
-                } else {
-                    pick_sign(signed, "u32", "i32")
-                }
-            }
-            TS::Short => pick_sign(signed, "u16", "i16"),
+            TS::Int => match self.config.arch {
+                Arch::X86_64 => match longness {
+                    -1 => pick_sign(signed, "u16", "i16"),
+                    0 => pick_sign(signed, "u32", "i32"),
+                    _ => pick_sign(signed, "u64", "i64"),
+                },
+                Arch::X86 => match longness {
+                    -1 => pick_sign(signed, "u16", "i16"),
+                    0 | 1 => pick_sign(signed, "u32", "i32"),
+                    _ => pick_sign(signed, "u64", "i64"),
+                },
+            },
             TS::Char => pick_sign(signed, "u8", "i8"),
             TS::Void => rg::Type::Name(rg::Identifier::name("()")),
             TS::TypedefName(Node { node: id, .. }) => {
@@ -246,9 +282,10 @@ impl Translator {
     }
 }
 
-pub(crate) fn translate_unit(decls: &[ast::ExternalDeclaration]) -> rg::Unit {
+pub(crate) fn translate_unit(config: Config, decls: &[ast::ExternalDeclaration]) -> rg::Unit {
     let mut translator = Translator {
         unit: rg::Unit { toplevels: vec![] },
+        config,
     };
     translator.visit_unit(decls);
     translator.unit

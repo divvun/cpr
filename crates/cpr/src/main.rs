@@ -32,6 +32,10 @@ struct Args {
     /// path of the crate to generate
     #[argh(option, short = 'o')]
     output: PathBuf,
+
+    /// target architecture
+    #[argh(option)]
+    arch: Option<translator::Arch>,
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -69,7 +73,10 @@ fn main() -> Result<(), Box<dyn Error>> {
         println!("================================");
         println!("{:?}: {} declarations", incl, unit.declarations.len());
 
-        let unit = translator::translate_unit(&unit.declarations);
+        let config = translator::Config {
+            arch: args.arch.unwrap_or_default(),
+        };
+        let unit = translator::translate_unit(config, &unit.declarations);
         println!("{}", unit);
     }
 
