@@ -5,9 +5,9 @@ mod rg;
 mod utils;
 use utils::*;
 
-struct Translator {
+struct Translator<'a> {
     unit: rg::Unit,
-    config: Config,
+    config: &'a Config,
 }
 
 pub struct Config {
@@ -39,7 +39,7 @@ impl argh::FromArgValue for Arch {
     }
 }
 
-impl Translator {
+impl Translator<'_> {
     fn push<T: Into<rg::TopLevel>>(&mut self, t: T) {
         self.unit.toplevels.push(t.into());
     }
@@ -128,7 +128,6 @@ impl Translator {
         let mut longness = 0;
         let original_specs: Vec<_> = typ.typespecs().collect();
         let mut specs = &original_specs[..];
-        println!("specs = {:?}", specs);
 
         use ast::TypeSpecifier as TS;
         'process_prefixes: loop {
@@ -161,9 +160,13 @@ impl Translator {
             }
         }
 
+        fn builtin(s: &str) -> rg::Type {
+            rg::Type::Name(rg::Identifier::name(s))
+        }
+
         fn pick_sign(signed: Option<bool>, uver: &str, sver: &str) -> rg::Type {
             let name = if signed.unwrap_or(true) { sver } else { uver };
-            rg::Type::Name(rg::Identifier::name(name))
+            builtin(name)
         }
 
         let mut res = match &specs[0] {
@@ -179,8 +182,13 @@ impl Translator {
                     _ => pick_sign(signed, "u64", "i64"),
                 },
             },
+            TS::Float => builtin("f32"),
+            TS::Double => match longness {
+                1 => builtin("[u8; 12]"),
+                _ => builtin("f64"),
+            },
             TS::Char => pick_sign(signed, "u8", "i8"),
-            TS::Void => rg::Type::Name(rg::Identifier::name("()")),
+            TS::Void => builtin("core::ffi::c_void"),
             TS::TypedefName(Node { node: id, .. }) => {
                 rg::Type::Name(rg::Identifier::name(&id.name))
             }
@@ -282,10 +290,10 @@ impl Translator {
     }
 }
 
-pub(crate) fn translate_unit(config: Config, decls: &[ast::ExternalDeclaration]) -> rg::Unit {
+pub(crate) fn translate_unit(config: &Config, decls: &[ast::ExternalDeclaration]) -> rg::Unit {
     let mut translator = Translator {
         unit: rg::Unit { toplevels: vec![] },
-        config,
+        config: &config,
     };
     translator.visit_unit(decls);
     translator.unit

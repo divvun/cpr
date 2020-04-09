@@ -1,7 +1,7 @@
 //! Drives the process of preprocessing and parsing C header and its dependencies.
 
 mod expand;
-mod grammar;
+pub mod grammar;
 mod utils;
 
 use expand::Expandable;
@@ -193,7 +193,7 @@ impl Parser {
             system_paths,
             quoted_paths,
             working_path,
-            ordered_includes: vec![root.clone()],
+            ordered_includes: Default::default(),
             root,
             units: Default::default(),
         };

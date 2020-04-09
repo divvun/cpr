@@ -64,6 +64,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     let parser = Parser::new(args.file, system_paths, vec![]).unwrap();
     log::info!("Done parsing!");
 
+    let config = translator::Config {
+        arch: args.arch.unwrap_or_default(),
+    };
+
     for incl in &parser.ordered_includes {
         let unit = parser.units.get(incl).unwrap();
         if unit.declarations.is_empty() {
@@ -73,11 +77,24 @@ fn main() -> Result<(), Box<dyn Error>> {
         println!("================================");
         println!("{:?}: {} declarations", incl, unit.declarations.len());
 
-        let config = translator::Config {
-            arch: args.arch.unwrap_or_default(),
-        };
-        let unit = translator::translate_unit(config, &unit.declarations);
-        println!("{}", unit);
+        let unit = translator::translate_unit(&config, &unit.declarations);
+
+        use frontend::grammar::Include;
+        let stem = match incl {
+            Include::System(p) => p,
+            Include::Quoted(p) => p,
+            _ => todo!(),
+        }
+        .file_stem()
+        .unwrap();
+        let mut out_path = args.output.join("src").join(stem);
+        out_path.set_extension("rs");
+
+        use std::{fs, io::Write};
+        fs::create_dir_all(out_path.parent().unwrap())?;
+        let mut f = fs::File::create(&out_path)?;
+        write!(f, "{}", unit)?;
+        println!("{:?} => {}", incl, out_path.display());
     }
 
     Ok(())
