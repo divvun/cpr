@@ -21,6 +21,20 @@ static RUST_KEYWORDS: Lazy<HashSet<String>> = Lazy::new(|| {
     set
 });
 
+static RUST_COOKED_KEYWORDS: Lazy<HashSet<String>> = Lazy::new(|| {
+    let mut set = HashSet::new();
+    let source = "super self Self extern crate";
+    for kw in source
+        .replace("\n", " ")
+        .split(" ")
+        .map(|x| x.trim())
+        .filter(|x| !x.is_empty())
+    {
+        set.insert(kw.to_string());
+    }
+    set
+});
+
 pub const INDENT: &str = "    "; // 4 spaces
 
 pub struct IndentedWriter<'a> {
@@ -354,7 +368,11 @@ pub struct Identifier {
 impl fmt::Display for Identifier {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if RUST_KEYWORDS.contains(&self.value) {
-            write!(f, r#"r#{value}"#, value = self.value)
+            if RUST_COOKED_KEYWORDS.contains(&self.value) {
+                write!(f, "_{value}", value = self.value)
+            } else {
+                write!(f, r#"r#{value}"#, value = self.value)
+            }
         } else {
             write!(f, "{}", self.value)
         }

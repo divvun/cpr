@@ -73,10 +73,10 @@
 // #include <stddef.h>
 // void foobar(wchar_t c, rsize_t s);
 
-struct has_opaque {
-    struct opaque *a;
-};
-void takes_opaque(struct has_opaque ho);
+// struct has_opaque {
+//     struct opaque *a;
+// };
+// void takes_opaque(struct has_opaque ho);
 
 // enum BadEnum {
 //     A = 1,
@@ -84,4 +84,10 @@ void takes_opaque(struct has_opaque ho);
 //     C,
 // };
 
+struct NT_TIB32 {
+    int ExceptionList;
+    int Self;
+};
+
 // #include <ctype.h>
+// #include <minwindef.h>
