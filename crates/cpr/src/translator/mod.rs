@@ -121,7 +121,7 @@ impl Translator<'_> {
                     self.push(ed);
                 }
                 _ => {
-                    panic!("unsupported freestanding specifier: {:#?}", tyspec);
+                    panic!("unsupported freestanding specifier: {:#?}", spec);
                 }
             }
         }
@@ -261,6 +261,7 @@ impl Translator<'_> {
                 _ => builtin("f64"),
             },
             TS::Char => pick_sign(signed, "u8", "i8"),
+            TS::Bool => builtin("bool"),
             TS::Void => builtin("core::ffi::c_void"),
             TS::TypedefName(Node { node: id, .. }) => {
                 rg::Type::Name(rg::Identifier::name(&id.name))
