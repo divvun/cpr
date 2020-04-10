@@ -114,31 +114,6 @@ impl Translator<'_> {
         }
     }
 
-    // fn visit_freestanding_specifier(
-    //     &mut self,
-    //     extdecl: &ast::ExternalDeclaration,
-    //     spec: &ast::DeclarationSpecifier,
-    // ) {
-    //     if let ast::DeclarationSpecifier::TypeSpecifier(Node { node: tyspec, .. }) = spec {
-    //         match tyspec {
-    //             ast::TypeSpecifier::Struct(Node { node: struty, .. }) => {
-    //                 let sd = self.visit_struct(struty);
-    //                 self.push(sd);
-    //             }
-    //             ast::TypeSpecifier::Enum(Node { node: enumty, .. }) => {
-    //                 let ed = self.visit_enum(enumty);
-    //                 self.push(ed);
-    //             }
-    //             _ => {
-    //                 unimplemented!(
-    //                     "{:?}: unsupported freestanding specifier: {:#?}\n\nfull external decl: {:#?}",
-    //                     self.path, spec, extdecl,
-    //                 );
-    //             }
-    //         }
-    //     }
-    // }
-
     #[must_use]
     fn visit_struct(&mut self, struty: &ast::StructType) -> rg::StructDeclaration {
         let id = match struty.identifier.as_ref().map(borrow_node) {

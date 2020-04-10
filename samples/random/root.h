@@ -84,10 +84,19 @@
 //     C,
 // };
 
-struct NT_TIB32 {
-    int ExceptionList;
-    int Self;
-};
+// struct TIB {
+//     int ExceptionList;
+//     int Self;
+// };
+// typedef struct TIB TIB, *PTIB;
+
+// struct A {
+//     struct B *b;
+// };
+
+// struct B {
+//     int ahAH;
+// };
 
 // #include <ctype.h>
-// #include <minwindef.h>
+#include <minwindef.h>
