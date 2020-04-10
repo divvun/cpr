@@ -42,6 +42,16 @@ impl Context {
         self.unknowns.insert(unknown.into());
     }
 
+    pub fn simple_define(&mut self, s: &str) {
+        self.push(
+            grammar::Expr::bool(true),
+            grammar::Define::ObjectLike {
+                name: s.to_string(),
+                value: vec![grammar::Token::Int(1)].into(),
+            },
+        );
+    }
+
     pub fn push(&mut self, expr: Expr, def: Define) {
         let name = def.name().to_string();
         let bucket = match self.defines.get_mut(&name) {
@@ -181,6 +191,7 @@ impl Parser {
         initial_file: PathBuf,
         system_paths: Vec<PathBuf>,
         quoted_paths: Vec<PathBuf>,
+        ctx: Context,
     ) -> Result<Parser, Error> {
         let file_name = initial_file.file_name().ok_or(Error::InvalidFile)?;
         let working_path = initial_file
@@ -197,7 +208,7 @@ impl Parser {
             root,
             units: Default::default(),
         };
-        parser.parse_all()?;
+        parser.parse_all(ctx)?;
 
         Ok(parser)
     }
@@ -214,9 +225,8 @@ impl Parser {
         Ok(std::fs::read_to_string(&path)?)
     }
 
-    fn parse_all(&mut self) -> Result<(), Error> {
+    fn parse_all(&mut self, mut ctx: Context) -> Result<(), Error> {
         let mut env = Env::with_msvc();
-        let mut ctx = Context::new();
         self.parse(&mut ctx, &mut env, self.root.clone())?;
         Ok(())
     }

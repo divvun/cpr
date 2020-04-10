@@ -30,19 +30,23 @@
 //   ExceptionCollidedUnwind = 3,
 // } EXCEPTION_DISPOSITION, *PEXCEPTION_DISPOSITION;
 
-typedef unsigned long long ULLONG;
+// typedef unsigned long long ULLONG;
 
-typedef struct s {
-    ULLONG a;
-    const struct {
-        char c;
-    } *b;
-} s, *sp;
+// typedef struct s {
+//     ULLONG a;
+//     const struct {
+//         char c;
+//     } *b;
+// } s, *sp;
 
-enum WOOPS {
-    A = 1 + 0xF00 + 0644,
-    B = (int) 4.0f,
-    C = sizeof(struct s),
-    D = 3 > 2,
-    LAST,
-};
+// enum WOOPS {
+//     A = 1 + 0xF00 + 0644,
+//     B = (int) 4.0f,
+//     C = sizeof(struct s),
+//     D = 3 > 2,
+//     LAST,
+// };
+
+#define _AMD64_
+#define _M_AMD64
+#include <corecrt.h>

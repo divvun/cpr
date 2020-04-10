@@ -60,13 +60,27 @@ fn main() -> Result<(), Box<dyn Error>> {
         PathBuf::from(r"."),
     ];
 
+    let arch = args.arch.unwrap_or_default();
+
+    let mut ctx = frontend::Context::new();
+    match arch {
+        translator::Arch::X86 => {
+            for &s in &["_X86", "_M_X86", "_WIN32"] {
+                ctx.simple_define(s);
+            }
+        }
+        translator::Arch::X86_64 => {
+            for &s in &["_AMD64_", "_M_AMD64", "_WIN32", "_WIN64"] {
+                ctx.simple_define(s);
+            }
+        }
+    }
+
     log::info!("System paths: {:#?}", system_paths);
-    let parser = Parser::new(args.file, system_paths, vec![]).unwrap();
+    let parser = Parser::new(args.file, system_paths, vec![], ctx).unwrap();
     log::info!("Done parsing!");
 
-    let config = translator::Config {
-        arch: args.arch.unwrap_or_default(),
-    };
+    let config = translator::Config { arch };
 
     use std::{fs, io::Write};
     let manifest_path = args.output.join("Cargo.toml");
