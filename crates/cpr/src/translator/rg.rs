@@ -102,6 +102,7 @@ impl fmt::Display for Visi {
 
 pub enum Repr {
     C,
+    Transparent,
     I32,
 }
 
@@ -109,6 +110,7 @@ impl fmt::Display for Repr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::C => write!(f, "#[repr(C)]"),
+            Self::Transparent => write!(f, "#[repr(transparent)]"),
             Self::I32 => write!(f, "#[repr(i32)]"),
         }
     }
@@ -205,20 +207,31 @@ pub struct StructDeclaration {
 
 impl fmt::Display for StructDeclaration {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "{repr}", repr = Repr::C)?;
-        writeln!(
-            f,
-            "{vis} struct {name} {{",
-            vis = Visi::Pub,
-            name = self.name
-        )?;
-        {
-            let f = &mut f.indented();
-            for field in &self.fields {
-                writeln!(f, "{},", field)?;
+        if self.fields.is_empty() {
+            // opaque struct
+            writeln!(f, "{repr}", repr = Repr::Transparent)?;
+            writeln!(
+                f,
+                "{vis} struct {name}(core::ffi::c_void);",
+                vis = Visi::Pub,
+                name = self.name,
+            )?;
+        } else {
+            writeln!(f, "{repr}", repr = Repr::C)?;
+            writeln!(
+                f,
+                "{vis} struct {name} {{",
+                vis = Visi::Pub,
+                name = self.name
+            )?;
+            {
+                let f = &mut f.indented();
+                for field in &self.fields {
+                    writeln!(f, "{},", field)?;
+                }
             }
+            writeln!(f, "}}")?;
         }
-        writeln!(f, "}}")?;
         Ok(())
     }
 }

@@ -73,8 +73,15 @@
 // #include <stddef.h>
 // void foobar(wchar_t c, rsize_t s);
 
-#include <ctype.h>
+struct has_opaque {
+    struct opaque *a;
+};
+void takes_opaque(struct has_opaque ho);
 
-// #include <minwindef.h>
-// #include <projectedfslib.h>
+// enum BadEnum {
+//     A = 1,
+//     B = A+A,
+//     C,
+// };
 
+// #include <ctype.h>

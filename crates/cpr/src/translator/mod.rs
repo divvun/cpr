@@ -53,6 +53,7 @@ impl Translator<'_> {
         for extdecl in declarations {
             if let ast::ExternalDeclaration::Declaration(declaration) = &extdecl {
                 let declaration = &declaration.node;
+
                 for spec in nodes(&declaration.specifiers) {
                     match spec {
                         ast::DeclarationSpecifier::TypeSpecifier(ts) => {
@@ -62,16 +63,16 @@ impl Translator<'_> {
                     }
                 }
 
-                if declaration.declarators.is_empty() {
-                    for spec in nodes(&declaration.specifiers[..]) {
-                        self.visit_freestanding_specifier(extdecl, spec);
-                    }
-                } else {
-                    for init_declarator in nodes(&declaration.declarators[..]) {
-                        let declarator = &init_declarator.declarator.node;
-                        self.visit_declarator(declaration, declarator);
-                    }
+                // if declaration.declarators.is_empty() {
+                //     for spec in nodes(&declaration.specifiers[..]) {
+                //         self.visit_freestanding_specifier(extdecl, spec);
+                //     }
+                // } else {
+                for init_declarator in nodes(&declaration.declarators[..]) {
+                    let declarator = &init_declarator.declarator.node;
+                    self.visit_declarator(declaration, declarator);
                 }
+            // }
             } else {
                 log::debug!("visit_unit: not a Declaration: {:#?}", extdecl);
             }
@@ -113,30 +114,30 @@ impl Translator<'_> {
         }
     }
 
-    fn visit_freestanding_specifier(
-        &mut self,
-        extdecl: &ast::ExternalDeclaration,
-        spec: &ast::DeclarationSpecifier,
-    ) {
-        if let ast::DeclarationSpecifier::TypeSpecifier(Node { node: tyspec, .. }) = spec {
-            match tyspec {
-                ast::TypeSpecifier::Struct(Node { node: struty, .. }) => {
-                    let sd = self.visit_struct(struty);
-                    self.push(sd);
-                }
-                ast::TypeSpecifier::Enum(Node { node: enumty, .. }) => {
-                    let ed = self.visit_enum(enumty);
-                    self.push(ed);
-                }
-                _ => {
-                    unimplemented!(
-                        "{:?}: unsupported freestanding specifier: {:#?}\n\nfull external decl: {:#?}",
-                        self.path, spec, extdecl,
-                    );
-                }
-            }
-        }
-    }
+    // fn visit_freestanding_specifier(
+    //     &mut self,
+    //     extdecl: &ast::ExternalDeclaration,
+    //     spec: &ast::DeclarationSpecifier,
+    // ) {
+    //     if let ast::DeclarationSpecifier::TypeSpecifier(Node { node: tyspec, .. }) = spec {
+    //         match tyspec {
+    //             ast::TypeSpecifier::Struct(Node { node: struty, .. }) => {
+    //                 let sd = self.visit_struct(struty);
+    //                 self.push(sd);
+    //             }
+    //             ast::TypeSpecifier::Enum(Node { node: enumty, .. }) => {
+    //                 let ed = self.visit_enum(enumty);
+    //                 self.push(ed);
+    //             }
+    //             _ => {
+    //                 unimplemented!(
+    //                     "{:?}: unsupported freestanding specifier: {:#?}\n\nfull external decl: {:#?}",
+    //                     self.path, spec, extdecl,
+    //                 );
+    //             }
+    //         }
+    //     }
+    // }
 
     #[must_use]
     fn visit_struct(&mut self, struty: &ast::StructType) -> rg::StructDeclaration {
