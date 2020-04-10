@@ -109,11 +109,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     for incl in &parser.ordered_includes {
         let unit = parser.units.get(incl).unwrap();
         if unit.declarations.is_empty() {
+            println!("{} | skipping (no decls)", unit.path.display());
             continue;
         }
-        println!();
-        println!("================================");
-        println!("{:?}: {} declarations", incl, unit.declarations.len());
 
         let trans_unit = translator::translate_unit(&config, &unit.path, &unit.declarations);
 
@@ -141,7 +139,13 @@ fn main() -> Result<(), Box<dyn Error>> {
 
         writeln!(f, "pub use super::*;")?;
         write!(f, "{}", trans_unit)?;
-        println!("{:?} => {}", incl, out_path.display());
+        println!(
+            "{} | ({} C => {} Rust) => {}",
+            unit.path.display(),
+            unit.declarations.len(),
+            trans_unit.toplevels.len(),
+            out_path.display()
+        );
     }
 
     Ok(())

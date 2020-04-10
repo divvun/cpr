@@ -304,7 +304,7 @@ impl Parser {
                     }
                     Directive::Define(def) => {
                         if taken {
-                            log::info!("{}:{} defining {}", incl, lineno, def.name());
+                            log::debug!("{}:{} defining {}", incl, lineno, def.name());
                             match &def {
                                 Define::ObjectLike { value, .. } => {
                                     log::debug!("...to: {}", value);
@@ -313,7 +313,7 @@ impl Parser {
                             }
                             ctx.push(Expr::bool(true), def);
                         } else {
-                            log::info!("{}:{} not defining {}", incl, lineno, def.name());
+                            log::debug!("{}:{} not defining {}", incl, lineno, def.name());
                         }
                     }
                     Directive::Undefine(name) => {
@@ -363,7 +363,7 @@ impl Parser {
                         log::debug!("endif");
                     }
                     Directive::Pragma(s) => {
-                        log::warn!("{}:{} ignoring pragma: {}", incl, lineno, s);
+                        log::debug!("{}:{} ignoring pragma: {}", incl, lineno, s);
                     }
                     Directive::Error(s) => {
                         if taken {
@@ -435,7 +435,7 @@ impl Parser {
 
                     match grammar::pragma(&block_str) {
                         Ok(p) => {
-                            log::info!("skipping pragma:\n__pragma{}", p);
+                            log::debug!("skipping pragma:\n__pragma{}", p);
                             block.clear();
                             continue 'each_line;
                         }
@@ -449,7 +449,7 @@ impl Parser {
                             unit.declarations
                                 .extend(node.0.drain(..).map(|node| node.node));
 
-                            log::info!("{}:{} parsed C:\n{}", incl, lineno, block_str);
+                            log::debug!("{}:{} parsed C:\n{}", incl, lineno, block_str);
                             block.clear();
                             continue 'each_line;
                         }
@@ -476,7 +476,12 @@ impl Parser {
         }
 
         log::debug!("=== {:?} (end) ===", incl);
-        self.units.insert(incl, unit);
+        // TODO: merge?
+        if self.units.contains_key(&incl) {
+            log::debug!("included several times: {:?}", incl);
+        } else {
+            self.units.insert(incl, unit);
+        }
         Ok(())
     }
 }

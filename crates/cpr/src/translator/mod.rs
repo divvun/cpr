@@ -196,13 +196,7 @@ impl Translator<'_> {
         for num in nodes(&enumty.enumerators) {
             let field_id = &num.identifier.node.name;
 
-            let value = num.expression.as_ref().map(|x| {
-                println!(
-                    "for enum {}, field {}, got value {:#?}",
-                    id, field_id, x.node
-                );
-                x.node.as_expr(self)
-            });
+            let value = num.expression.as_ref().map(|x| x.node.as_expr(self));
             res.fields.push(rg::EnumField {
                 name: rg::Identifier::name(field_id),
                 value,
@@ -281,7 +275,10 @@ impl Translator<'_> {
             TS::Bool => builtin("bool"),
             TS::Void => builtin("core::ffi::c_void"),
             TS::TypedefName(Node { node: id, .. }) => match id.name.as_ref() {
-                "wchar_t" => builtin("u16"),
+                "__int8" => pick_sign(signed, "u8", "i8"),
+                "__int16" => pick_sign(signed, "u16", "i16"),
+                "__int32" => pick_sign(signed, "u32", "i32"),
+                "__int64" => pick_sign(signed, "u64", "i64"),
                 name => rg::Type::Name(rg::Identifier::name(name)),
             },
             TS::Struct(Node { node: struty, .. }) => {
@@ -491,6 +488,7 @@ pub(crate) fn prelude() -> &'static str {
         // You probably don't want to edit it manually.
 
         #![allow(non_camel_case_types)]
+        #![allow(non_snake_case)]
         "#
     );
 }

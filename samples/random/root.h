@@ -70,7 +70,11 @@
 // typedef unsigned short wchar_t;
 // #endif
 
-void foobar(wchar_t c);
+// #include <stddef.h>
+// void foobar(wchar_t c, rsize_t s);
+
+#include <ctype.h>
 
 // #include <minwindef.h>
+// #include <projectedfslib.h>
 

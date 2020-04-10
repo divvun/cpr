@@ -80,7 +80,6 @@ impl Env {
         typenames.insert("__int16".to_owned());
         typenames.insert("__int32".to_owned());
         typenames.insert("__int64".to_owned());
-        typenames.insert("wchar_t".to_owned());
         reserved.extend(strings::RESERVED_C11.iter());
         Env {
             extensions_gnu: false,
