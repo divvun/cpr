@@ -170,6 +170,7 @@ where
 
 #[derive(Debug)]
 pub struct Unit {
+    pub path: PathBuf,
     pub dependencies: Vec<Include>,
     pub declarations: Vec<c_ast::ExternalDeclaration>,
 }
@@ -214,7 +215,7 @@ impl Parser {
     }
 
     /// Find a file on disk corresponding to an `Include`, read it
-    fn read_include(&self, include: &Include) -> Result<String, Error> {
+    fn read_include(&self, include: &Include) -> Result<(String, PathBuf), Error> {
         let path =
             match include.resolve(&*self.system_paths, &self.quoted_paths, &self.working_path) {
                 Some(v) => v,
@@ -222,7 +223,8 @@ impl Parser {
             };
         log::info!("Reading {:?} ===", path);
 
-        Ok(std::fs::read_to_string(&path)?)
+        let contents = std::fs::read_to_string(&path)?;
+        Ok((contents, path))
     }
 
     fn parse_all(&mut self, mut ctx: Context) -> Result<(), Error> {
@@ -235,7 +237,7 @@ impl Parser {
         const MAX_BLOCK_LINES: usize = 150;
         self.ordered_includes.push(incl.clone());
 
-        let source = self.read_include(&incl)?;
+        let (source, path) = self.read_include(&incl)?;
         let source = utils::process_line_continuations_and_comments(&source);
         let mut lines = source.lines().enumerate();
         let mut block: Vec<String> = Vec::new();
@@ -243,6 +245,7 @@ impl Parser {
         let mut unit = Unit {
             dependencies: vec![],
             declarations: vec![],
+            path,
         };
 
         let mut stack: Vec<(bool, TokenSeq)> = Vec::new();

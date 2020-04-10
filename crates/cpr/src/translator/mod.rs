@@ -2,7 +2,7 @@ use lang_c::{ast, span::Node};
 use std::{
     collections::hash_map::DefaultHasher,
     hash::{Hash, Hasher},
-    str::FromStr,
+    path::Path,
 };
 
 mod rg;
@@ -10,6 +10,7 @@ mod utils;
 use utils::*;
 
 struct Translator<'a> {
+    path: &'a Path,
     unit: rg::Unit,
     config: &'a Config,
 }
@@ -50,10 +51,8 @@ impl Translator<'_> {
 
     fn visit_unit(&mut self, declarations: &[ast::ExternalDeclaration]) {
         for extdecl in declarations {
-            if let ast::ExternalDeclaration::Declaration(Node {
-                node: declaration, ..
-            }) = &extdecl
-            {
+            if let ast::ExternalDeclaration::Declaration(declaration) = &extdecl {
+                let declaration = &declaration.node;
                 for spec in nodes(&declaration.specifiers) {
                     match spec {
                         ast::DeclarationSpecifier::TypeSpecifier(ts) => {
@@ -65,7 +64,7 @@ impl Translator<'_> {
 
                 if declaration.declarators.is_empty() {
                     for spec in nodes(&declaration.specifiers[..]) {
-                        self.visit_freestanding_specifier(spec);
+                        self.visit_freestanding_specifier(extdecl, spec);
                     }
                 } else {
                     for init_declarator in nodes(&declaration.declarators[..]) {
@@ -109,7 +108,11 @@ impl Translator<'_> {
         }
     }
 
-    fn visit_freestanding_specifier(&mut self, spec: &ast::DeclarationSpecifier) {
+    fn visit_freestanding_specifier(
+        &mut self,
+        extdecl: &ast::ExternalDeclaration,
+        spec: &ast::DeclarationSpecifier,
+    ) {
         if let ast::DeclarationSpecifier::TypeSpecifier(Node { node: tyspec, .. }) = spec {
             match tyspec {
                 ast::TypeSpecifier::Struct(Node { node: struty, .. }) => {
@@ -121,7 +124,10 @@ impl Translator<'_> {
                     self.push(ed);
                 }
                 _ => {
-                    panic!("unsupported freestanding specifier: {:#?}", spec);
+                    panic!(
+                        "{:?}: unsupported freestanding specifier: {:#?}\n\nfull external decl: {:#?}",
+                        self.path, spec, extdecl,
+                    );
                 }
             }
         }
@@ -429,9 +435,14 @@ impl AsExpr for ast::Expression {
     }
 }
 
-pub(crate) fn translate_unit(config: &Config, decls: &[ast::ExternalDeclaration]) -> rg::Unit {
+pub(crate) fn translate_unit(
+    config: &Config,
+    path: &Path,
+    decls: &[ast::ExternalDeclaration],
+) -> rg::Unit {
     let mut translator = Translator {
         unit: rg::Unit { toplevels: vec![] },
+        path,
         config: &config,
     };
     translator.visit_unit(decls);

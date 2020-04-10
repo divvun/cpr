@@ -65,12 +65,12 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut ctx = frontend::Context::new();
     match arch {
         translator::Arch::X86 => {
-            for &s in &["_X86", "_M_X86", "_WIN32"] {
+            for &s in &["_X86", "_M_X86"] {
                 ctx.simple_define(s);
             }
         }
         translator::Arch::X86_64 => {
-            for &s in &["_AMD64_", "_M_AMD64", "_WIN32", "_WIN64"] {
+            for &s in &["_AMD64_", "_M_AMD64"] {
                 ctx.simple_define(s);
             }
         }
@@ -115,7 +115,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         println!("================================");
         println!("{:?}: {} declarations", incl, unit.declarations.len());
 
-        let unit = translator::translate_unit(&config, &unit.declarations);
+        let unit = translator::translate_unit(&config, &unit.path, &unit.declarations);
 
         use frontend::grammar::Include;
         let stem = match incl {

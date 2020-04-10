@@ -1,4 +1,4 @@
-use lang_c::{ast, span::Node};
+use lang_c::ast;
 use once_cell::sync::Lazy;
 use std::{
     collections::HashSet,

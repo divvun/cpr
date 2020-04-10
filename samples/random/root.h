@@ -47,6 +47,8 @@
 //     LAST,
 // };
 
-#define _AMD64_
-#define _M_AMD64
-#include <corecrt.h>
+// #include <minwindef.h>
+
+// double typedef
+typedef int INT;
+typedef int INT, *PINT;
