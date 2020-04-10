@@ -65,12 +65,12 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut ctx = frontend::Context::new();
     match arch {
         translator::Arch::X86 => {
-            for &s in &["_X86", "_M_X86"] {
+            for &s in &["_X86", "_M_X86", "_WIN32"] {
                 ctx.simple_define(s);
             }
         }
         translator::Arch::X86_64 => {
-            for &s in &["_AMD64_", "_M_AMD64"] {
+            for &s in &["_AMD64_", "_M_AMD64", "_WIN32", "_WIN64"] {
                 ctx.simple_define(s);
             }
         }

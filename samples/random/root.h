@@ -47,8 +47,7 @@
 //     LAST,
 // };
 
-// #include <minwindef.h>
+// typedef int INT;
+// typedef int INT;
 
-// double typedef
-typedef int INT;
-typedef int INT, *PINT;
+#include <minwindef.h>

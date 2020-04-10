@@ -4943,10 +4943,7 @@ fn __parse_declaration<'input>(__input: &'input str, __state: &mut ParseState<'i
             }
         };
         match __seq_res {
-            Matched(__pos, d) => Matched(__pos, {
-                env.handle_declaration(&d.node);
-                d
-            }),
+            Matched(__pos, d) => Matched(__pos, { env.postprocess_declaration(d) }),
             Failed => Failed,
         }
     }

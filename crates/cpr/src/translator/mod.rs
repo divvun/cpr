@@ -295,6 +295,9 @@ impl Translator<'_> {
     }
 
     fn visit_declarator(&mut self, dtion: &ast::Declaration, dtor: &ast::Declarator) {
+        println!("declaration = {:#?}", dtion);
+        println!("declarator  = {:#?}", dtor);
+
         let id = match dtor.get_identifier() {
             None => {
                 log::debug!(

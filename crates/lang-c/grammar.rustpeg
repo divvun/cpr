@@ -447,8 +447,7 @@ constant_expression0 -> Expression = conditional_expression0
 ////
 
 pub declaration -> Node<Declaration> = d:node<declaration0> {
-        env.handle_declaration(&d.node);
-        d
+        env.postprocess_declaration(d)
     }
 
 declaration0 -> Declaration =

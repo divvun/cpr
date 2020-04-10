@@ -121,8 +121,74 @@ impl Env {
         self.builtin_typenames.contains(s) || self.typenames.iter().any(|sc| sc.contains(s))
     }
 
-    pub fn handle_declaration(&mut self, declaration: &Declaration) {
-        if declaration.specifiers.iter().any(is_typedef) {
+    pub fn postprocess_declaration(
+        &mut self,
+        mut declaration_node: Node<Declaration>,
+    ) -> Node<Declaration> {
+        let is_typedef = declaration_node.node.specifiers.iter().any(is_typedef);
+
+        if is_typedef {
+            let declaration = &declaration_node.node;
+            if declaration.declarators.is_empty() {
+                // we might be in a "typedef redefinition" case like:
+                //     typedef int INT;
+                //     typedef int INT; <- here
+                // the second typedef declaration will have *no* declarators,
+                // only type specifiers. If the last one is a TypedefName, we turn
+                // it into a Declarator instead
+
+                if declaration.specifiers.len() >= 2 {
+                    if let Some((index, ds)) =
+                        declaration
+                            .specifiers
+                            .iter()
+                            .enumerate()
+                            .find(|(_index, node)| match &node.node {
+                                DeclarationSpecifier::TypeSpecifier(ts) => match ts.node {
+                                    TypeSpecifier::TypedefName(_) => true,
+                                    _ => false,
+                                },
+                                _ => false,
+                            })
+                    {
+                        if let DeclarationSpecifier::TypeSpecifier(ts) = &ds.node {
+                            if let TypeSpecifier::TypedefName(tname) = &ts.node {
+                                println!(
+                                    "found typedef, index {}, name: {:?}\n\nfull decl: {:#?}",
+                                    index, tname, declaration
+                                );
+                                let mut out_decl_node = declaration_node.clone();
+                                out_decl_node.node.specifiers.remove(index);
+                                let span = tname.span.clone();
+
+                                out_decl_node.node.declarators.push(Node {
+                                    span: span.clone(),
+                                    node: InitDeclarator {
+                                        declarator: Node {
+                                            span: span.clone(),
+                                            node: Declarator {
+                                                derived: vec![],
+                                                extensions: vec![],
+                                                kind: Node {
+                                                    span: span.clone(),
+                                                    node: DeclaratorKind::Identifier(Node {
+                                                        span: span.clone(),
+                                                        node: tname.node.clone(),
+                                                    }),
+                                                },
+                                            },
+                                        },
+                                        initializer: None,
+                                    },
+                                });
+                                declaration_node = out_decl_node;
+                            }
+                        }
+                    }
+                }
+            }
+
+            let declaration = &declaration_node.node;
             for init_decl in &declaration.declarators {
                 if let Some(name) = find_declarator_name(&init_decl.node.declarator.node.kind.node)
                 {
@@ -130,6 +196,7 @@ impl Env {
                 }
             }
         }
+        declaration_node
     }
 }
 
