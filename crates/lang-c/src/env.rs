@@ -30,7 +30,7 @@ impl Env {
             extensions_msvc: false,
             builtin_typenames: HashSet::new(),
             typenames: vec![HashSet::new()],
-            reserved: reserved,
+            reserved,
             is_ignoring_reserved: false,
             is_single_line_mode: false,
         }
@@ -48,7 +48,7 @@ impl Env {
             extensions_msvc: false,
             builtin_typenames: typenames,
             typenames: vec![HashSet::new()],
-            reserved: reserved,
+            reserved,
             is_ignoring_reserved: false,
             is_single_line_mode: false,
         }
@@ -67,7 +67,7 @@ impl Env {
             extensions_msvc: false,
             builtin_typenames: typenames,
             typenames: vec![HashSet::new()],
-            reserved: reserved,
+            reserved,
             is_ignoring_reserved: false,
             is_single_line_mode: false,
         }
@@ -80,6 +80,7 @@ impl Env {
         typenames.insert("__int16".to_owned());
         typenames.insert("__int32".to_owned());
         typenames.insert("__int64".to_owned());
+        typenames.insert("wchar_t".to_owned());
         reserved.extend(strings::RESERVED_C11.iter());
         Env {
             extensions_gnu: false,
@@ -87,7 +88,7 @@ impl Env {
             extensions_msvc: true,
             builtin_typenames: typenames,
             typenames: vec![HashSet::new()],
-            reserved: reserved,
+            reserved,
             is_ignoring_reserved: false,
             is_single_line_mode: false,
         }
@@ -153,10 +154,6 @@ impl Env {
                     {
                         if let DeclarationSpecifier::TypeSpecifier(ts) = &ds.node {
                             if let TypeSpecifier::TypedefName(tname) = &ts.node {
-                                println!(
-                                    "found typedef, index {}, name: {:?}\n\nfull decl: {:#?}",
-                                    index, tname, declaration
-                                );
                                 let mut out_decl_node = declaration_node.clone();
                                 out_decl_node.node.specifiers.remove(index);
                                 let span = tname.span.clone();

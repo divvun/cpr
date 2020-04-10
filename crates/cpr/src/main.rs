@@ -115,7 +115,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         println!("================================");
         println!("{:?}: {} declarations", incl, unit.declarations.len());
 
-        let unit = translator::translate_unit(&config, &unit.path, &unit.declarations);
+        let trans_unit = translator::translate_unit(&config, &unit.path, &unit.declarations);
 
         use frontend::grammar::Include;
         let stem = match incl {
@@ -128,14 +128,19 @@ fn main() -> Result<(), Box<dyn Error>> {
 
         // TODO: this is all kinds of wrong
         writeln!(top_level, "pub mod {};", stem.to_string_lossy())?;
+        writeln!(top_level, "pub use {}::*;", stem.to_string_lossy())?;
 
         let mut out_path = args.output.join("src").join(stem);
         out_path.set_extension("rs");
 
         fs::create_dir_all(out_path.parent().unwrap())?;
         let mut f = fs::File::create(&out_path)?;
-        write!(f, "{}", translator::prelude())?;
-        write!(f, "{}", unit)?;
+        writeln!(f, "{}", translator::prelude())?;
+        writeln!(f, "// @generated from {:?}", unit.path)?;
+        writeln!(f)?;
+
+        writeln!(f, "pub use super::*;")?;
+        write!(f, "{}", trans_unit)?;
         println!("{:?} => {}", incl, out_path.display());
     }
 

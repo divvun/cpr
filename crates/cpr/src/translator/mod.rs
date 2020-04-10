@@ -280,9 +280,10 @@ impl Translator<'_> {
             TS::Char => pick_sign(signed, "u8", "i8"),
             TS::Bool => builtin("bool"),
             TS::Void => builtin("core::ffi::c_void"),
-            TS::TypedefName(Node { node: id, .. }) => {
-                rg::Type::Name(rg::Identifier::name(&id.name))
-            }
+            TS::TypedefName(Node { node: id, .. }) => match id.name.as_ref() {
+                "wchar_t" => builtin("u16"),
+                name => rg::Type::Name(rg::Identifier::name(name)),
+            },
             TS::Struct(Node { node: struty, .. }) => {
                 let id = &struty
                     .identifier

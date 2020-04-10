@@ -8,6 +8,7 @@ use expand::Expandable;
 use grammar::{Define, Directive, Expr, Include, Token, TokenSeq};
 use thiserror::Error;
 
+use indexmap::IndexSet;
 use lang_c::{ast as c_ast, driver, env::Env};
 use std::{
     collections::{HashMap, HashSet},
@@ -181,7 +182,7 @@ pub struct Parser {
     quoted_paths: Vec<PathBuf>,
     working_path: PathBuf,
     root: Include,
-    pub ordered_includes: Vec<Include>,
+    pub ordered_includes: IndexSet<Include>,
     pub units: HashMap<Include, Unit>,
 }
 
@@ -235,7 +236,7 @@ impl Parser {
 
     fn parse(&mut self, ctx: &mut Context, env: &mut Env, incl: Include) -> Result<(), Error> {
         const MAX_BLOCK_LINES: usize = 150;
-        self.ordered_includes.push(incl.clone());
+        self.ordered_includes.insert(incl.clone());
 
         let (source, path) = self.read_include(&incl)?;
         let source = utils::process_line_continuations_and_comments(&source);
