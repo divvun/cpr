@@ -214,3 +214,12 @@ impl<'a> Typed for StructFieldTuple<'a> {
         Box::new(nodes(&self.field.specifiers[..]).map(|x| x as &dyn AsSpecifierQualifier))
     }
 }
+
+impl Typed for ast::TypeName {
+    fn declarator(&self) -> Option<&ast::Declarator> {
+        self.declarator.as_ref().map(borrow_node)
+    }
+    fn specifiers(&self) -> Box<dyn Iterator<Item = &dyn AsSpecifierQualifier> + '_> {
+        Box::new(nodes(&self.specifiers[..]).map(|x| x as &dyn AsSpecifierQualifier))
+    }
+}

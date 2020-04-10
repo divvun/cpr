@@ -1,3 +1,4 @@
+use lang_c::{ast, span::Node};
 use once_cell::sync::Lazy;
 use std::{
     collections::HashSet,
@@ -22,7 +23,7 @@ static RUST_KEYWORDS: Lazy<HashSet<String>> = Lazy::new(|| {
 
 pub const INDENT: &str = "    "; // 4 spaces
 
-pub(crate) struct IndentedWriter<'a> {
+pub struct IndentedWriter<'a> {
     w: &'a mut dyn fmt::Write,
     state: IndentState,
 }
@@ -74,7 +75,7 @@ impl<'a> fmt::Write for IndentedWriter<'a> {
     }
 }
 
-pub(crate) trait WriteExt {
+pub trait WriteExt {
     fn indented(&mut self) -> IndentedWriter<'_>;
 }
 
@@ -87,7 +88,7 @@ impl WriteExt for fmt::Formatter<'_> {
     }
 }
 
-pub(crate) enum Visi {
+pub enum Visi {
     Pub,
 }
 
@@ -99,21 +100,23 @@ impl fmt::Display for Visi {
     }
 }
 
-pub(crate) enum Repr {
+pub enum Repr {
     C,
+    I32,
 }
 
 impl fmt::Display for Repr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::C => write!(f, "#[repr(C)]"),
+            Self::I32 => write!(f, "#[repr(i32)]"),
         }
     }
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub(crate) struct Unit {
-    pub(crate) toplevels: Vec<TopLevel>,
+pub struct Unit {
+    pub toplevels: Vec<TopLevel>,
 }
 
 impl fmt::Display for Unit {
@@ -126,9 +129,10 @@ impl fmt::Display for Unit {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub(crate) enum TopLevel {
+pub enum TopLevel {
     AliasDeclaration(AliasDeclaration),
     StructDeclaration(StructDeclaration),
+    EnumDeclaration(EnumDeclaration),
     FunctionDeclaration(FunctionDeclaration),
 }
 
@@ -141,6 +145,12 @@ impl From<AliasDeclaration> for TopLevel {
 impl From<StructDeclaration> for TopLevel {
     fn from(d: StructDeclaration) -> Self {
         Self::StructDeclaration(d)
+    }
+}
+
+impl From<EnumDeclaration> for TopLevel {
+    fn from(d: EnumDeclaration) -> Self {
+        Self::EnumDeclaration(d)
     }
 }
 
@@ -159,6 +169,9 @@ impl fmt::Display for TopLevel {
             Self::StructDeclaration(d) => {
                 write!(f, "{}", d)?;
             }
+            Self::EnumDeclaration(d) => {
+                write!(f, "{}", d)?;
+            }
             Self::FunctionDeclaration(d) => {
                 write!(f, "{}", d)?;
             }
@@ -168,9 +181,9 @@ impl fmt::Display for TopLevel {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub(crate) struct AliasDeclaration {
-    pub(crate) name: Identifier,
-    pub(crate) typ: Type,
+pub struct AliasDeclaration {
+    pub name: Identifier,
+    pub typ: Type,
 }
 
 impl fmt::Display for AliasDeclaration {
@@ -185,9 +198,9 @@ impl fmt::Display for AliasDeclaration {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub(crate) struct StructDeclaration {
-    pub(crate) name: Identifier,
-    pub(crate) fields: Vec<StructField>,
+pub struct StructDeclaration {
+    pub name: Identifier,
+    pub fields: Vec<StructField>,
 }
 
 impl fmt::Display for StructDeclaration {
@@ -197,7 +210,7 @@ impl fmt::Display for StructDeclaration {
             f,
             "{vis} struct {name} {{",
             vis = Visi::Pub,
-            name = &self.name
+            name = self.name
         )?;
         {
             let f = &mut f.indented();
@@ -211,9 +224,9 @@ impl fmt::Display for StructDeclaration {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub(crate) struct StructField {
-    pub(crate) name: Identifier,
-    pub(crate) typ: Type,
+pub struct StructField {
+    pub name: Identifier,
+    pub typ: Type,
 }
 
 impl fmt::Display for StructField {
@@ -223,10 +236,47 @@ impl fmt::Display for StructField {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub(crate) struct FunctionDeclaration {
-    pub(crate) name: Identifier,
-    pub(crate) params: Vec<FunctionParam>,
-    pub(crate) ret: Option<Type>,
+pub struct EnumDeclaration {
+    pub name: Identifier,
+    pub fields: Vec<EnumField>,
+}
+
+impl fmt::Display for EnumDeclaration {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "{repr}", repr = Repr::I32)?;
+        writeln!(f, "{vis} enum {name} {{", vis = Visi::Pub, name = self.name)?;
+        {
+            let f = &mut f.indented();
+            for field in &self.fields {
+                writeln!(f, "{},", field)?;
+            }
+        }
+        write!(f, "}}")?;
+        Ok(())
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct EnumField {
+    pub name: Identifier,
+    pub value: Option<Expr>,
+}
+
+impl fmt::Display for EnumField {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{name}", name = self.name)?;
+        if let Some(value) = &self.value {
+            write!(f, " = {value} as i32", value = value)?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct FunctionDeclaration {
+    pub name: Identifier,
+    pub params: Vec<FunctionParam>,
+    pub ret: Option<Type>,
 }
 
 impl fmt::Display for FunctionDeclaration {
@@ -254,9 +304,9 @@ impl fmt::Display for FunctionDeclaration {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub(crate) struct FunctionParam {
-    pub(crate) name: Identifier,
-    pub(crate) typ: Type,
+pub struct FunctionParam {
+    pub name: Identifier,
+    pub typ: Type,
 }
 
 impl fmt::Display for FunctionParam {
@@ -266,7 +316,7 @@ impl fmt::Display for FunctionParam {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub(crate) enum Type {
+pub enum Type {
     Name(Identifier),
     Pointer { konst: bool, inner: Box<Type> },
 }
@@ -284,8 +334,8 @@ impl fmt::Display for Type {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub(crate) struct Identifier {
-    pub(crate) value: String,
+pub struct Identifier {
+    pub value: String,
 }
 
 impl fmt::Display for Identifier {
@@ -299,15 +349,91 @@ impl fmt::Display for Identifier {
 }
 
 impl Identifier {
-    pub(crate) fn name(s: &str) -> Self {
+    pub fn name(s: &str) -> Self {
         Self {
             value: s.to_string(),
         }
     }
 
-    pub(crate) fn struct_name(s: &str) -> Self {
+    pub fn struct_name(s: &str) -> Self {
         Self {
             value: format!("struct_{}", s),
         }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum Expr {
+    Constant(ast::Constant),
+    BinaryOperator(ast::BinaryOperator, Box<Expr>, Box<Expr>),
+    Cast(Type, Box<Expr>),
+    SizeOf(Type),
+    AlignOf(Type),
+}
+
+impl fmt::Display for Expr {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Expr::Constant(c) => match c {
+                ast::Constant::Integer(ast::Integer { base, number, .. }) => {
+                    match base {
+                        ast::IntegerBase::Decimal => {}
+                        ast::IntegerBase::Octal => write!(f, "0o")?,
+                        ast::IntegerBase::Hexadecimal => write!(f, "0x")?,
+                    }
+                    write!(f, "{}", number)?;
+                }
+                ast::Constant::Float(ast::Float { base, number, .. }) => {
+                    match base {
+                        ast::FloatBase::Decimal => {}
+                        ast::FloatBase::Hexadecimal => write!(f, "0x")?,
+                    }
+                    write!(f, "{}", number)?;
+                }
+                ast::Constant::Character(_) => {}
+            },
+            Expr::BinaryOperator(op, lhs, rhs) => match op {
+                ast::BinaryOperator::Index => write!(f, "({}[{}])", lhs, rhs)?,
+                ast::BinaryOperator::Multiply => write!(f, "({} * {})", lhs, rhs)?,
+                ast::BinaryOperator::Divide => write!(f, "({} / {})", lhs, rhs)?,
+                ast::BinaryOperator::Modulo => write!(f, "({} % {})", lhs, rhs)?,
+                ast::BinaryOperator::Plus => write!(f, "({} + {})", lhs, rhs)?,
+                ast::BinaryOperator::Minus => write!(f, "({} - {})", lhs, rhs)?,
+                ast::BinaryOperator::ShiftLeft => write!(f, "({} << {})", lhs, rhs)?,
+                ast::BinaryOperator::ShiftRight => write!(f, "({} >> {})", lhs, rhs)?,
+                ast::BinaryOperator::Less => write!(f, "({} < {})", lhs, rhs)?,
+                ast::BinaryOperator::Greater => write!(f, "({} > {})", lhs, rhs)?,
+                ast::BinaryOperator::LessOrEqual => write!(f, "({} <= {})", lhs, rhs)?,
+                ast::BinaryOperator::GreaterOrEqual => write!(f, "({} >= {})", lhs, rhs)?,
+                ast::BinaryOperator::Equals => write!(f, "({} == {})", lhs, rhs)?,
+                ast::BinaryOperator::NotEquals => write!(f, "({} != {})", lhs, rhs)?,
+                ast::BinaryOperator::BitwiseAnd => write!(f, "({} & {})", lhs, rhs)?,
+                ast::BinaryOperator::BitwiseXor => write!(f, "({} ^ {})", lhs, rhs)?,
+                ast::BinaryOperator::BitwiseOr => write!(f, "({} | {})", lhs, rhs)?,
+                ast::BinaryOperator::LogicalAnd => write!(f, "({} && {})", lhs, rhs)?,
+                ast::BinaryOperator::LogicalOr => write!(f, "({} || {})", lhs, rhs)?,
+                ast::BinaryOperator::Assign => todo!(),
+                ast::BinaryOperator::AssignMultiply => todo!(),
+                ast::BinaryOperator::AssignDivide => todo!(),
+                ast::BinaryOperator::AssignModulo => todo!(),
+                ast::BinaryOperator::AssignPlus => todo!(),
+                ast::BinaryOperator::AssignMinus => todo!(),
+                ast::BinaryOperator::AssignShiftLeft => todo!(),
+                ast::BinaryOperator::AssignShiftRight => todo!(),
+                ast::BinaryOperator::AssignBitwiseAnd => todo!(),
+                ast::BinaryOperator::AssignBitwiseXor => todo!(),
+                ast::BinaryOperator::AssignBitwiseOr => todo!(),
+            },
+            Expr::SizeOf(e) => {
+                write!(f, "core::mem::size_of::<{}>()", e)?;
+            }
+            Expr::AlignOf(e) => {
+                write!(f, "core::mem::align_of::<{}>()", e)?;
+            }
+            Expr::Cast(ty, expr) => {
+                write!(f, "({expr} as {ty})", expr = expr, ty = ty)?;
+            }
+        };
+        Ok(())
     }
 }

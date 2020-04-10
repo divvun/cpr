@@ -30,14 +30,19 @@
 //   ExceptionCollidedUnwind = 3,
 // } EXCEPTION_DISPOSITION, *PEXCEPTION_DISPOSITION;
 
-// enum WOOPS {
-//     A = 1,
-//     B = 2,
-// };
+typedef unsigned long long ULLONG;
 
 typedef struct s {
-    int a;
+    ULLONG a;
     const struct {
-        int inner;
+        char c;
     } *b;
 } s, *sp;
+
+enum WOOPS {
+    A = 1 + 0xF00 + 0644,
+    B = (int) 4.0f,
+    C = sizeof(struct s),
+    D = 3 > 2,
+    LAST,
+};

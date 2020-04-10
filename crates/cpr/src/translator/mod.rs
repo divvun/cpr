@@ -2,6 +2,7 @@ use lang_c::{ast, span::Node};
 use std::{
     collections::hash_map::DefaultHasher,
     hash::{Hash, Hasher},
+    str::FromStr,
 };
 
 mod rg;
@@ -112,10 +113,16 @@ impl Translator<'_> {
         if let ast::DeclarationSpecifier::TypeSpecifier(Node { node: tyspec, .. }) = spec {
             match tyspec {
                 ast::TypeSpecifier::Struct(Node { node: struty, .. }) => {
-                    let st = self.visit_struct(struty);
-                    self.push(st);
+                    let sd = self.visit_struct(struty);
+                    self.push(sd);
                 }
-                _ => {}
+                ast::TypeSpecifier::Enum(Node { node: enumty, .. }) => {
+                    let ed = self.visit_enum(enumty);
+                    self.push(ed);
+                }
+                _ => {
+                    panic!("unsupported freestanding specifier: {:#?}", tyspec);
+                }
             }
         }
     }
@@ -164,8 +171,32 @@ impl Translator<'_> {
         res
     }
 
+    fn visit_enum(&mut self, enumty: &ast::EnumType) -> rg::EnumDeclaration {
+        let id = match enumty.identifier.as_ref().map(borrow_node) {
+            Some(x) => x.name.clone(),
+            None => self.hash_name(&enumty),
+        };
+
+        let mut res = rg::EnumDeclaration {
+            name: rg::Identifier::struct_name(&id),
+            fields: Default::default(),
+        };
+
+        for num in nodes(&enumty.enumerators) {
+            let id = &num.identifier.node.name;
+
+            let value = num.expression.as_ref().map(|x| x.node.as_expr(self));
+            res.fields.push(rg::EnumField {
+                name: rg::Identifier::name(id),
+                value,
+            });
+        }
+
+        res
+    }
+
     #[must_use]
-    fn visit_type(&mut self, typ: &dyn Typed) -> rg::Type {
+    fn visit_type(&self, typ: &dyn Typed) -> rg::Type {
         let mut signed = None;
         let mut longness = 0;
         let original_specs: Vec<_> = typ.typespecs().collect();
@@ -340,6 +371,60 @@ impl Translator<'_> {
         let harsh = harsh::Harsh::default();
         let h = harsh.encode(&[h.finish()]);
         format!("_{}", h)
+    }
+}
+
+/// Converts to a Rust constant expression
+trait AsExpr {
+    fn as_expr(&self, trans: &Translator) -> rg::Expr;
+}
+
+impl AsExpr for ast::Constant {
+    fn as_expr(&self, _trans: &Translator) -> rg::Expr {
+        rg::Expr::Constant(self.clone())
+    }
+}
+
+impl AsExpr for ast::BinaryOperatorExpression {
+    fn as_expr(&self, trans: &Translator) -> rg::Expr {
+        rg::Expr::BinaryOperator(
+            self.operator.node.clone(),
+            Box::new(self.lhs.node.as_expr(trans)),
+            Box::new(self.rhs.node.as_expr(trans)),
+        )
+    }
+}
+
+impl AsExpr for ast::CastExpression {
+    fn as_expr(&self, trans: &Translator) -> rg::Expr {
+        rg::Expr::Cast(
+            trans.visit_type(&self.type_name.node),
+            Box::new(self.expression.node.as_expr(trans)),
+        )
+    }
+}
+
+impl AsExpr for ast::Expression {
+    fn as_expr(&self, trans: &Translator) -> rg::Expr {
+        match self {
+            ast::Expression::Identifier(_) => todo!(),
+            ast::Expression::Constant(v) => v.node.as_expr(trans),
+            ast::Expression::StringLiteral(_) => todo!(),
+            ast::Expression::GenericSelection(_) => todo!(),
+            ast::Expression::Member(_) => todo!(),
+            ast::Expression::Call(_) => todo!(),
+            ast::Expression::CompoundLiteral(_) => todo!(),
+            ast::Expression::SizeOf(ty) => rg::Expr::SizeOf(trans.visit_type(&ty.node)),
+            ast::Expression::AlignOf(ty) => rg::Expr::AlignOf(trans.visit_type(&ty.node)),
+            ast::Expression::UnaryOperator(_) => todo!(),
+            ast::Expression::Cast(v) => v.node.as_expr(trans),
+            ast::Expression::BinaryOperator(v) => v.node.as_expr(trans),
+            ast::Expression::Conditional(_) => todo!(),
+            ast::Expression::Comma(_) => todo!(),
+            ast::Expression::OffsetOf(_) => todo!(),
+            ast::Expression::VaArg(_) => todo!(),
+            ast::Expression::Statement(_) => todo!(),
+        }
     }
 }
 
