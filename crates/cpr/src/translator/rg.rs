@@ -251,7 +251,7 @@ impl fmt::Display for EnumDeclaration {
                 writeln!(f, "{},", field)?;
             }
         }
-        write!(f, "}}")?;
+        writeln!(f, "}}")?;
         Ok(())
     }
 }
@@ -266,7 +266,7 @@ impl fmt::Display for EnumField {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{name}", name = self.name)?;
         if let Some(value) = &self.value {
-            write!(f, " = {value} as i32", value = value)?;
+            write!(f, " = {value} as i32", value = value.as_enum_expr())?;
         }
         Ok(())
     }
@@ -381,11 +381,20 @@ pub enum Expr {
     Cast(Type, Box<Expr>),
     SizeOf(Type),
     AlignOf(Type),
+    Identifier(String),
 }
 
-impl fmt::Display for Expr {
+struct EnumExpr<'a>(&'a Expr);
+
+impl Expr {
+    fn as_enum_expr(&self) -> EnumExpr {
+        EnumExpr(self)
+    }
+}
+
+impl<'a> fmt::Display for EnumExpr<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
+        match self.0 {
             Expr::Constant(c) => match c {
                 ast::Constant::Integer(ast::Integer { base, number, .. }) => {
                     match base {
@@ -404,38 +413,42 @@ impl fmt::Display for Expr {
                 }
                 ast::Constant::Character(_) => {}
             },
-            Expr::BinaryOperator(op, lhs, rhs) => match op {
-                ast::BinaryOperator::Index => write!(f, "({}[{}])", lhs, rhs)?,
-                ast::BinaryOperator::Multiply => write!(f, "({} * {})", lhs, rhs)?,
-                ast::BinaryOperator::Divide => write!(f, "({} / {})", lhs, rhs)?,
-                ast::BinaryOperator::Modulo => write!(f, "({} % {})", lhs, rhs)?,
-                ast::BinaryOperator::Plus => write!(f, "({} + {})", lhs, rhs)?,
-                ast::BinaryOperator::Minus => write!(f, "({} - {})", lhs, rhs)?,
-                ast::BinaryOperator::ShiftLeft => write!(f, "({} << {})", lhs, rhs)?,
-                ast::BinaryOperator::ShiftRight => write!(f, "({} >> {})", lhs, rhs)?,
-                ast::BinaryOperator::Less => write!(f, "({} < {})", lhs, rhs)?,
-                ast::BinaryOperator::Greater => write!(f, "({} > {})", lhs, rhs)?,
-                ast::BinaryOperator::LessOrEqual => write!(f, "({} <= {})", lhs, rhs)?,
-                ast::BinaryOperator::GreaterOrEqual => write!(f, "({} >= {})", lhs, rhs)?,
-                ast::BinaryOperator::Equals => write!(f, "({} == {})", lhs, rhs)?,
-                ast::BinaryOperator::NotEquals => write!(f, "({} != {})", lhs, rhs)?,
-                ast::BinaryOperator::BitwiseAnd => write!(f, "({} & {})", lhs, rhs)?,
-                ast::BinaryOperator::BitwiseXor => write!(f, "({} ^ {})", lhs, rhs)?,
-                ast::BinaryOperator::BitwiseOr => write!(f, "({} | {})", lhs, rhs)?,
-                ast::BinaryOperator::LogicalAnd => write!(f, "({} && {})", lhs, rhs)?,
-                ast::BinaryOperator::LogicalOr => write!(f, "({} || {})", lhs, rhs)?,
-                ast::BinaryOperator::Assign => todo!(),
-                ast::BinaryOperator::AssignMultiply => todo!(),
-                ast::BinaryOperator::AssignDivide => todo!(),
-                ast::BinaryOperator::AssignModulo => todo!(),
-                ast::BinaryOperator::AssignPlus => todo!(),
-                ast::BinaryOperator::AssignMinus => todo!(),
-                ast::BinaryOperator::AssignShiftLeft => todo!(),
-                ast::BinaryOperator::AssignShiftRight => todo!(),
-                ast::BinaryOperator::AssignBitwiseAnd => todo!(),
-                ast::BinaryOperator::AssignBitwiseXor => todo!(),
-                ast::BinaryOperator::AssignBitwiseOr => todo!(),
-            },
+            Expr::BinaryOperator(op, lhs, rhs) => {
+                let lhs = lhs.as_enum_expr();
+                let rhs = rhs.as_enum_expr();
+                match op {
+                    ast::BinaryOperator::Index => write!(f, "({}[{}])", lhs, rhs)?,
+                    ast::BinaryOperator::Multiply => write!(f, "({} * {})", lhs, rhs)?,
+                    ast::BinaryOperator::Divide => write!(f, "({} / {})", lhs, rhs)?,
+                    ast::BinaryOperator::Modulo => write!(f, "({} % {})", lhs, rhs)?,
+                    ast::BinaryOperator::Plus => write!(f, "({} + {})", lhs, rhs)?,
+                    ast::BinaryOperator::Minus => write!(f, "({} - {})", lhs, rhs)?,
+                    ast::BinaryOperator::ShiftLeft => write!(f, "({} << {})", lhs, rhs)?,
+                    ast::BinaryOperator::ShiftRight => write!(f, "({} >> {})", lhs, rhs)?,
+                    ast::BinaryOperator::Less => write!(f, "({} < {})", lhs, rhs)?,
+                    ast::BinaryOperator::Greater => write!(f, "({} > {})", lhs, rhs)?,
+                    ast::BinaryOperator::LessOrEqual => write!(f, "({} <= {})", lhs, rhs)?,
+                    ast::BinaryOperator::GreaterOrEqual => write!(f, "({} >= {})", lhs, rhs)?,
+                    ast::BinaryOperator::Equals => write!(f, "({} == {})", lhs, rhs)?,
+                    ast::BinaryOperator::NotEquals => write!(f, "({} != {})", lhs, rhs)?,
+                    ast::BinaryOperator::BitwiseAnd => write!(f, "({} & {})", lhs, rhs)?,
+                    ast::BinaryOperator::BitwiseXor => write!(f, "({} ^ {})", lhs, rhs)?,
+                    ast::BinaryOperator::BitwiseOr => write!(f, "({} | {})", lhs, rhs)?,
+                    ast::BinaryOperator::LogicalAnd => write!(f, "({} && {})", lhs, rhs)?,
+                    ast::BinaryOperator::LogicalOr => write!(f, "({} || {})", lhs, rhs)?,
+                    ast::BinaryOperator::Assign => todo!(),
+                    ast::BinaryOperator::AssignMultiply => todo!(),
+                    ast::BinaryOperator::AssignDivide => todo!(),
+                    ast::BinaryOperator::AssignModulo => todo!(),
+                    ast::BinaryOperator::AssignPlus => todo!(),
+                    ast::BinaryOperator::AssignMinus => todo!(),
+                    ast::BinaryOperator::AssignShiftLeft => todo!(),
+                    ast::BinaryOperator::AssignShiftRight => todo!(),
+                    ast::BinaryOperator::AssignBitwiseAnd => todo!(),
+                    ast::BinaryOperator::AssignBitwiseXor => todo!(),
+                    ast::BinaryOperator::AssignBitwiseOr => todo!(),
+                }
+            }
             Expr::SizeOf(e) => {
                 write!(f, "core::mem::size_of::<{}>()", e)?;
             }
@@ -443,7 +456,10 @@ impl fmt::Display for Expr {
                 write!(f, "core::mem::align_of::<{}>()", e)?;
             }
             Expr::Cast(ty, expr) => {
-                write!(f, "({expr} as {ty})", expr = expr, ty = ty)?;
+                write!(f, "({expr} as {ty})", expr = expr.as_enum_expr(), ty = ty)?;
+            }
+            Expr::Identifier(name) => {
+                write!(f, "(Self::{name} as i32)", name = name)?;
             }
         };
         Ok(())

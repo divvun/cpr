@@ -194,11 +194,17 @@ impl Translator<'_> {
         };
 
         for num in nodes(&enumty.enumerators) {
-            let id = &num.identifier.node.name;
+            let field_id = &num.identifier.node.name;
 
-            let value = num.expression.as_ref().map(|x| x.node.as_expr(self));
+            let value = num.expression.as_ref().map(|x| {
+                println!(
+                    "for enum {}, field {}, got value {:#?}",
+                    id, field_id, x.node
+                );
+                x.node.as_expr(self)
+            });
             res.fields.push(rg::EnumField {
-                name: rg::Identifier::name(id),
+                name: rg::Identifier::name(field_id),
                 value,
             });
         }
@@ -432,10 +438,16 @@ impl AsExpr for ast::CastExpression {
     }
 }
 
+impl AsExpr for ast::Identifier {
+    fn as_expr(&self, _trans: &Translator) -> rg::Expr {
+        rg::Expr::Identifier(self.name.clone())
+    }
+}
+
 impl AsExpr for ast::Expression {
     fn as_expr(&self, trans: &Translator) -> rg::Expr {
         match self {
-            ast::Expression::Identifier(_) => todo!(),
+            ast::Expression::Identifier(v) => v.node.as_expr(trans),
             ast::Expression::Constant(v) => v.node.as_expr(trans),
             ast::Expression::StringLiteral(_) => todo!(),
             ast::Expression::GenericSelection(_) => todo!(),
