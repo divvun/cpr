@@ -360,6 +360,18 @@ impl Identifier {
             value: format!("struct_{}", s),
         }
     }
+
+    pub fn enum_name(s: &str) -> Self {
+        Self {
+            value: format!("enum_{}", s),
+        }
+    }
+
+    pub fn union_name(s: &str) -> Self {
+        Self {
+            value: format!("union_{}", s),
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Eq)]

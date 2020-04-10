@@ -178,7 +178,7 @@ impl Translator<'_> {
         };
 
         let mut res = rg::EnumDeclaration {
-            name: rg::Identifier::struct_name(&id),
+            name: rg::Identifier::enum_name(&id),
             fields: Default::default(),
         };
 
