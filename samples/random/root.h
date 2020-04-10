@@ -50,4 +50,14 @@
 // typedef int INT;
 // typedef int INT;
 
-#include <minwindef.h>
+// #include <minwindef.h>
+
+// typedef enum {
+//     UNSPECIFIED_COMPARTMENT_ID = 0,
+//     DEFAULT_COMPARTMENT_ID
+// } COMPARTMENT_ID, *PCOMPARTMENT_ID;
+
+typedef enum {
+    UNSPECIFIED_COMPARTMENT_ID = 0,
+    DEFAULT_COMPARTMENT_ID
+} COMPARTMENT_ID;

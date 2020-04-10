@@ -104,6 +104,11 @@ impl Translator<'_> {
                     }
                 }
             }
+            ast::TypeSpecifier::Enum(enumty) => {
+                let enumty = borrow_node(enumty);
+                let ed = self.visit_enum(enumty);
+                self.push(ed);
+            }
             _ => {}
         }
     }
@@ -124,7 +129,7 @@ impl Translator<'_> {
                     self.push(ed);
                 }
                 _ => {
-                    panic!(
+                    unimplemented!(
                         "{:?}: unsupported freestanding specifier: {:#?}\n\nfull external decl: {:#?}",
                         self.path, spec, extdecl,
                     );
@@ -281,7 +286,20 @@ impl Translator<'_> {
 
                 rg::Type::Name(rg::Identifier::struct_name(id))
             }
-            _ => unimplemented!("don't know how to translate type: {:#?}", typ),
+            TS::Enum(Node { node: enumty, .. }) => {
+                let id = &enumty
+                    .identifier
+                    .as_ref()
+                    .map(|x| x.node.name.clone())
+                    .unwrap_or_else(|| self.hash_name(enumty));
+
+                rg::Type::Name(rg::Identifier::enum_name(id))
+            }
+            _ => unimplemented!(
+                "{:?}: don't know how to translate type: {:#?}",
+                self.path,
+                typ
+            ),
         };
 
         for _d in 0..typ.pointer_depth() {
@@ -295,8 +313,8 @@ impl Translator<'_> {
     }
 
     fn visit_declarator(&mut self, dtion: &ast::Declaration, dtor: &ast::Declarator) {
-        println!("declaration = {:#?}", dtion);
-        println!("declarator  = {:#?}", dtor);
+        // println!("declaration = {:#?}", dtion);
+        // println!("declarator  = {:#?}", dtor);
 
         let id = match dtor.get_identifier() {
             None => {
