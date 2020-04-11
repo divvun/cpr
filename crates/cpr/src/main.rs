@@ -76,8 +76,17 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     }
 
+    let working_path = args
+        .file
+        .parent()
+        .expect("file should have a parent")
+        .to_path_buf();
+
     log::info!("System paths: {:#?}", system_paths);
-    let parser = Parser::new(args.file, system_paths, vec![], ctx).unwrap();
+    let provider = frontend::FileSourceProvider::new(system_paths, working_path);
+
+    let mut parser = Parser::new(Box::new(provider), ctx, Env::with_msvc());
+    parser.parse_path(args.file.file_name().expect("invalid file").into())?;
     log::info!("Done parsing!");
 
     let config = translator::Config { arch };
@@ -106,7 +115,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     fs::create_dir_all(top_level_path.parent().unwrap())?;
     let mut top_level = fs::File::create(&top_level_path)?;
 
-    for incl in &parser.ordered_includes {
+    for incl in &parser.includes {
         let unit = parser.units.get(incl).unwrap();
         if unit.declarations.is_empty() {
             println!("{} | skipping (no decls)", unit.path.display());
@@ -114,15 +123,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
 
         let trans_unit = translator::translate_unit(&config, unit.path.clone(), &unit.declarations);
-
-        use frontend::grammar::Include;
-        let stem = match incl {
-            Include::System(p) => p,
-            Include::Quoted(p) => p,
-            _ => todo!(),
-        }
-        .file_stem()
-        .unwrap();
+        let stem = incl.as_ref().file_stem().unwrap();
 
         // TODO: this is all kinds of wrong
         writeln!(top_level, "pub mod {};", stem.to_string_lossy())?;
@@ -152,6 +153,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 }
 
 use ctor::ctor;
+use lang_c::env::Env;
 
 #[ctor]
 fn install_extensions() {

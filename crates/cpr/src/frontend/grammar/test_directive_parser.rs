@@ -95,8 +95,8 @@ fn define_functionlike_variadic_2() {
 fn include_angle() {
     assert_eq!(
         directive("#include <foo/bar/baz.h>"),
-        Ok(Some(Directive::Include(Include::System(
-            "foo/bar/baz.h".into()
+        Ok(Some(Directive::Include(IncludeDirective::Complete(
+            Include::System("foo/bar/baz.h".into())
         ))))
     )
 }
@@ -105,8 +105,8 @@ fn include_angle() {
 fn include_quoted() {
     assert_eq!(
         directive(r#"#include "shared/um/sure.h""#),
-        Ok(Some(Directive::Include(Include::Quoted(
-            "shared/um/sure.h".into()
+        Ok(Some(Directive::Include(IncludeDirective::Complete(
+            Include::Quoted("shared/um/sure.h".into())
         ))))
     )
 }

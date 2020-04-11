@@ -70,13 +70,13 @@ peg::parser! { pub(crate) grammar rules() for str {
     rule undef() -> String
         = n:identifier() eof() { n }
 
-    rule include() -> Include
+    pub rule include() -> IncludeDirective
         = t:include_token() eof() { t }
 
-    rule include_token() -> Include
-        = "<" p:$((!['>'][_])+) ">" { Include::System(p.into()) }
-        / "\"" p:$((!['"'][_])+) "\"" { Include::Quoted(p.into()) }
-        / t:token_stream() { Include::TokenSeq(t) }
+    rule include_token() -> IncludeDirective
+        = "<" p:$((!['>'][_])+) ">" { IncludeDirective::Complete(Include::System(p.into())) }
+        / "\"" p:$((!['"'][_])+) "\"" { IncludeDirective::Complete(Include::Quoted(p.into())) }
+        / t:token_stream() { IncludeDirective::Raw(t) }
 
     rule define() -> Define
         = define_function_like()
@@ -394,7 +394,7 @@ pub enum Directive {
     Else,
     ElseIf(TokenSeq),
     EndIf,
-    Include(Include),
+    Include(IncludeDirective),
     Define(Define),
     Undefine(String),
     Error(String),
@@ -402,11 +402,16 @@ pub enum Directive {
     Unknown(String, String),
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum IncludeDirective {
+    Complete(Include),
+    Raw(TokenSeq),
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Include {
     System(PathBuf),
     Quoted(PathBuf),
-    TokenSeq(TokenSeq),
 }
 
 impl fmt::Display for Include {
@@ -414,60 +419,14 @@ impl fmt::Display for Include {
         match self {
             Include::System(p) => write!(f, "<{}>", p.to_string_lossy()),
             Include::Quoted(p) => write!(f, r#""{}""#, p.to_string_lossy()),
-            Include::TokenSeq(ts) => write!(f, "{}", ts),
         }
     }
 }
 
-impl Include {
-    fn resolve_system(candidate: &Path, system_paths: &[PathBuf]) -> Option<PathBuf> {
-        for path in system_paths {
-            let merged = path.join(candidate);
-            if merged.exists() {
-                return Some(merged);
-            }
-        }
-        None
-    }
-
-    fn resolve_quoted(
-        candidate: &Path,
-        quoted_paths: &[PathBuf],
-        working_path: &Path,
-    ) -> Option<PathBuf> {
-        // Check local path first
-        let merged = working_path.join(candidate);
-        if merged.exists() {
-            return Some(merged);
-        }
-
-        // Check quoted paths
-        for path in quoted_paths {
-            let merged = path.join(candidate);
-            if merged.exists() {
-                return Some(merged);
-            }
-        }
-        None
-    }
-
-    pub fn resolve(
-        &self,
-        system_paths: &[PathBuf],
-        quoted_paths: &[PathBuf],
-        working_path: &Path,
-    ) -> Option<PathBuf> {
+impl AsRef<Path> for Include {
+    fn as_ref(&self) -> &Path {
         match self {
-            Include::System(path) => Self::resolve_system(path, system_paths),
-            Include::Quoted(path) => {
-                // Fallback to system lookup
-                Self::resolve_quoted(path, quoted_paths, working_path)
-                    // Fallback to system lookup
-                    .or_else(|| Self::resolve_system(path, system_paths))
-            }
-            Include::TokenSeq(tokens) => {
-                unimplemented!("tokens: {:?}", tokens);
-            }
+            Include::System(p) | Include::Quoted(p) => p,
         }
     }
 }

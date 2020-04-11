@@ -70,6 +70,8 @@
 // typedef unsigned short wchar_t;
 // #endif
 
+/* wchar_t should work when defined in <stddef.h> (actually <vcruntime.h>) */
+
 // #include <stddef.h>
 // void foobar(wchar_t c, rsize_t s);
 
@@ -90,6 +92,13 @@
 // };
 // typedef struct TIB TIB, *PTIB;
 
+//////////////////////////
+
+/*
+    Should work both with and without 'struct B's declaration
+    Without, B is an opaque struct
+ */
+
 // struct A {
 //     struct B *b;
 // };
@@ -97,6 +106,8 @@
 // struct B {
 //     int foobar;
 // };
+
+//////////////////////////
 
 // #include <ctype.h>
 #include <minwindef.h>

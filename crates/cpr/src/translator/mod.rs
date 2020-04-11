@@ -128,7 +128,6 @@ impl<'a> Translator<'a> {
         }
     }
 
-    #[must_use]
     fn visit_struct(&mut self, struty: &ast::StructType, mode: StructVisitMode) {
         let id = match struty.identifier.as_ref().map(borrow_node) {
             Some(x) => x.name.clone(),
@@ -512,3 +511,6 @@ pub(crate) fn prelude() -> &'static str {
         "#
     );
 }
+
+#[cfg(test)]
+mod test_translator;
