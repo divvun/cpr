@@ -7,6 +7,40 @@ use std::{
     path::{Path, PathBuf},
 };
 
+trait UnitExtension {
+    fn must_have_alias(&self, name: &str) -> &rg::AliasDeclaration;
+}
+
+impl UnitExtension for rg::Unit {
+    fn must_have_alias(&self, name: &str) -> &rg::AliasDeclaration {
+        self.toplevels
+            .iter()
+            .filter_map(|tl| {
+                match tl {
+                    rg::TopLevel::AliasDeclaration(ad) => {
+                        if ad.name.value == name {
+                            return Some(ad);
+                        }
+                    }
+                    _ => {}
+                };
+                None
+            })
+            .next()
+            .unwrap_or_else(|| panic!("should have an alias with name {:?}", name))
+    }
+}
+
+trait TypeExtension {
+    fn must_be(&self, pattern: &str);
+}
+
+impl TypeExtension for rg::Type {
+    fn must_be(&self, pattern: &str) {
+        assert_eq!(pattern, format!("{}", self), "(expected is on the left)")
+    }
+}
+
 struct TestSourceProvider {
     files: HashMap<PathBuf, String>,
 }
@@ -28,18 +62,9 @@ impl SourceProvider for TestSourceProvider {
     }
 }
 
-#[test]
-fn test_simple_typedefs() {
+fn parse_single_unit(input: &str) -> rg::Unit {
     let mut provider = TestSourceProvider::new();
-    provider.files.insert(
-        "root.h".into(),
-        indoc!(
-            "
-            typedef short SHORT;
-            "
-        )
-        .into(),
-    );
+    provider.files.insert("root.h".into(), input.into());
 
     let ctx = Context::new();
     let env = Env::with_msvc();
@@ -48,15 +73,23 @@ fn test_simple_typedefs() {
 
     let unit = parser.units.values().next().unwrap();
     let config = Config { arch: Arch::X86_64 };
-    let unit = translate_unit(&config, unit.path.clone(), &unit.declarations[..]);
-    assert_eq!(1, unit.toplevels.len());
-    assert!(matches!(
-        &unit.toplevels[0],
-        rg::TopLevel::AliasDeclaration(rg::AliasDeclaration {
-            name: rg::Identifier {
-                value: typedef_name
-            },
-            typ: rg::Type::Name(rg::Identifier { value: type_name }),
-        }) if typedef_name == "SHORT" && type_name == "i16"
+    translate_unit(&config, unit.path.clone(), &unit.declarations[..])
+}
+
+#[test]
+fn test_simple_typedefs() {
+    let unit = parse_single_unit(indoc!(
+        "
+        typedef short SHORT;
+        "
     ));
+    unit.must_have_alias("SHORT").typ.must_be("i16");
+
+    let unit = parse_single_unit(indoc!(
+        "
+        typedef unsigned int UINT, *PUINT;
+        "
+    ));
+    unit.must_have_alias("UINT").typ.must_be("u32");
+    unit.must_have_alias("PUINT").typ.must_be("*mut u32");
 }
