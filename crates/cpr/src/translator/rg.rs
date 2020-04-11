@@ -3,6 +3,7 @@ use once_cell::sync::Lazy;
 use std::{
     collections::HashSet,
     fmt::{self, Write},
+    path::PathBuf,
 };
 
 static RUST_KEYWORDS: Lazy<HashSet<String>> = Lazy::new(|| {
@@ -132,7 +133,17 @@ impl fmt::Display for Repr {
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct Unit {
+    pub path: PathBuf,
     pub toplevels: Vec<TopLevel>,
+}
+
+impl Unit {
+    pub fn new(path: PathBuf) -> Self {
+        Self {
+            path,
+            toplevels: Default::default(),
+        }
+    }
 }
 
 impl fmt::Display for Unit {

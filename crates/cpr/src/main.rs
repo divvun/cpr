@@ -113,7 +113,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             continue;
         }
 
-        let trans_unit = translator::translate_unit(&config, &unit.path, &unit.declarations);
+        let trans_unit = translator::translate_unit(&config, unit.path.clone(), &unit.declarations);
 
         use frontend::grammar::Include;
         let stem = match incl {

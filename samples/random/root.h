@@ -95,7 +95,7 @@
 // };
 
 // struct B {
-//     int ahAH;
+//     int foobar;
 // };
 
 // #include <ctype.h>

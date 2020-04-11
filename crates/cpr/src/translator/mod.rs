@@ -1,8 +1,9 @@
+use indexmap::IndexSet;
 use lang_c::{ast, span::Node};
 use std::{
     collections::hash_map::DefaultHasher,
     hash::{Hash, Hasher},
-    path::Path,
+    path::PathBuf,
 };
 
 mod rg;
@@ -10,13 +11,20 @@ mod utils;
 use utils::*;
 
 struct Translator<'a> {
-    path: &'a Path,
     unit: rg::Unit,
     config: &'a Config,
+    forward_struct_names: IndexSet<String>,
+    declared_struct_names: IndexSet<String>,
 }
 
 pub struct Config {
     pub arch: Arch,
+}
+
+#[derive(Clone, Copy)]
+enum StructVisitMode {
+    Forward,
+    Collect,
 }
 
 /// Target architectures, named after LLVM
@@ -44,7 +52,16 @@ impl argh::FromArgValue for Arch {
     }
 }
 
-impl Translator<'_> {
+impl<'a> Translator<'a> {
+    fn new(config: &'a Config, path: PathBuf) -> Self {
+        Self {
+            config,
+            unit: rg::Unit::new(path.to_owned()),
+            declared_struct_names: Default::default(),
+            forward_struct_names: Default::default(),
+        }
+    }
+
     fn push<T: Into<rg::TopLevel>>(&mut self, t: T) {
         self.unit.toplevels.push(t.into());
     }
@@ -57,34 +74,31 @@ impl Translator<'_> {
                 for spec in nodes(&declaration.specifiers) {
                     match spec {
                         ast::DeclarationSpecifier::TypeSpecifier(ts) => {
-                            self.predeclare_typespec(&ts.node);
+                            self.predeclare_types(&ts.node);
                         }
                         _ => {}
                     }
                 }
 
-                // if declaration.declarators.is_empty() {
-                //     for spec in nodes(&declaration.specifiers[..]) {
-                //         self.visit_freestanding_specifier(extdecl, spec);
-                //     }
-                // } else {
                 for init_declarator in nodes(&declaration.declarators[..]) {
                     let declarator = &init_declarator.declarator.node;
                     self.visit_declarator(declaration, declarator);
                 }
-            // }
             } else {
                 log::debug!("visit_unit: not a Declaration: {:#?}", extdecl);
             }
         }
     }
 
-    fn predeclare_typespec(&mut self, ts: &ast::TypeSpecifier) {
+    // C allows:
+    //   typedef struct a { struct b { int field; } b } a;
+    // We need to pre-declare `struct b` and `struct a` before visiting
+    // the typedef itself.
+    fn predeclare_types(&mut self, ts: &ast::TypeSpecifier) {
         match ts {
             ast::TypeSpecifier::Struct(struty) => {
                 let struty = borrow_node(struty);
-                let sd = self.visit_struct(struty);
-                self.push(sd);
+                self.visit_struct(struty, StructVisitMode::Forward);
 
                 if let Some(dtions) = struty.declarations.as_ref() {
                     for dtion in nodes(&dtions) {
@@ -94,7 +108,7 @@ impl Translator<'_> {
                                 for sq in nodes(&sf.specifiers) {
                                     match sq {
                                         ast::SpecifierQualifier::TypeSpecifier(ts) => {
-                                            self.predeclare_typespec(borrow_node(ts));
+                                            self.predeclare_types(borrow_node(ts));
                                         }
                                         _ => {}
                                     }
@@ -115,7 +129,7 @@ impl Translator<'_> {
     }
 
     #[must_use]
-    fn visit_struct(&mut self, struty: &ast::StructType) -> rg::StructDeclaration {
+    fn visit_struct(&mut self, struty: &ast::StructType, mode: StructVisitMode) {
         let id = match struty.identifier.as_ref().map(borrow_node) {
             Some(x) => x.name.clone(),
             None => self.hash_name(&struty),
@@ -155,7 +169,21 @@ impl Translator<'_> {
                 }
             }
         }
-        res
+
+        match mode {
+            StructVisitMode::Forward => {
+                if res.fields.is_empty() {
+                    self.forward_struct_names.insert(res.name.value.clone());
+                } else {
+                    self.declared_struct_names.insert(res.name.value.clone());
+                    self.push(res);
+                }
+            }
+            StructVisitMode::Collect => {
+                self.declared_struct_names.insert(res.name.value.clone());
+                self.push(res);
+            }
+        }
     }
 
     fn visit_enum(&mut self, enumty: &ast::EnumType) -> rg::EnumDeclaration {
@@ -277,7 +305,7 @@ impl Translator<'_> {
             }
             _ => unimplemented!(
                 "{:?}: don't know how to translate type: {:#?}",
-                self.path,
+                self.unit.path,
                 typ
             ),
         };
@@ -380,6 +408,25 @@ impl Translator<'_> {
         let h = harsh.encode(&[h.finish()]);
         format!("_{}", h)
     }
+
+    fn collect_opaque_structs(&mut self) {
+        let mut opaque_structs: Vec<_> = self
+            .forward_struct_names
+            .difference(&self.declared_struct_names)
+            .map(|name| {
+                println!("found opaque struct name: {:?}", name);
+
+                rg::StructDeclaration {
+                    fields: Default::default(),
+                    name: rg::Identifier::name(name),
+                }
+            })
+            .collect();
+
+        for s in opaque_structs.drain(..) {
+            self.push(s);
+        }
+    }
 }
 
 /// Converts to a Rust constant expression
@@ -444,15 +491,12 @@ impl AsExpr for ast::Expression {
 
 pub(crate) fn translate_unit(
     config: &Config,
-    path: &Path,
+    path: PathBuf,
     decls: &[ast::ExternalDeclaration],
 ) -> rg::Unit {
-    let mut translator = Translator {
-        unit: rg::Unit { toplevels: vec![] },
-        path,
-        config: &config,
-    };
+    let mut translator = Translator::new(config, path);
     translator.visit_unit(decls);
+    translator.collect_opaque_structs();
     translator.unit
 }
 
