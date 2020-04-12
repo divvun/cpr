@@ -1,12 +1,16 @@
 
-enum Duplicates {
-    Min,
+struct A {
+    struct {
+        int a;
+        int b;
+    } c;
+};
 
-    First = Min,
-    Second,
-    Third,
-
-    Max = Third,
+struct B {
+    struct {
+        int a;
+        int b;
+    } c;
 };
 
 // #include <minwindef.h>

@@ -67,6 +67,8 @@ impl<'a> Translator<'a> {
     }
 
     fn visit_unit(&mut self, declarations: &[ast::ExternalDeclaration]) {
+        let stack = &[];
+
         for extdecl in declarations {
             if let ast::ExternalDeclaration::Declaration(declaration) = &extdecl {
                 let declaration = &declaration.node;
@@ -74,7 +76,7 @@ impl<'a> Translator<'a> {
                 for spec in nodes(&declaration.specifiers) {
                     match spec {
                         ast::DeclarationSpecifier::TypeSpecifier(ts) => {
-                            self.predeclare_types(&ts.node);
+                            self.predeclare_types(&[], &ts.node);
                         }
                         _ => {}
                     }
@@ -82,7 +84,7 @@ impl<'a> Translator<'a> {
 
                 for init_declarator in nodes(&declaration.declarators[..]) {
                     let declarator = &init_declarator.declarator.node;
-                    self.visit_declarator(declaration, declarator);
+                    self.visit_declarator(stack, declaration, declarator);
                 }
             } else {
                 log::debug!("visit_unit: not a Declaration: {:#?}", extdecl);
@@ -94,11 +96,16 @@ impl<'a> Translator<'a> {
     //   typedef struct a { struct b { int field; } b } a;
     // We need to pre-declare `struct b` and `struct a` before visiting
     // the typedef itself.
-    fn predeclare_types(&mut self, ts: &ast::TypeSpecifier) {
+    fn predeclare_types(&mut self, stack: &[&str], ts: &ast::TypeSpecifier) {
         match ts {
             ast::TypeSpecifier::Struct(struty) => {
                 let struty = borrow_node(struty);
-                self.visit_struct(struty, StructVisitMode::Forward);
+                let name = self.visit_struct(&stack[..], struty, StructVisitMode::Forward);
+                let stack: Vec<_> = stack
+                    .iter()
+                    .copied()
+                    .chain(Some(name.as_ref()).into_iter())
+                    .collect();
 
                 if let Some(dtions) = struty.declarations.as_ref() {
                     for dtion in nodes(&dtions) {
@@ -108,7 +115,7 @@ impl<'a> Translator<'a> {
                                 for sq in nodes(&sf.specifiers) {
                                     match sq {
                                         ast::SpecifierQualifier::TypeSpecifier(ts) => {
-                                            self.predeclare_types(borrow_node(ts));
+                                            self.predeclare_types(&stack[..], borrow_node(ts));
                                         }
                                         _ => {}
                                     }
@@ -128,14 +135,24 @@ impl<'a> Translator<'a> {
         }
     }
 
-    fn visit_struct(&mut self, struty: &ast::StructType, mode: StructVisitMode) {
-        let id = match struty.identifier.as_ref().map(borrow_node) {
+    fn visit_struct(
+        &mut self,
+        stack: &[&str],
+        struty: &ast::StructType,
+        mode: StructVisitMode,
+    ) -> String {
+        let name = match struty.identifier.as_ref().map(borrow_node) {
             Some(x) => x.name.clone(),
-            None => self.hash_name(&struty),
+            None => self.hash_name(stack, &struty),
         };
+        let stack: Vec<_> = stack
+            .iter()
+            .copied()
+            .chain(Some(name.as_ref()).into_iter())
+            .collect();
 
         let mut res = rg::StructDeclaration {
-            name: rg::Identifier::struct_name(&id),
+            name: rg::Identifier::struct_name(&name),
             fields: Default::default(),
         };
 
@@ -155,7 +172,7 @@ impl<'a> Translator<'a> {
                                     None => panic!("anonymous struct fields aren't supported"),
                                 };
 
-                                let typ = self.visit_type(&sftup);
+                                let typ = self.visit_type(&stack[..], &sftup);
                                 let field = rg::StructField {
                                     name: rg::Identifier::name(&id.name),
                                     typ,
@@ -183,12 +200,13 @@ impl<'a> Translator<'a> {
                 self.push(res);
             }
         }
+        name
     }
 
     fn visit_enum(&mut self, enumty: &ast::EnumType) -> rg::EnumDeclaration {
         let id = match enumty.identifier.as_ref().map(borrow_node) {
             Some(x) => x.name.clone(),
-            None => self.hash_name(&enumty),
+            None => self.hash_name(&[], &enumty),
         };
 
         let mut res = rg::EnumDeclaration {
@@ -210,7 +228,7 @@ impl<'a> Translator<'a> {
     }
 
     #[must_use]
-    fn visit_type(&self, typ: &dyn Typed) -> rg::Type {
+    fn visit_type(&self, stack: &[&str], typ: &dyn Typed) -> rg::Type {
         let mut signed = None;
         let mut longness = 0;
         let original_specs: Vec<_> = typ.typespecs().collect();
@@ -291,7 +309,7 @@ impl<'a> Translator<'a> {
                     .identifier
                     .as_ref()
                     .map(|x| x.node.name.clone())
-                    .unwrap_or_else(|| self.hash_name(struty));
+                    .unwrap_or_else(|| self.hash_name(stack, struty));
 
                 rg::Type::Name(rg::Identifier::struct_name(id))
             }
@@ -300,7 +318,7 @@ impl<'a> Translator<'a> {
                     .identifier
                     .as_ref()
                     .map(|x| x.node.name.clone())
-                    .unwrap_or_else(|| self.hash_name(enumty));
+                    .unwrap_or_else(|| self.hash_name(stack, enumty));
 
                 rg::Type::Name(rg::Identifier::enum_name(id))
             }
@@ -321,7 +339,12 @@ impl<'a> Translator<'a> {
         res
     }
 
-    fn visit_declarator(&mut self, dtion: &ast::Declaration, dtor: &ast::Declarator) {
+    fn visit_declarator(
+        &mut self,
+        stack: &[&str],
+        dtion: &ast::Declaration,
+        dtor: &ast::Declarator,
+    ) {
         // println!("declaration = {:#?}", dtion);
         // println!("declarator  = {:#?}", dtor);
 
@@ -340,14 +363,14 @@ impl<'a> Translator<'a> {
         log::debug!("visit_declarator: {}", id.name);
 
         if let Some(ast::StorageClassSpecifier::Typedef) = dtion.get_storage_class() {
-            let typ = self.visit_type(&DeclTuple { dtion, dtor });
+            let typ = self.visit_type(&[], &DeclTuple { dtion, dtor });
             let ad = rg::AliasDeclaration {
                 name: rg::Identifier::name(&id.name),
                 typ,
             };
             self.push(ad);
         } else if let Some(fdecl) = dtor.get_function() {
-            let fd = self.visit_fdecl(dtion, id, dtor, fdecl);
+            let fd = self.visit_fdecl(stack, dtion, id, dtor, fdecl);
             self.push(fd);
         } else {
             log::debug!(
@@ -361,6 +384,7 @@ impl<'a> Translator<'a> {
     #[must_use]
     fn visit_fdecl(
         &mut self,
+        stack: &[&str],
         dtion: &ast::Declaration,
         id: &ast::Identifier,
         dtor: &ast::Declarator,
@@ -375,7 +399,7 @@ impl<'a> Translator<'a> {
                 // function is `void fun()`, ignore the void
                 None
             } else {
-                Some(self.visit_type(&ftup))
+                Some(self.visit_type(stack, &ftup))
             },
         };
 
@@ -391,7 +415,7 @@ impl<'a> Translator<'a> {
 
                 res.params.push(rg::FunctionParam {
                     name: rg::Identifier::name(&name),
-                    typ: self.visit_type(param),
+                    typ: self.visit_type(stack, param),
                 });
             }
         }
@@ -399,15 +423,16 @@ impl<'a> Translator<'a> {
         res
     }
 
-    fn hash_name<T>(&self, t: &T) -> String
+    fn hash_name<T>(&self, stack: &[&str], t: &T) -> String
     where
         T: Hash,
     {
         let mut h = DefaultHasher::new();
         t.hash(&mut h);
+
         let harsh = harsh::Harsh::default();
         let h = harsh.encode(&[h.finish()]);
-        format!("_{}", h)
+        format!("_{}_{}", h, stack.join("_"))
     }
 
     fn collect_opaque_structs(&mut self) {
@@ -454,7 +479,7 @@ impl AsExpr for ast::BinaryOperatorExpression {
 impl AsExpr for ast::CastExpression {
     fn as_expr(&self, trans: &Translator) -> rg::Expr {
         rg::Expr::Cast(
-            trans.visit_type(&self.type_name.node),
+            trans.visit_type(&[], &self.type_name.node),
             Box::new(self.expression.node.as_expr(trans)),
         )
     }
@@ -476,8 +501,8 @@ impl AsExpr for ast::Expression {
             ast::Expression::Member(_) => todo!(),
             ast::Expression::Call(_) => todo!(),
             ast::Expression::CompoundLiteral(_) => todo!(),
-            ast::Expression::SizeOf(ty) => rg::Expr::SizeOf(trans.visit_type(&ty.node)),
-            ast::Expression::AlignOf(ty) => rg::Expr::AlignOf(trans.visit_type(&ty.node)),
+            ast::Expression::SizeOf(ty) => rg::Expr::SizeOf(trans.visit_type(&[], &ty.node)),
+            ast::Expression::AlignOf(ty) => rg::Expr::AlignOf(trans.visit_type(&[], &ty.node)),
             ast::Expression::UnaryOperator(_) => todo!(),
             ast::Expression::Cast(v) => v.node.as_expr(trans),
             ast::Expression::BinaryOperator(v) => v.node.as_expr(trans),
