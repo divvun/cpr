@@ -101,11 +101,7 @@ impl<'a> Translator<'a> {
             ast::TypeSpecifier::Struct(struty) => {
                 let struty = borrow_node(struty);
                 let name = self.visit_struct(&stack[..], struty, StructVisitMode::Forward);
-                let stack: Vec<_> = stack
-                    .iter()
-                    .copied()
-                    .chain(Some(name.as_ref()).into_iter())
-                    .collect();
+                let stack = &[name.as_ref()];
 
                 if let Some(dtions) = struty.declarations.as_ref() {
                     for dtion in nodes(&dtions) {
@@ -145,11 +141,7 @@ impl<'a> Translator<'a> {
             Some(x) => x.name.clone(),
             None => self.hash_name(stack, &struty),
         };
-        let stack: Vec<_> = stack
-            .iter()
-            .copied()
-            .chain(Some(name.as_ref()).into_iter())
-            .collect();
+        let stack = &[name.as_ref()];
 
         let mut res = rg::StructDeclaration {
             name: rg::Identifier::struct_name(&name),
@@ -172,7 +164,7 @@ impl<'a> Translator<'a> {
                                     None => panic!("anonymous struct fields aren't supported"),
                                 };
 
-                                let typ = self.visit_type(&stack[..], &sftup);
+                                let typ = self.visit_type(stack, &sftup);
                                 let field = rg::StructField {
                                     name: rg::Identifier::name(&id.name),
                                     typ,
@@ -432,20 +424,16 @@ impl<'a> Translator<'a> {
 
         let harsh = harsh::Harsh::default();
         let h = harsh.encode(&[h.finish()]);
-        format!("_{}_{}", h, stack.join("_"))
+        [stack.join("_"), "", h].join("_")
     }
 
     fn collect_opaque_structs(&mut self) {
         let mut opaque_structs: Vec<_> = self
             .forward_struct_names
             .difference(&self.declared_struct_names)
-            .map(|name| {
-                println!("found opaque struct name: {:?}", name);
-
-                rg::StructDeclaration {
-                    fields: Default::default(),
-                    name: rg::Identifier::name(name),
-                }
+            .map(|name| rg::StructDeclaration {
+                fields: Default::default(),
+                name: rg::Identifier::name(name),
             })
             .collect();
 
