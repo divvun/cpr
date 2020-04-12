@@ -509,6 +509,7 @@ pub(crate) fn prelude() -> &'static str {
         // You probably don't want to edit it manually.
 
         #![allow(non_camel_case_types)]
+        #![allow(non_upper_case_globals)]
         #![allow(non_snake_case)]
         "#
     );

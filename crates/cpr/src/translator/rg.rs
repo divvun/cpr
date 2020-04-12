@@ -281,12 +281,19 @@ pub struct EnumDeclaration {
 
 impl fmt::Display for EnumDeclaration {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "{repr}", repr = Repr::I32)?;
-        writeln!(f, "{vis} enum {name} {{", vis = Visi::Pub, name = self.name)?;
+        writeln!(f, "{repr}", repr = Repr::Transparent)?;
+        writeln!(
+            f,
+            "{vis} struct {name}(i32);",
+            vis = Visi::Pub,
+            name = self.name
+        )?;
+
+        writeln!(f, "impl {name} {{", name = self.name)?;
         {
             let f = &mut f.indented();
             for field in &self.fields {
-                writeln!(f, "{},", field)?;
+                writeln!(f, "{};", field)?;
             }
         }
         writeln!(f, "}}")?;
@@ -302,9 +309,9 @@ pub struct EnumField {
 
 impl fmt::Display for EnumField {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{name}", name = self.name)?;
+        write!(f, "pub const {name}: Self", name = self.name)?;
         if let Some(value) = &self.value {
-            write!(f, " = {value} as i32", value = value.as_enum_expr())?;
+            write!(f, " = Self({value} as i32)", value = value.as_enum_expr())?;
         }
         Ok(())
     }
