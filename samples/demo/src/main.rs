@@ -1,16 +1,15 @@
-use std::{
-    ffi::{c_void, CString},
-    os::raw::*,
-    ptr::null_mut,
-};
+use std::{ffi::c_void, os::raw::*, ptr::null_mut};
 
 const GENERIC_READ: c_uint = 0x80000000;
 const OPEN_EXISTING: c_uint = 3;
 
 fn main() {
     unsafe {
-        let path = CString::new("Cargo.toml").unwrap();
-        let f = bindings::CreateFileA(
+        let path: Vec<u16> = "Cargo.toml"
+            .encode_utf16()
+            .chain(Some(0u16).into_iter())
+            .collect();
+        let f = bindings::CreateFileW(
             path.as_ptr(),
             GENERIC_READ,
             0,
