@@ -342,35 +342,37 @@ impl<'a> Translator<'a> {
 
         let id = match dtor.get_identifier() {
             None => {
+                match &dtor.kind.node {
+                    ast::DeclaratorKind::Declarator(nested) => {
+                        let nested = borrow_node(nested.as_ref());
+                        if let Some(id) = nested.get_identifier() {
+                            if let Some(fdecl) = dtor.get_function() {
+                                if let Some(ast::StorageClassSpecifier::Typedef) =
+                                    dtion.get_storage_class()
+                                {
+                                    let mut ft = rg::FunctionType { params: vec![] };
+                                    for param in nodes(&fdecl.parameters[..]) {
+                                        ft.params.push(self.visit_type(stack, param));
+                                    }
+                                    let ad = rg::AliasDeclaration {
+                                        name: rg::Identifier::name(&id.name),
+                                        typ: rg::Type::Function(ft),
+                                    };
+                                    self.push(ad);
+                                    return;
+                                }
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+
                 log::debug!(
                     "visit_declarator: dtor without identifier {:#?} {:#?}",
                     dtion,
                     dtor
                 );
-                match &dtor.kind.node {
-                    ast::DeclaratorKind::Declarator(nested) => {
-                        let nested = borrow_node(nested.as_ref());
-                        log::debug!("nested declarator: {:#?}", nested);
-                        let fdecl = dtor.get_function().unwrap();
-                        log::debug!("function: {:#?}", fdecl);
-
-                        let id = nested.get_identifier().unwrap();
-                        let mut ft = rg::FunctionType { params: vec![] };
-                        for param in nodes(&fdecl.parameters[..]) {
-                            ft.params.push(self.visit_type(stack, param));
-                        }
-                        let ad = rg::AliasDeclaration {
-                            name: rg::Identifier::name(&id.name),
-                            typ: rg::Type::Function(ft),
-                        };
-                        self.push(ad);
-
-                        return;
-                    }
-                    _ => {
-                        return;
-                    }
-                }
+                return;
             }
             Some(x) => x,
         };
