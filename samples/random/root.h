@@ -1,12 +1,12 @@
 
 enum Duplicates {
-    Min = 0,
+    Min,
 
-    First = 0,
-    Second = 1,
-    Third = 2,
+    First = Min,
+    Second,
+    Third,
 
-    Max = 2,
+    Max = Third,
 };
 
 // #include <minwindef.h>

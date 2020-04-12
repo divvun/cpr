@@ -292,8 +292,11 @@ impl fmt::Display for EnumDeclaration {
         writeln!(f, "impl {name} {{", name = self.name)?;
         {
             let f = &mut f.indented();
+
+            let mut prev = None;
             for field in &self.fields {
-                writeln!(f, "{};", field)?;
+                writeln!(f, "{};", EnumFieldTuple(prev, field))?;
+                prev = Some(field);
             }
         }
         writeln!(f, "}}")?;
@@ -307,11 +310,29 @@ pub struct EnumField {
     pub value: Option<Expr>,
 }
 
-impl fmt::Display for EnumField {
+pub struct EnumFieldTuple<'a>(Option<&'a EnumField>, &'a EnumField);
+
+impl<'a> fmt::Display for EnumFieldTuple<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "pub const {name}: Self", name = self.name)?;
-        if let Some(value) = &self.value {
-            write!(f, " = Self({value} as i32)", value = value.as_enum_expr())?;
+        let (prev, curr) = (self.0, self.1);
+
+        write!(f, "pub const {name}: Self = ", name = curr.name)?;
+        match curr.value.as_ref() {
+            Some(value) => {
+                write!(f, "Self({value} as i32)", value = value.as_enum_expr())?;
+            }
+            None => match prev {
+                Some(prev) => {
+                    write!(
+                        f,
+                        "Self(Self::{prev_name}.0 + 1)",
+                        prev_name = prev.name.value
+                    )?;
+                }
+                None => {
+                    write!(f, "Self(0_i32)")?;
+                }
+            },
         }
         Ok(())
     }
@@ -508,7 +529,7 @@ impl<'a> fmt::Display for EnumExpr<'a> {
                 write!(f, "({expr} as {ty})", expr = expr.as_enum_expr(), ty = ty)?;
             }
             Expr::Identifier(name) => {
-                write!(f, "(Self::{name} as i32)", name = name)?;
+                write!(f, "Self::{name}.0", name = name)?;
             }
         };
         Ok(())
