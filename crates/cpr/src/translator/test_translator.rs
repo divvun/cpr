@@ -174,6 +174,7 @@ impl EnumFieldExtension for rg::EnumField {
 
 trait StructExtension {
     fn must_have_field(&self, name: &str, f: &dyn Fn(&rg::StructField));
+    fn must_be_opaque(&self);
 }
 
 impl StructExtension for rg::StructDeclaration {
@@ -189,6 +190,14 @@ impl StructExtension for rg::StructDeclaration {
                 )
             });
         f(field);
+    }
+    fn must_be_opaque(&self) {
+        assert_eq!(
+            0,
+            self.fields.len(),
+            "expected struct {} to be opaque (no fields)",
+            self.name.value
+        );
     }
 }
 
@@ -636,4 +645,43 @@ fn stddef_wchar_t() {
         f.must_have_param("c", &|p| p.typ.must_be("wchar_t"));
         f.must_have_param("s", &|p| p.typ.must_be("size_t"));
     });
+}
+
+#[test]
+fn opaque_then_not() {
+    let unit = parse_unit(indoc!(
+        "
+        struct A {
+            struct B *b;
+        };
+        "
+    ));
+    unit.must_have_struct("B".struct_name(), &|d| d.must_be_opaque());
+
+    let unit_before = parse_unit(indoc!(
+        "
+        struct B {
+            int foobar;
+        };
+
+        struct A {
+            struct B *b;
+        };
+        "
+    ));
+    let unit_after = parse_unit(indoc!(
+        "
+        struct A {
+            struct B *b;
+        };
+
+        struct B {
+            int foobar;
+        };
+        "
+    ));
+
+    for unit in &[unit_before, unit_after] {
+        unit.must_have_struct("B".struct_name(), &|d| d.must_have_field("foobar", &|_| {}));
+    }
 }
