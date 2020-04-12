@@ -39,8 +39,6 @@ peg::parser! { pub(crate) grammar rules() for str {
 
     rule directive1() -> Directive
         = N("include") __ i:include() { Directive::Include(i) }
-        / N("if") __ t:token_stream() { Directive::If(t) }
-        / N("elif") __ t:token_stream() { Directive::ElseIf(t) }
         / N("ifdef") __ i:identifier() { Directive::If(
             vec![
                 Token::Defined,
@@ -58,6 +56,8 @@ peg::parser! { pub(crate) grammar rules() for str {
                 ')'.into(),
             ].into()
         ) }
+        / N("if") _ t:token_stream() { Directive::If(t) }
+        / N("elif") _ t:token_stream() { Directive::ElseIf(t) }
         / N("else") eof() { Directive::Else }
         / N("endif") eof() { Directive::EndIf }
         / N("define") __ d:define() { Directive::Define(d) }

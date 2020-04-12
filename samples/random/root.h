@@ -20,4 +20,5 @@
 // typedef B C;
 
 #include <minwindef.h>
-#include <projectedfslib.h>
+#include <fileapi.h>
+// #include <projectedfslib.h>

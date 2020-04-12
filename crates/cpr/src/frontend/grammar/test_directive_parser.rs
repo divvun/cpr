@@ -7,6 +7,10 @@ fn name(s: &str) -> T {
     T::Name(s.into())
 }
 
+fn int(i: i64) -> T {
+    T::Int(i)
+}
+
 #[test]
 fn not_a_directive() {
     assert_eq!(directive(""), Ok(None));
@@ -109,6 +113,21 @@ fn include_quoted() {
             Include::Quoted("shared/um/sure.h".into())
         ))))
     )
+}
+
+#[test]
+fn if_directive() {
+    assert_eq!(
+        directive("#if FOO"),
+        Ok(Some(Directive::If(vec![name("FOO")].into()))),
+    );
+
+    assert_eq!(
+        directive("#if(1+2)"),
+        Ok(Some(Directive::If(
+            vec!['('.into(), int(1), '+'.into(), int(2), ')'.into()].into()
+        ))),
+    );
 }
 
 #[test]
