@@ -1,7 +1,7 @@
 use super::*;
 use crate::frontend::{grammar::Include, Context, Parser, SourceProvider};
 use indoc::indoc;
-use lang_c::env::Env;
+use lang_c::{ast, env::Env};
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
@@ -274,6 +274,8 @@ impl TypeExtension for rg::Type {
 
 trait ExprExtension {
     fn must_be_integer(&self, value: &str);
+    fn must_be_identifier(&self, value: &str);
+    fn must_be_binary(&self, op: ast::BinaryOperator, f: &dyn Fn(&rg::Expr, &rg::Expr));
 }
 
 impl ExprExtension for rg::Expr {
@@ -283,6 +285,22 @@ impl ExprExtension for rg::Expr {
                 assert_eq!(value, int.number.as_ref(), "(expected is on the left)")
             }
             _ => panic!("expr should be constant {}: {:?}", value, self),
+        }
+    }
+    fn must_be_identifier(&self, value: &str) {
+        match self {
+            rg::Expr::Identifier(s) if s == value => {
+                // good!
+            }
+            _ => panic!("expr should be identifier {}: {:?}", value, self),
+        }
+    }
+    fn must_be_binary(&self, op: ast::BinaryOperator, f: &dyn Fn(&rg::Expr, &rg::Expr)) {
+        match self {
+            rg::Expr::BinaryOperator(actual_op, lhs, rhs) if actual_op == &op => {
+                f(lhs.as_ref(), rhs.as_ref())
+            }
+            _ => panic!("expr should be binary operator {:?}: {:?}", op, self),
         }
     }
 }
@@ -516,6 +534,31 @@ fn enum_constants() {
         d.must_have_field("Red", &|f| f.must_be_some(&|e| e.must_be_integer("0")));
         d.must_have_field("Green", &|f| f.must_be_some(&|e| e.must_be_integer("1")));
         d.must_have_field("Blue", &|f| f.must_be_none());
+    })
+}
+
+#[test]
+fn enum_exprs() {
+    let unit = parse_unit(indoc!(
+        "
+        enum BadEnum {
+            A = 1,
+            B = A+A,
+            C,
+        };
+        "
+    ));
+    unit.must_have_enum("BadEnum".enum_name(), &|d| {
+        d.must_have_field("A", &|f| f.must_be_some(&|e| e.must_be_integer("1")));
+        d.must_have_field("B", &|f| {
+            f.must_be_some(&|e| {
+                e.must_be_binary(ast::BinaryOperator::Plus, &|lhs, rhs| {
+                    lhs.must_be_identifier("A");
+                    rhs.must_be_identifier("A");
+                })
+            })
+        });
+        d.must_have_field("C", &|f| f.must_be_none());
     })
 }
 
