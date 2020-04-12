@@ -8,12 +8,13 @@ use std::{
 };
 
 trait UnitExtension {
-    fn must_have_alias(&self, name: &str) -> &rg::AliasDeclaration;
+    fn must_have_alias(&self, name: &str, f: &dyn Fn(&rg::AliasDeclaration));
 }
 
 impl UnitExtension for rg::Unit {
-    fn must_have_alias(&self, name: &str) -> &rg::AliasDeclaration {
-        self.toplevels
+    fn must_have_alias(&self, name: &str, f: &dyn Fn(&rg::AliasDeclaration)) {
+        let d = self
+            .toplevels
             .iter()
             .filter_map(|tl| {
                 match tl {
@@ -27,7 +28,8 @@ impl UnitExtension for rg::Unit {
                 None
             })
             .next()
-            .unwrap_or_else(|| panic!("should have an alias with name {:?}", name))
+            .unwrap_or_else(|| panic!("should have an alias with name {:?}", name));
+        f(d);
     }
 }
 
@@ -77,19 +79,23 @@ fn parse_single_unit(input: &str) -> rg::Unit {
 }
 
 #[test]
-fn test_simple_typedefs() {
+fn short_typedef() {
     let unit = parse_single_unit(indoc!(
         "
         typedef short SHORT;
         "
     ));
-    unit.must_have_alias("SHORT").typ.must_be("i16");
+    unit.must_have_alias("SHORT", &|d| d.typ.must_be("i16"));
+}
 
+#[test]
+fn multiple_typedefs() {
     let unit = parse_single_unit(indoc!(
         "
-        typedef unsigned int UINT, *PUINT;
+        typedef unsigned int UINT, *LPUINT, *const LCPUINT;
         "
     ));
-    unit.must_have_alias("UINT").typ.must_be("u32");
-    unit.must_have_alias("PUINT").typ.must_be("*mut u32");
+    unit.must_have_alias("UINT", &|d| d.typ.must_be("u32"));
+    unit.must_have_alias("LPUINT", &|d| d.typ.must_be("*mut u32"));
+    unit.must_have_alias("LCPUINT", &|d| d.typ.must_be("*const u32"));
 }

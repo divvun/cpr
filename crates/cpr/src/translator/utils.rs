@@ -33,6 +33,17 @@ impl AsSpecifierQualifier for ast::DeclarationSpecifier {
     }
 }
 
+impl AsSpecifierQualifier for ast::PointerQualifier {
+    fn as_specqual(&self) -> Option<ast::SpecifierQualifier> {
+        match self {
+            ast::PointerQualifier::TypeQualifier(tq) => {
+                Some(ast::SpecifierQualifier::TypeQualifier(tq.clone()))
+            }
+            ast::PointerQualifier::Extension(_) => None,
+        }
+    }
+}
+
 pub(crate) trait SpecifierQualifierExt {
     fn is_const(&self) -> bool;
 }
@@ -196,7 +207,21 @@ impl<'a> Typed for DeclTuple<'a> {
     }
 
     fn specifiers(&self) -> Box<dyn Iterator<Item = &dyn AsSpecifierQualifier> + '_> {
-        Box::new(nodes(&self.dtion.specifiers[..]).map(|x| x as &dyn AsSpecifierQualifier))
+        let dtion_specs = nodes(&self.dtion.specifiers[..]).map(|x| x as &dyn AsSpecifierQualifier);
+        let dtor_specs = nodes(&self.dtor.derived[..])
+            .map(
+                |dd| -> Box<dyn Iterator<Item = &dyn AsSpecifierQualifier>> {
+                    match dd {
+                        ast::DerivedDeclarator::Pointer(pquals) => {
+                            Box::new(nodes(&pquals[..]).map(|x| x as &dyn AsSpecifierQualifier))
+                        }
+                        _ => Box::new(std::iter::empty()),
+                    }
+                },
+            )
+            .flatten()
+            .map(|x| x as &dyn AsSpecifierQualifier);
+        Box::new(dtion_specs.chain(dtor_specs))
     }
 }
 
