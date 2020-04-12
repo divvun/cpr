@@ -79,7 +79,7 @@ fn parse_single_unit(input: &str) -> rg::Unit {
 }
 
 #[test]
-fn simple_typedefs() {
+fn typedef_integers() {
     let unit = parse_single_unit(indoc!(
         "
         typedef short SHORT;
@@ -135,6 +135,86 @@ fn simple_typedefs() {
     for n in &["ULONG", "ULONG_INT", "ULONG_LONG", "ULONG_LONG_INT"] {
         unit.must_have_alias(n, &|d| d.typ.must_be("u64"));
     }
+}
+
+#[test]
+fn typedef_bool() {
+    let unit = parse_single_unit(indoc!(
+        "
+        typedef _Bool BOOL;
+        "
+    ));
+    unit.must_have_alias("BOOL", &|f| f.typ.must_be("bool"));
+}
+
+#[test]
+fn typedef_msvc_fixed_size_integers() {
+    let unit = parse_single_unit(indoc!(
+        "
+        typedef __int8 INT8;
+        typedef __int16 INT16;
+        typedef __int32 INT32;
+        typedef __int64 INT64;
+        typedef unsigned __int8 UINT8;
+        typedef unsigned __int16 UINT16;
+        typedef unsigned __int32 UINT32;
+        typedef unsigned __int64 UINT64;
+        "
+    ));
+    unit.must_have_alias("INT8", &|d| d.typ.must_be("i8"));
+    unit.must_have_alias("INT16", &|d| d.typ.must_be("i16"));
+    unit.must_have_alias("INT32", &|d| d.typ.must_be("i32"));
+    unit.must_have_alias("INT64", &|d| d.typ.must_be("i64"));
+    unit.must_have_alias("UINT8", &|d| d.typ.must_be("u8"));
+    unit.must_have_alias("UINT16", &|d| d.typ.must_be("u16"));
+    unit.must_have_alias("UINT32", &|d| d.typ.must_be("u32"));
+    unit.must_have_alias("UINT64", &|d| d.typ.must_be("u64"));
+}
+
+#[test]
+fn typedef_rare_specifier_order() {
+    let unit = parse_single_unit(indoc!(
+        "
+        typedef unsigned long int ULI;
+        typedef unsigned int long UIL;
+        typedef long unsigned int LUI;
+        typedef long int unsigned LIU;
+        typedef int unsigned long IUL;
+        typedef int long unsigned ILU;
+        "
+    ));
+    for n in &["ULI", "UIL", "LUI", "LIU", "IUL", "ILU"] {
+        unit.must_have_alias(n, &|d| d.typ.must_be("u64"));
+    }
+}
+
+#[test]
+fn typedef_chars() {
+    let unit = parse_single_unit(indoc!(
+        "
+        typedef char CHAR;
+        typedef signed char SCHAR;
+        typedef unsigned char UCHAR;
+        "
+    ));
+
+    unit.must_have_alias("CHAR", &|d| d.typ.must_be("i8"));
+    unit.must_have_alias("SCHAR", &|d| d.typ.must_be("i8"));
+    unit.must_have_alias("UCHAR", &|d| d.typ.must_be("u8"));
+}
+
+#[test]
+fn typedef_floats() {
+    let unit = parse_single_unit(indoc!(
+        "
+        typedef float FLOAT;
+        typedef double DOUBLE;
+        typedef long double LDOUBLE;
+        "
+    ));
+    unit.must_have_alias("FLOAT", &|d| d.typ.must_be("f32"));
+    unit.must_have_alias("DOUBLE", &|d| d.typ.must_be("f64"));
+    unit.must_have_alias("LDOUBLE", &|d| d.typ.must_be("[u8; 12]"));
 }
 
 #[test]

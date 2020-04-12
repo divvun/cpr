@@ -219,19 +219,19 @@ impl<'a> Translator<'a> {
         use ast::TypeSpecifier as TS;
         'process_prefixes: loop {
             match specs {
-                [TS::Unsigned, rest @ ..] => {
+                [TS::Unsigned, rest @ ..] | [rest @ .., TS::Unsigned] => {
                     signed = Some(false);
                     specs = rest;
                 }
-                [TS::Signed, rest @ ..] => {
+                [TS::Signed, rest @ ..] | [rest @ .., TS::Signed] => {
                     signed = Some(true);
                     specs = rest;
                 }
-                [TS::Long, rest @ ..] => {
+                [TS::Long, rest @ ..] | [rest @ .., TS::Long] => {
                     longness += 1;
                     specs = rest;
                 }
-                [TS::Short, rest @ ..] => {
+                [TS::Short, rest @ ..] | [rest @ .., TS::Short] => {
                     longness -= 1;
                     specs = rest;
                 }
@@ -255,6 +255,8 @@ impl<'a> Translator<'a> {
             let name = if signed.unwrap_or(true) { sver } else { uver };
             builtin(name)
         }
+
+        assert_eq!(specs.len(), 1, "must have only one typespec remaining");
 
         let mut res = match &specs[0] {
             TS::Int => match self.config.arch {
