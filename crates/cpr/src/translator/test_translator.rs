@@ -11,6 +11,11 @@ trait UnitExtension {
     fn must_have_alias<N: AsRef<str>>(&self, name: N, f: &dyn Fn(&rg::AliasDeclaration));
     fn must_have_enum<N: AsRef<str>>(&self, name: N, f: &dyn Fn(&rg::EnumDeclaration));
     fn must_have_struct<N: AsRef<str>>(&self, name: N, f: &dyn Fn(&rg::StructDeclaration));
+    fn must_have_function<N: AsRef<str>>(&self, name: N, f: &dyn Fn(&rg::FunctionDeclaration));
+
+    fn must_have_alias_count(&self, count: usize);
+    fn must_have_struct_count(&self, count: usize);
+    fn must_have_enum_count(&self, count: usize);
 }
 
 impl UnitExtension for rg::Unit {
@@ -52,7 +57,7 @@ impl UnitExtension for rg::Unit {
                 None
             })
             .next()
-            .unwrap_or_else(|| panic!("should have an alias with name {:?}", name));
+            .unwrap_or_else(|| panic!("should have an enum with name {:?}", name));
         f(d);
     }
 
@@ -73,8 +78,56 @@ impl UnitExtension for rg::Unit {
                 None
             })
             .next()
-            .unwrap_or_else(|| panic!("should have an alias with name {:?}", name));
+            .unwrap_or_else(|| panic!("should have a struct with name {:?}", name));
         f(d);
+    }
+
+    fn must_have_function<N: AsRef<str>>(&self, name: N, f: &dyn Fn(&rg::FunctionDeclaration)) {
+        let name = name.as_ref();
+        let d = self
+            .toplevels
+            .iter()
+            .filter_map(|tl| {
+                match tl {
+                    rg::TopLevel::FunctionDeclaration(d) => {
+                        if d.name.value == name {
+                            return Some(d);
+                        }
+                    }
+                    _ => {}
+                };
+                None
+            })
+            .next()
+            .unwrap_or_else(|| panic!("should have a function with name {:?}", name));
+        f(d);
+    }
+
+    fn must_have_alias_count(&self, count: usize) {
+        let actual = self
+            .toplevels
+            .iter()
+            .filter(|tl| matches!(tl, rg::TopLevel::AliasDeclaration(_)))
+            .count();
+        assert_eq!(count, actual, "(expected is on the left)");
+    }
+
+    fn must_have_struct_count(&self, count: usize) {
+        let actual = self
+            .toplevels
+            .iter()
+            .filter(|tl| matches!(tl, rg::TopLevel::StructDeclaration(_)))
+            .count();
+        assert_eq!(count, actual, "(expected is on the left)");
+    }
+
+    fn must_have_enum_count(&self, count: usize) {
+        let actual = self
+            .toplevels
+            .iter()
+            .filter(|tl| matches!(tl, rg::TopLevel::EnumDeclaration(_)))
+            .count();
+        assert_eq!(count, actual, "(expected is on the left)");
     }
 }
 
@@ -139,31 +192,83 @@ impl StructExtension for rg::StructDeclaration {
     }
 }
 
+trait FunctionDeclarationExtension {
+    fn must_have_param(&self, name: &str, f: &dyn Fn(&rg::FunctionParam));
+}
+
+impl FunctionDeclarationExtension for rg::FunctionDeclaration {
+    fn must_have_param(&self, name: &str, f: &dyn Fn(&rg::FunctionParam)) {
+        let field = self
+            .params
+            .iter()
+            .find(|f| f.name.value == name)
+            .unwrap_or_else(|| {
+                panic!(
+                    "function {:?} should have param with name {:?}",
+                    self.name.value, name
+                )
+            });
+        f(field);
+    }
+}
+
 trait StringExtension {
-    fn as_struct_name(self) -> String;
-    fn as_enum_name(self) -> String;
+    fn struct_name(self) -> String;
+    fn enum_name(self) -> String;
+    fn const_pointer_name(self) -> String;
+    fn mut_pointer_name(self) -> String;
 }
 
 impl<'a> StringExtension for &'a str {
-    fn as_struct_name(self) -> String {
+    fn struct_name(self) -> String {
         rg::Identifier::struct_name(self).value
     }
-    fn as_enum_name(self) -> String {
+    fn enum_name(self) -> String {
         rg::Identifier::enum_name(self).value
+    }
+    fn const_pointer_name(self) -> String {
+        format!("*const {}", self)
+    }
+    fn mut_pointer_name(self) -> String {
+        format!("*mut {}", self)
     }
 }
 
 trait TypeExtension {
-    fn must_be<P: AsRef<str>>(&self, pattern: P);
+    fn must_be<P: AsRef<str>>(&self, pat: P);
+    fn must_be_const_pointer(&self) -> &rg::Type;
+    fn must_be_mut_pointer(&self) -> &rg::Type;
+    fn must_be_name(&self) -> String;
 }
 
 impl TypeExtension for rg::Type {
-    fn must_be<P: AsRef<str>>(&self, pattern: P) {
+    fn must_be<P: AsRef<str>>(&self, pat: P) {
         assert_eq!(
-            pattern.as_ref(),
+            pat.as_ref(),
             format!("{}", self),
             "(expected is on the left)"
         )
+    }
+    fn must_be_name(&self) -> String {
+        match self {
+            rg::Type::Name(s) => s.value.clone(),
+            _ => panic!("must be name: {:?}", self),
+        }
+    }
+    fn must_be_const_pointer(&self) -> &rg::Type {
+        match self {
+            rg::Type::Pointer { konst: true, inner } => inner.as_ref(),
+            _ => panic!("must be const pointer: {:?}", self),
+        }
+    }
+    fn must_be_mut_pointer(&self) -> &rg::Type {
+        match self {
+            rg::Type::Pointer {
+                konst: false,
+                inner,
+            } => inner.as_ref(),
+            _ => panic!("must be mut pointer: {:?}", self),
+        }
     }
 }
 
@@ -203,23 +308,47 @@ impl SourceProvider for TestSourceProvider {
     }
 }
 
-fn parse_single_unit(input: &str) -> rg::Unit {
-    let mut provider = TestSourceProvider::new();
-    provider.files.insert("root.h".into(), input.into());
-
-    let ctx = Context::new();
-    let env = Env::with_msvc();
-    let mut parser = Parser::new(Box::new(provider), ctx, env);
+fn parse_units_with(provider: Box<dyn SourceProvider>, ctx: Context, env: Env) -> Vec<rg::Unit> {
+    let mut parser = Parser::new(provider, ctx, env);
     parser.parse_path("root.h".into()).unwrap();
 
-    let unit = parser.units.values().next().unwrap();
     let config = Config { arch: Arch::X86_64 };
-    translate_unit(&config, unit.path.clone(), &unit.declarations[..])
+
+    parser
+        .includes
+        .iter()
+        .map(|inc| {
+            let unit = parser.units.get(inc).unwrap();
+            translate_unit(&config, unit.path.clone(), &unit.declarations[..])
+        })
+        .collect()
+}
+
+fn parse_units(provider: Box<dyn SourceProvider>) -> Vec<rg::Unit> {
+    let ctx = Context::new();
+    let env = Env::with_msvc();
+    parse_units_with(provider, ctx, env)
+}
+
+fn parse_unit(input: &str) -> rg::Unit {
+    let mut provider = TestSourceProvider::new();
+    provider.files.insert("root.h".into(), input.into());
+    let v = parse_units(Box::new(provider));
+    assert_eq!(v.len(), 1, "should generate single unit");
+    v.into_iter().next().unwrap()
+}
+
+fn provider(name_source_pairs: &[(&str, &str)]) -> Box<dyn SourceProvider> {
+    let mut provider = TestSourceProvider::new();
+    for (k, v) in name_source_pairs.iter().cloned() {
+        provider.files.insert(k.into(), v.into());
+    }
+    Box::new(provider)
 }
 
 #[test]
 fn typedef_integers() {
-    let unit = parse_single_unit(indoc!(
+    let unit = parse_unit(indoc!(
         "
         typedef short SHORT;
         typedef short int SHORT_INT;
@@ -278,7 +407,7 @@ fn typedef_integers() {
 
 #[test]
 fn typedef_bool() {
-    let unit = parse_single_unit(indoc!(
+    let unit = parse_unit(indoc!(
         "
         typedef _Bool BOOL;
         "
@@ -288,7 +417,7 @@ fn typedef_bool() {
 
 #[test]
 fn typedef_msvc_fixed_size_integers() {
-    let unit = parse_single_unit(indoc!(
+    let unit = parse_unit(indoc!(
         "
         typedef __int8 INT8;
         typedef __int16 INT16;
@@ -312,7 +441,7 @@ fn typedef_msvc_fixed_size_integers() {
 
 #[test]
 fn typedef_rare_specifier_order() {
-    let unit = parse_single_unit(indoc!(
+    let unit = parse_unit(indoc!(
         "
         typedef unsigned long int ULI;
         typedef unsigned int long UIL;
@@ -329,7 +458,7 @@ fn typedef_rare_specifier_order() {
 
 #[test]
 fn typedef_chars() {
-    let unit = parse_single_unit(indoc!(
+    let unit = parse_unit(indoc!(
         "
         typedef char CHAR;
         typedef signed char SCHAR;
@@ -344,7 +473,7 @@ fn typedef_chars() {
 
 #[test]
 fn typedef_floats() {
-    let unit = parse_single_unit(indoc!(
+    let unit = parse_unit(indoc!(
         "
         typedef float FLOAT;
         typedef double DOUBLE;
@@ -358,19 +487,19 @@ fn typedef_floats() {
 
 #[test]
 fn multiple_typedefs() {
-    let unit = parse_single_unit(indoc!(
+    let unit = parse_unit(indoc!(
         "
         typedef unsigned int UINT, *LPUINT, *const LCPUINT;
         "
     ));
     unit.must_have_alias("UINT", &|d| d.typ.must_be("u32"));
-    unit.must_have_alias("LPUINT", &|d| d.typ.must_be("*mut u32"));
-    unit.must_have_alias("LCPUINT", &|d| d.typ.must_be("*const u32"));
+    unit.must_have_alias("LPUINT", &|d| d.typ.must_be("u32".mut_pointer_name()));
+    unit.must_have_alias("LCPUINT", &|d| d.typ.must_be("u32".const_pointer_name()));
 }
 
 #[test]
 fn enum_constants() {
-    let unit = parse_single_unit(indoc!(
+    let unit = parse_unit(indoc!(
         "
         typedef enum Color {
             Red = 0,
@@ -379,13 +508,89 @@ fn enum_constants() {
         } Color, *PColor;
         "
     ));
-    unit.must_have_alias("Color", &|d| d.typ.must_be("Color".as_enum_name()));
+    unit.must_have_alias("Color", &|d| d.typ.must_be("Color".enum_name()));
     unit.must_have_alias("PColor", &|d| {
-        d.typ.must_be(format!("*mut {}", "Color".as_enum_name()))
+        d.typ.must_be("Color".enum_name().mut_pointer_name())
     });
-    unit.must_have_enum("Color".as_enum_name(), &|d| {
+    unit.must_have_enum("Color".enum_name(), &|d| {
         d.must_have_field("Red", &|f| f.must_be_some(&|e| e.must_be_integer("0")));
         d.must_have_field("Green", &|f| f.must_be_some(&|e| e.must_be_integer("1")));
         d.must_have_field("Blue", &|f| f.must_be_none());
     })
+}
+
+#[test]
+fn nested_structs() {
+    let unit = parse_unit(indoc!(
+        "
+        typedef unsigned long long ULLONG;
+        typedef struct S {
+            ULLONG a;
+            const struct {
+                char c;
+            } *b;
+        } s, *sp;
+        "
+    ));
+    unit.must_have_struct_count(2);
+    unit.must_have_struct("S".struct_name(), &|s| {
+        s.must_have_field("a", &|f| f.typ.must_be("ULLONG"));
+        s.must_have_field("b", &|f| {
+            let anon_name = f.typ.must_be_const_pointer().must_be_name();
+            unit.must_have_struct(&anon_name, &|s| {
+                s.must_have_field("c", &|f| f.typ.must_be("i8"))
+            });
+        })
+    });
+    unit.must_have_alias("s", &|d| d.typ.must_be("S".struct_name()));
+    unit.must_have_alias("sp", &|d| {
+        d.typ.must_be("S".struct_name().mut_pointer_name())
+    });
+}
+
+#[test]
+fn stddef_wchar_t() {
+    let units = parse_units(provider(&[
+        (
+            "stddef.h",
+            indoc!(
+                "
+                // Definitions of common types
+                #ifdef _WIN64
+                    typedef unsigned __int64 size_t;
+                    typedef __int64          ptrdiff_t;
+                    typedef __int64          intptr_t;
+                #else
+                    typedef unsigned int     size_t;
+                    typedef int              ptrdiff_t;
+                    typedef int              intptr_t;
+                #endif
+
+                // Provide a typedef for wchar_t for use under /Zc:wchar_t-
+                #ifndef _WCHAR_T_DEFINED
+                    #define _WCHAR_T_DEFINED
+                    typedef unsigned short wchar_t;
+                #endif
+                "
+            ),
+        ),
+        (
+            "root.h",
+            indoc!(
+                "
+                #define _WIN64
+                #include <stddef.h>
+                void foobar(wchar_t c, size_t s);
+                "
+            ),
+        ),
+    ]));
+    let unit = units
+        .iter()
+        .find(|u| u.path.to_string_lossy() == "root.h")
+        .unwrap();
+    unit.must_have_function("foobar", &|f| {
+        f.must_have_param("c", &|p| p.typ.must_be("wchar_t"));
+        f.must_have_param("s", &|p| p.typ.must_be("size_t"));
+    });
 }
