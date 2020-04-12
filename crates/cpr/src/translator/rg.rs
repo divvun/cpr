@@ -235,7 +235,7 @@ impl fmt::Display for StructDeclaration {
             writeln!(f, "{repr}", repr = Repr::Transparent)?;
             writeln!(
                 f,
-                "{vis} struct {name}(core::ffi::c_void);",
+                "{vis} struct {name}(::core::ffi::c_void);",
                 vis = Visi::Pub,
                 name = self.name,
             )?;
@@ -539,10 +539,10 @@ impl<'a> fmt::Display for EnumExpr<'a> {
                 }
             }
             Expr::SizeOf(e) => {
-                write!(f, "core::mem::size_of::<{}>()", e)?;
+                write!(f, "::core::mem::size_of::<{}>()", e)?;
             }
             Expr::AlignOf(e) => {
-                write!(f, "core::mem::align_of::<{}>()", e)?;
+                write!(f, "::core::mem::align_of::<{}>()", e)?;
             }
             Expr::Cast(ty, expr) => {
                 write!(f, "({expr} as {ty})", expr = expr.as_enum_expr(), ty = ty)?;

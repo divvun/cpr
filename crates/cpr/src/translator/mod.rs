@@ -268,44 +268,49 @@ impl<'a> Translator<'a> {
             }
         }
 
-        fn builtin(s: &str) -> rg::Type {
-            rg::Type::Name(rg::Identifier::name(s))
+        fn builtin<S: AsRef<str>>(s: S) -> rg::Type {
+            rg::Type::Name(rg::Identifier::name(s.as_ref()))
         }
 
-        fn pick_sign(signed: Option<bool>, uver: &str, sver: &str) -> rg::Type {
-            let name = if signed.unwrap_or(true) { sver } else { uver };
-            builtin(name)
+        fn ctype(s: &str) -> rg::Type {
+            builtin(format!("::std::os::raw::c_{}", s))
+        }
+
+        fn pick_sign(signed: Option<bool>, uver: rg::Type, sver: rg::Type) -> rg::Type {
+            if signed.unwrap_or(true) {
+                sver
+            } else {
+                uver
+            }
         }
 
         assert_eq!(specs.len(), 1, "must have only one typespec remaining");
 
         let mut res = match &specs[0] {
-            TS::Int => match self.config.arch {
-                Arch::X86_64 => match longness {
-                    -1 => pick_sign(signed, "u16", "i16"),
-                    0 => pick_sign(signed, "u32", "i32"),
-                    _ => pick_sign(signed, "u64", "i64"),
-                },
-                Arch::X86 => match longness {
-                    -1 => pick_sign(signed, "u16", "i16"),
-                    0 | 1 => pick_sign(signed, "u32", "i32"),
-                    _ => pick_sign(signed, "u64", "i64"),
-                },
+            TS::Int => match longness {
+                -1 => pick_sign(signed, ctype("ushort"), ctype("short")),
+                0 => pick_sign(signed, ctype("uint"), ctype("int")),
+                1 => pick_sign(signed, ctype("ulong"), ctype("long")),
+                _ => pick_sign(signed, ctype("ulonglong"), ctype("longlong")),
+            },
+            TS::Char => match signed {
+                Some(true) => ctype("schar"),
+                Some(false) => ctype("uchar"),
+                None => ctype("char"),
             },
             TS::Float => builtin("f32"),
             TS::Double => match longness {
                 1 => builtin("[u8; 12]"),
                 _ => builtin("f64"),
             },
-            TS::Char => pick_sign(signed, "u8", "i8"),
             TS::Bool => builtin("bool"),
-            TS::Void => builtin("core::ffi::c_void"),
+            TS::Void => builtin("::core::ffi::c_void"),
             TS::TypedefName(Node { node: id, .. }) => match id.name.as_ref() {
-                "__int8" => pick_sign(signed, "u8", "i8"),
-                "__int16" => pick_sign(signed, "u16", "i16"),
-                "__int32" => pick_sign(signed, "u32", "i32"),
-                "__int64" => pick_sign(signed, "u64", "i64"),
-                name => rg::Type::Name(rg::Identifier::name(name)),
+                "__int8" => pick_sign(signed, builtin("u8"), builtin("i8")),
+                "__int16" => pick_sign(signed, builtin("u16"), builtin("i16")),
+                "__int32" => pick_sign(signed, builtin("u32"), builtin("i32")),
+                "__int64" => pick_sign(signed, builtin("u64"), builtin("i64")),
+                name => builtin(name),
             },
             TS::Struct(Node { node: struty, .. }) => {
                 let id = &struty

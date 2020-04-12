@@ -226,6 +226,7 @@ trait StringExtension {
     fn enum_name(self) -> String;
     fn const_pointer_name(self) -> String;
     fn mut_pointer_name(self) -> String;
+    fn ctype(self) -> String;
 }
 
 impl<'a> StringExtension for &'a str {
@@ -240,6 +241,9 @@ impl<'a> StringExtension for &'a str {
     }
     fn mut_pointer_name(self) -> String {
         format!("*mut {}", self)
+    }
+    fn ctype(self) -> String {
+        format!("::std::os::raw::c_{}", self)
     }
 }
 
@@ -404,31 +408,28 @@ fn typedef_integers() {
     ));
 
     for n in &["SHORT", "SHORT_INT", "SSHORT", "SSHORT_INT"] {
-        unit.must_have_alias(n, &|d| d.typ.must_be("i16"));
+        unit.must_have_alias(n, &|d| d.typ.must_be("short".ctype()));
     }
     for n in &["USHORT", "USHORT_INT"] {
-        unit.must_have_alias(n, &|d| d.typ.must_be("u16"));
+        unit.must_have_alias(n, &|d| d.typ.must_be("ushort".ctype()));
     }
     for n in &["INT", "SINT"] {
-        unit.must_have_alias(n, &|d| d.typ.must_be("i32"));
+        unit.must_have_alias(n, &|d| d.typ.must_be("int".ctype()));
     }
     for n in &["UINT"] {
-        unit.must_have_alias(n, &|d| d.typ.must_be("u32"));
+        unit.must_have_alias(n, &|d| d.typ.must_be("uint".ctype()));
     }
-    for n in &[
-        "LONG",
-        "SLONG",
-        "LONG_INT",
-        "SLONG_INT",
-        "LONG_LONG",
-        "SLONG_LONG",
-        "LONG_LONG_INT",
-        "SLONG_LONG_INT",
-    ] {
-        unit.must_have_alias(n, &|d| d.typ.must_be("i64"));
+    for n in &["LONG", "SLONG", "LONG_INT", "SLONG_INT"] {
+        unit.must_have_alias(n, &|d| d.typ.must_be("long".ctype()));
     }
-    for n in &["ULONG", "ULONG_INT", "ULONG_LONG", "ULONG_LONG_INT"] {
-        unit.must_have_alias(n, &|d| d.typ.must_be("u64"));
+    for n in &["ULONG", "ULONG_INT"] {
+        unit.must_have_alias(n, &|d| d.typ.must_be("ulong".ctype()));
+    }
+    for n in &["LONG_LONG", "SLONG_LONG", "LONG_LONG_INT", "SLONG_LONG_INT"] {
+        unit.must_have_alias(n, &|d| d.typ.must_be("longlong".ctype()));
+    }
+    for n in &["ULONG_LONG", "ULONG_LONG_INT"] {
+        unit.must_have_alias(n, &|d| d.typ.must_be("ulonglong".ctype()));
     }
 }
 
@@ -479,7 +480,7 @@ fn typedef_rare_specifier_order() {
         "
     ));
     for n in &["ULI", "UIL", "LUI", "LIU", "IUL", "ILU"] {
-        unit.must_have_alias(n, &|d| d.typ.must_be("u64"));
+        unit.must_have_alias(n, &|d| d.typ.must_be("ulong".ctype()));
     }
 }
 
@@ -493,9 +494,9 @@ fn typedef_chars() {
         "
     ));
 
-    unit.must_have_alias("CHAR", &|d| d.typ.must_be("i8"));
-    unit.must_have_alias("SCHAR", &|d| d.typ.must_be("i8"));
-    unit.must_have_alias("UCHAR", &|d| d.typ.must_be("u8"));
+    unit.must_have_alias("CHAR", &|d| d.typ.must_be("char".ctype()));
+    unit.must_have_alias("SCHAR", &|d| d.typ.must_be("schar".ctype()));
+    unit.must_have_alias("UCHAR", &|d| d.typ.must_be("uchar".ctype()));
 }
 
 #[test]
@@ -519,9 +520,13 @@ fn multiple_typedefs() {
         typedef unsigned int UINT, *LPUINT, *const LCPUINT;
         "
     ));
-    unit.must_have_alias("UINT", &|d| d.typ.must_be("u32"));
-    unit.must_have_alias("LPUINT", &|d| d.typ.must_be("u32".mut_pointer_name()));
-    unit.must_have_alias("LCPUINT", &|d| d.typ.must_be("u32".const_pointer_name()));
+    unit.must_have_alias("UINT", &|d| d.typ.must_be("uint".ctype()));
+    unit.must_have_alias("LPUINT", &|d| {
+        d.typ.must_be("uint".ctype().mut_pointer_name())
+    });
+    unit.must_have_alias("LCPUINT", &|d| {
+        d.typ.must_be("uint".ctype().const_pointer_name())
+    });
 }
 
 #[test]
@@ -590,7 +595,7 @@ fn nested_structs() {
         s.must_have_field("b", &|f| {
             let anon_name = f.typ.must_be_const_pointer().must_be_name();
             unit.must_have_struct(&anon_name, &|s| {
-                s.must_have_field("c", &|f| f.typ.must_be("i8"))
+                s.must_have_field("c", &|f| f.typ.must_be("char".ctype()))
             });
         })
     });
@@ -708,6 +713,6 @@ fn typedef_deja_vu() {
         typedef int INT;
         "
     ));
-    unit.must_have_alias("INT", &|d| d.typ.must_be("i32"));
+    unit.must_have_alias("INT", &|d| d.typ.must_be("int".ctype()));
     unit.must_have_alias_count(1);
 }
