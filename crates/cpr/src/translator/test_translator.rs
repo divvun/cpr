@@ -79,13 +79,62 @@ fn parse_single_unit(input: &str) -> rg::Unit {
 }
 
 #[test]
-fn short_typedef() {
+fn simple_typedefs() {
     let unit = parse_single_unit(indoc!(
         "
         typedef short SHORT;
+        typedef short int SHORT_INT;
+        typedef int INT;
+        typedef long LONG;
+        typedef long int LONG_INT;
+        typedef long long LONG_LONG;
+        typedef long long int LONG_LONG_INT;
+         
+        typedef unsigned short USHORT;
+        typedef unsigned short int USHORT_INT;
+        typedef unsigned int UINT;
+        typedef unsigned long ULONG;
+        typedef unsigned long int ULONG_INT;
+        typedef unsigned long long ULONG_LONG;
+        typedef unsigned long long int ULONG_LONG_INT;
+         
+        typedef signed short SSHORT;
+        typedef signed short int SSHORT_INT;
+        typedef signed int SINT;
+        typedef signed long SLONG;
+        typedef signed long int SLONG_INT;
+        typedef signed long long SLONG_LONG;
+        typedef signed long long int SLONG_LONG_INT;
         "
     ));
-    unit.must_have_alias("SHORT", &|d| d.typ.must_be("i16"));
+
+    for n in &["SHORT", "SHORT_INT", "SSHORT", "SSHORT_INT"] {
+        unit.must_have_alias(n, &|d| d.typ.must_be("i16"));
+    }
+    for n in &["USHORT", "USHORT_INT"] {
+        unit.must_have_alias(n, &|d| d.typ.must_be("u16"));
+    }
+    for n in &["INT", "SINT"] {
+        unit.must_have_alias(n, &|d| d.typ.must_be("i32"));
+    }
+    for n in &["UINT"] {
+        unit.must_have_alias(n, &|d| d.typ.must_be("u32"));
+    }
+    for n in &[
+        "LONG",
+        "SLONG",
+        "LONG_INT",
+        "SLONG_INT",
+        "LONG_LONG",
+        "SLONG_LONG",
+        "LONG_LONG_INT",
+        "SLONG_LONG_INT",
+    ] {
+        unit.must_have_alias(n, &|d| d.typ.must_be("i64"));
+    }
+    for n in &["ULONG", "ULONG_INT", "ULONG_LONG", "ULONG_LONG_INT"] {
+        unit.must_have_alias(n, &|d| d.typ.must_be("u64"));
+    }
 }
 
 #[test]

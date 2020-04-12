@@ -309,7 +309,6 @@ impl<'a> Translator<'a> {
             ),
         };
 
-        println!("pointer_depth = {:?}", typ.pointer_depth());
         for _d in 0..typ.pointer_depth() {
             res = rg::Type::Pointer {
                 konst: typ.is_const(),
@@ -321,8 +320,8 @@ impl<'a> Translator<'a> {
     }
 
     fn visit_declarator(&mut self, dtion: &ast::Declaration, dtor: &ast::Declarator) {
-        println!("declaration = {:#?}", dtion);
-        println!("declarator  = {:#?}", dtor);
+        // println!("declaration = {:#?}", dtion);
+        // println!("declarator  = {:#?}", dtor);
 
         let id = match dtor.get_identifier() {
             None => {
