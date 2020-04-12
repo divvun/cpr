@@ -685,3 +685,17 @@ fn opaque_then_not() {
         unit.must_have_struct("B".struct_name(), &|d| d.must_have_field("foobar", &|_| {}));
     }
 }
+
+#[test]
+fn three_musketeers() {
+    let unit = parse_unit(indoc!(
+        "
+        typedef int (A)(int);
+        typedef A (*B);
+        typedef B C;
+        "
+    ));
+    unit.must_have_alias("A", &|_| {});
+    unit.must_have_alias("B", &|d| d.typ.must_be("A"));
+    unit.must_have_alias("C", &|d| d.typ.must_be("B"));
+}

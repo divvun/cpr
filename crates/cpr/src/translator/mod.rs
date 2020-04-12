@@ -345,11 +345,10 @@ impl<'a> Translator<'a> {
                 match &dtor.kind.node {
                     ast::DeclaratorKind::Declarator(nested) => {
                         let nested = borrow_node(nested.as_ref());
-                        if let Some(id) = nested.get_identifier() {
-                            if let Some(fdecl) = dtor.get_function() {
-                                if let Some(ast::StorageClassSpecifier::Typedef) =
-                                    dtion.get_storage_class()
-                                {
+                        if let Some(ast::StorageClassSpecifier::Typedef) = dtion.get_storage_class()
+                        {
+                            if let Some(id) = nested.get_identifier() {
+                                if let Some(fdecl) = dtor.get_function() {
                                     let mut ft = rg::FunctionType { params: vec![] };
                                     for param in nodes(&fdecl.parameters[..]) {
                                         ft.params.push(self.visit_type(stack, param));
@@ -360,7 +359,24 @@ impl<'a> Translator<'a> {
                                     };
                                     self.push(ad);
                                     return;
+                                } else {
+                                    if nested.pointer_depth() == 1 {
+                                        // courtesy of this weird thing in <winnt.h>:
+                                        //
+                                        //     typedef int (A)(int);
+                                        //     typedef A (*B);
+                                        //     typedef B C;
+                                        let ad = rg::AliasDeclaration {
+                                            name: rg::Identifier::name(&id.name),
+                                            typ: self.visit_type(stack, &DeclTuple { dtion, dtor }),
+                                        };
+                                        self.push(ad);
+                                        return;
+                                    }
+                                    log::debug!("no fdecl, nested = {:#?}", nested);
                                 }
+                            } else {
+                                log::debug!("no id");
                             }
                         }
                     }
