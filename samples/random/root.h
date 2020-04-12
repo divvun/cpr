@@ -13,5 +13,7 @@
 //     } c;
 // };
 
-#include <minwindef.h>
-#include <projectedfslib.h>
+typedef int (*CALLBACK)(void *data, int id);
+
+// #include <minwindef.h>
+// #include <projectedfslib.h>

@@ -384,6 +384,7 @@ impl fmt::Display for FunctionParam {
 #[derive(Debug, PartialEq, Eq)]
 pub enum Type {
     Name(Identifier),
+    Function(FunctionType),
     Pointer { konst: bool, inner: Box<Type> },
 }
 
@@ -395,7 +396,27 @@ impl fmt::Display for Type {
                 true => write!(f, "*const {}", inner),
                 false => write!(f, "*mut {}", inner),
             },
+            Type::Function(ft) => write!(f, "{}", ft),
         }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct FunctionType {
+    pub params: Vec<Type>,
+}
+
+impl fmt::Display for FunctionType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "extern {c:?} fn(", c = "C")?;
+        for (i, param) in self.params.iter().enumerate() {
+            if i != 0 {
+                write!(f, ", ")?;
+            }
+            write!(f, "{}", param)?;
+        }
+        write!(f, ")")?;
+        Ok(())
     }
 }
 
