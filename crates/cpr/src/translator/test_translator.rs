@@ -8,19 +8,64 @@ use std::{
 };
 
 trait UnitExtension {
-    fn must_have_alias(&self, name: &str, f: &dyn Fn(&rg::AliasDeclaration));
+    fn must_have_alias<N: AsRef<str>>(&self, name: N, f: &dyn Fn(&rg::AliasDeclaration));
+    fn must_have_enum<N: AsRef<str>>(&self, name: N, f: &dyn Fn(&rg::EnumDeclaration));
+    fn must_have_struct<N: AsRef<str>>(&self, name: N, f: &dyn Fn(&rg::StructDeclaration));
 }
 
 impl UnitExtension for rg::Unit {
-    fn must_have_alias(&self, name: &str, f: &dyn Fn(&rg::AliasDeclaration)) {
+    fn must_have_alias<N: AsRef<str>>(&self, name: N, f: &dyn Fn(&rg::AliasDeclaration)) {
+        let name = name.as_ref();
         let d = self
             .toplevels
             .iter()
             .filter_map(|tl| {
                 match tl {
-                    rg::TopLevel::AliasDeclaration(ad) => {
-                        if ad.name.value == name {
-                            return Some(ad);
+                    rg::TopLevel::AliasDeclaration(d) => {
+                        if d.name.value == name {
+                            return Some(d);
+                        }
+                    }
+                    _ => {}
+                };
+                None
+            })
+            .next()
+            .unwrap_or_else(|| panic!("should have an alias with name {:?}", name));
+        f(d);
+    }
+
+    fn must_have_enum<N: AsRef<str>>(&self, name: N, f: &dyn Fn(&rg::EnumDeclaration)) {
+        let name = name.as_ref();
+        let d = self
+            .toplevels
+            .iter()
+            .filter_map(|tl| {
+                match tl {
+                    rg::TopLevel::EnumDeclaration(d) => {
+                        if d.name.value == name {
+                            return Some(d);
+                        }
+                    }
+                    _ => {}
+                };
+                None
+            })
+            .next()
+            .unwrap_or_else(|| panic!("should have an alias with name {:?}", name));
+        f(d);
+    }
+
+    fn must_have_struct<N: AsRef<str>>(&self, name: N, f: &dyn Fn(&rg::StructDeclaration)) {
+        let name = name.as_ref();
+        let d = self
+            .toplevels
+            .iter()
+            .filter_map(|tl| {
+                match tl {
+                    rg::TopLevel::StructDeclaration(d) => {
+                        if d.name.value == name {
+                            return Some(d);
                         }
                     }
                     _ => {}
@@ -33,13 +78,107 @@ impl UnitExtension for rg::Unit {
     }
 }
 
+trait EnumExtension {
+    fn must_have_field(&self, name: &str, f: &dyn Fn(&rg::EnumField));
+}
+
+impl EnumExtension for rg::EnumDeclaration {
+    fn must_have_field(&self, name: &str, f: &dyn Fn(&rg::EnumField)) {
+        let field = self
+            .fields
+            .iter()
+            .find(|f| f.name.value == name)
+            .unwrap_or_else(|| {
+                panic!(
+                    "enum {:?} should have field with name {:?}",
+                    self.name.value, name
+                )
+            });
+        f(field);
+    }
+}
+
+trait EnumFieldExtension {
+    fn must_be_none(&self);
+    fn must_be_some(&self, f: &dyn Fn(&rg::Expr));
+}
+
+impl EnumFieldExtension for rg::EnumField {
+    fn must_be_none(&self) {
+        assert!(
+            self.value.is_none(),
+            "field {:?} should be None",
+            self.name.value
+        )
+    }
+    fn must_be_some(&self, f: &dyn Fn(&rg::Expr)) {
+        f(self
+            .value
+            .as_ref()
+            .unwrap_or_else(|| panic!("field {:?} should be Some", self.name.value)));
+    }
+}
+
+trait StructExtension {
+    fn must_have_field(&self, name: &str, f: &dyn Fn(&rg::StructField));
+}
+
+impl StructExtension for rg::StructDeclaration {
+    fn must_have_field(&self, name: &str, f: &dyn Fn(&rg::StructField)) {
+        let field = self
+            .fields
+            .iter()
+            .find(|f| f.name.value == name)
+            .unwrap_or_else(|| {
+                panic!(
+                    "struct {:?} should have field with name {:?}",
+                    self.name.value, name
+                )
+            });
+        f(field);
+    }
+}
+
+trait StringExtension {
+    fn as_struct_name(self) -> String;
+    fn as_enum_name(self) -> String;
+}
+
+impl<'a> StringExtension for &'a str {
+    fn as_struct_name(self) -> String {
+        rg::Identifier::struct_name(self).value
+    }
+    fn as_enum_name(self) -> String {
+        rg::Identifier::enum_name(self).value
+    }
+}
+
 trait TypeExtension {
-    fn must_be(&self, pattern: &str);
+    fn must_be<P: AsRef<str>>(&self, pattern: P);
 }
 
 impl TypeExtension for rg::Type {
-    fn must_be(&self, pattern: &str) {
-        assert_eq!(pattern, format!("{}", self), "(expected is on the left)")
+    fn must_be<P: AsRef<str>>(&self, pattern: P) {
+        assert_eq!(
+            pattern.as_ref(),
+            format!("{}", self),
+            "(expected is on the left)"
+        )
+    }
+}
+
+trait ExprExtension {
+    fn must_be_integer(&self, value: &str);
+}
+
+impl ExprExtension for rg::Expr {
+    fn must_be_integer(&self, value: &str) {
+        match self {
+            rg::Expr::Constant(ast::Constant::Integer(int)) => {
+                assert_eq!(value, int.number.as_ref(), "(expected is on the left)")
+            }
+            _ => panic!("expr should be constant {}: {:?}", value, self),
+        }
     }
 }
 
@@ -227,4 +366,26 @@ fn multiple_typedefs() {
     unit.must_have_alias("UINT", &|d| d.typ.must_be("u32"));
     unit.must_have_alias("LPUINT", &|d| d.typ.must_be("*mut u32"));
     unit.must_have_alias("LCPUINT", &|d| d.typ.must_be("*const u32"));
+}
+
+#[test]
+fn enum_constants() {
+    let unit = parse_single_unit(indoc!(
+        "
+        typedef enum Color {
+            Red = 0,
+            Green = 1,
+            Blue,
+        } Color, *PColor;
+        "
+    ));
+    unit.must_have_alias("Color", &|d| d.typ.must_be("Color".as_enum_name()));
+    unit.must_have_alias("PColor", &|d| {
+        d.typ.must_be(format!("*mut {}", "Color".as_enum_name()))
+    });
+    unit.must_have_enum("Color".as_enum_name(), &|d| {
+        d.must_have_field("Red", &|f| f.must_be_some(&|e| e.must_be_integer("0")));
+        d.must_have_field("Green", &|f| f.must_be_some(&|e| e.must_be_integer("1")));
+        d.must_have_field("Blue", &|f| f.must_be_none());
+    })
 }
