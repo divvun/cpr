@@ -118,7 +118,6 @@ impl fmt::Display for Visi {
 pub enum Repr {
     C,
     Transparent,
-    I32,
 }
 
 impl fmt::Display for Repr {
@@ -126,7 +125,6 @@ impl fmt::Display for Repr {
         match self {
             Self::C => write!(f, "#[repr(C)]"),
             Self::Transparent => write!(f, "#[repr(transparent)]"),
-            Self::I32 => write!(f, "#[repr(i32)]"),
         }
     }
 }
@@ -284,7 +282,7 @@ impl fmt::Display for EnumDeclaration {
         writeln!(f, "{repr}", repr = Repr::Transparent)?;
         writeln!(
             f,
-            "{vis} struct {name}(i32);",
+            "{vis} struct {name}(pub u32);",
             vis = Visi::Pub,
             name = self.name
         )?;
@@ -319,7 +317,7 @@ impl<'a> fmt::Display for EnumFieldTuple<'a> {
         write!(f, "pub const {name}: Self = ", name = curr.name)?;
         match curr.value.as_ref() {
             Some(value) => {
-                write!(f, "Self({value} as i32)", value = value.as_enum_expr())?;
+                write!(f, "Self({value} as u32)", value = value.as_enum_expr())?;
             }
             None => match prev {
                 Some(prev) => {
@@ -330,7 +328,7 @@ impl<'a> fmt::Display for EnumFieldTuple<'a> {
                     )?;
                 }
                 None => {
-                    write!(f, "Self(0_i32)")?;
+                    write!(f, "Self(0_u32)")?;
                 }
             },
         }

@@ -15,6 +15,7 @@ struct Translator<'a> {
     config: &'a Config,
     forward_struct_names: IndexSet<String>,
     declared_struct_names: IndexSet<String>,
+    declared_alias_names: IndexSet<String>,
 }
 
 pub struct Config {
@@ -59,11 +60,21 @@ impl<'a> Translator<'a> {
             unit: rg::Unit::new(path.to_owned()),
             declared_struct_names: Default::default(),
             forward_struct_names: Default::default(),
+            declared_alias_names: Default::default(),
         }
     }
 
     fn push<T: Into<rg::TopLevel>>(&mut self, t: T) {
-        self.unit.toplevels.push(t.into());
+        let top = t.into();
+        if let rg::TopLevel::AliasDeclaration(d) = &top {
+            if self.declared_alias_names.contains(&d.name.value) {
+                log::debug!("ignoring redundant type alias: {:?}", d.name.value);
+                return;
+            } else {
+                self.declared_alias_names.insert(d.name.value.clone());
+            }
+        }
+        self.unit.toplevels.push(top);
     }
 
     fn visit_unit(&mut self, declarations: &[ast::ExternalDeclaration]) {

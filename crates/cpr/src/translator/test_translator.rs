@@ -699,3 +699,15 @@ fn three_musketeers() {
     unit.must_have_alias("B", &|d| d.typ.must_be("A"));
     unit.must_have_alias("C", &|d| d.typ.must_be("B"));
 }
+
+#[test]
+fn typedef_deja_vu() {
+    let unit = parse_unit(indoc!(
+        "
+        typedef int INT;
+        typedef int INT;
+        "
+    ));
+    unit.must_have_alias("INT", &|d| d.typ.must_be("i32"));
+    unit.must_have_alias_count(1);
+}
