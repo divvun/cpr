@@ -1,18 +1,5 @@
 use std::{ffi::c_void, os::raw::*, ptr::null_mut};
 
-// const GENERIC_READ: c_int = 0x80000000;
-// const OPEN_EXISTING: c_int = 3;
-
-#[allow(non_snake_case)]
-fn GENERIC_READ<T: From<u32>>() -> T {
-    0x80000000.into()
-}
-
-#[allow(non_snake_case)]
-fn OPEN_EXISTING<T: From<u32>>() -> T {
-    3.into()
-}
-
 fn main() {
     unsafe {
         let path: Vec<u16> = "Cargo.toml"
@@ -21,10 +8,10 @@ fn main() {
             .collect();
         let f = bindings::CreateFileW(
             path.as_ptr(),
-            GENERIC_READ(),
+            bindings::GENERIC_READ,
             0,
             null_mut(),
-            OPEN_EXISTING(),
+            bindings::OPEN_EXISTING,
             0,
             null_mut(),
         );
