@@ -138,7 +138,7 @@ pub fn expand_ths(ts: &[THS], ctx: &Context) -> Result<Vec<THS>, ExpandError> {
     if let Token::Name(name) = &t.0 {
         if let SymbolState::Defined(def) = ctx.lookup(name) {
             if let Define::ObjectLike { value, .. } = def {
-                log::trace!("object-like macro");
+                log::trace!("expanding object-like macro {}", def.name());
                 let mut hs = t.1.clone();
                 hs.insert(name.clone());
                 let sub = subst(value.as_ths().as_ref(), &[], &[], &hs, Default::default());
@@ -152,7 +152,7 @@ pub fn expand_ths(ts: &[THS], ctx: &Context) -> Result<Vec<THS>, ExpandError> {
             if let Token::Name(name) = &t.0 {
                 if let SymbolState::Defined(def) = ctx.lookup(name) {
                     if let Define::FunctionLike { value, params, .. } = def {
-                        log::trace!("function-like macro");
+                        log::trace!("expanding function-like macro {}", def.name());
 
                         let mut input = rest;
                         let mut actuals: Vec<Vec<THS>> = vec![vec![]];
@@ -228,7 +228,6 @@ pub fn expand_ths(ts: &[THS], ctx: &Context) -> Result<Vec<THS>, ExpandError> {
                         hs.insert(name.into());
 
                         let sub_hs = hs_union(&hs_intersection(&t.1, closparen_hs), &hs);
-                        // let sub_hs = &hs_intersection(&t.1, closparen_hs);
                         log::trace!("sub_hs = {:?}", sub_hs);
                         let sub_res = subst(
                             value.as_ths().as_ref(),
