@@ -108,7 +108,7 @@ fn expand_single_macro_invocation<'a>(
             let mut hs = first.1.clone();
             hs.insert(name.to_string());
             let mut temp = Vec::new();
-            subst(value.as_ths(), None, None, &hs, &mut temp, depth + 1);
+            subst(value.as_ths(), None, &hs, &mut temp, depth + 1);
             is = Box::new(temp.into_iter().chain(is));
             return Ok(BranchOutcome::Advance(is));
         }
@@ -141,8 +141,10 @@ fn expand_single_macro_invocation<'a>(
             let mut temp = Vec::new();
             subst(
                 value.as_ths(),
-                Some(&params),
-                Some(&actuals),
+                Some(Params {
+                    fp: &params,
+                    ap: &actuals,
+                }),
                 &sub_hs,
                 &mut temp,
                 depth + 1,
@@ -265,10 +267,29 @@ fn parse_actuals<'a>(
     Ok(res)
 }
 
+struct Params<'a> {
+    /// formal parameters
+    fp: &'a MacroParams,
+    /// actual parameters (aka arguments)
+    ap: &'a ParsedActuals,
+}
+
+impl Params<'_> {
+    fn lookup<N: AsRef<str>>(&self, name: N) -> Option<&VecDeque<THS>> {
+        self.fp.names.get(name.as_ref()).map(|&index| {
+            self.ap.actuals.get(index).unwrap_or_else(|| {
+                panic!(
+                    "macro param {} should be passed as an argument",
+                    name.as_ref()
+                )
+            })
+        })
+    }
+}
+
 fn subst<'a>(
     mut is: Box<dyn Iterator<Item = THS> + 'a>,
-    fp: Option<&MacroParams>,
-    ap: Option<&ParsedActuals>,
+    params: Option<Params<'a>>,
     hs: &'a HashSet<String>,
     os: &'a mut Vec<THS>,
     depth: usize,
@@ -295,9 +316,11 @@ fn subst<'a>(
                 // TODO: token pasting (argument lhs)
 
                 // Regular argument replacement
-                if let THS(Token::Name(name), _) = &first {
-                    if let Some(&i) = fp.and_then(|fp| fp.names.get(name.as_str())) {
-                        todo!("found argument {}", name)
+                if let Some(params) = params.as_ref() {
+                    if let THS(Token::Name(name), _) = &first {
+                        if let Some(sel) = params.lookup(name) {
+                            todo!("found argument {} = {:?}", name, sel)
+                        }
                     }
                 }
 
