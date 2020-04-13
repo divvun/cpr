@@ -34,11 +34,19 @@ impl THS {
     /// TODO: proper error handling
     fn glue(self, rhs: Self) -> Self {
         let s = format!("{}{}", self.0, rhs.0);
-        let mut parsed = grammar::token_stream(&s)
+        let parsed = grammar::token_stream(&s)
             .expect(&format!("while pasting tokens {:?} and {:?}", self, rhs));
-
-        assert_eq!(parsed.0.len(), 1);
-        let token = parsed.0.pop().unwrap();
+        let mut parsed = &parsed.0[..];
+        loop {
+            match parsed {
+                [Token::WS, rest @ ..] | [rest @ .., Token::WS] => {
+                    parsed = rest;
+                }
+                _ => break,
+            }
+        }
+        assert_eq!(parsed.len(), 1, "{:?} should be a single token", parsed);
+        let token = parsed[0].clone();
         Self(token, hs_union(&self.1, &rhs.1))
     }
 }
