@@ -128,11 +128,11 @@ fn expand_single_macro_invocation<'a>(
                 }
             }
 
-            log::trace!("Found opening paren, first was: {:?}", first);
+            log::trace!("parsing actuals for macro {:?}", first);
             let mut actuals = parse_actuals(&mut is, saved, name)?;
             let closparen_hs = actuals.closparen_hs.take().unwrap();
 
-            log::trace!("gotta subst now, actuals = {:#?}", actuals);
+            log::trace!("actuals = {:?}", actuals);
 
             let mut hs = HashSet::new();
             hs.insert(name.into());
@@ -148,7 +148,7 @@ fn expand_single_macro_invocation<'a>(
                 depth + 1,
             );
 
-            todo!("os = {:#?}", temp);
+            return Ok(BranchOutcome::Advance(Box::new(temp.into_iter().chain(is))));
         }
     }
 }
@@ -286,7 +286,6 @@ fn subst<'a>(
 
         match is.next() {
             None => {
-                log::trace!("subst => empty");
                 return;
             }
             Some(first) => {
@@ -310,103 +309,61 @@ fn subst<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::frontend::grammar::MacroParams;
+    use crate::frontend::grammar;
+    use grammar::Directive;
+
+    fn def(ctx: &mut Context, input: &str) {
+        let dir = grammar::directive(input)
+            .expect("test directive must be parsable")
+            .expect("test must specify exactly one directive");
+        let def = match dir {
+            Directive::Define(d) => d,
+            _ => panic!(),
+        };
+        ctx.push(def)
+    }
+
+    fn exp(ctx: &Context, input: &str, output: &str) {
+        log::debug!("=============================================");
+        let input = grammar::token_stream(input).unwrap();
+        let expected = grammar::token_stream(output).unwrap();
+
+        let mut actual = vec![];
+        expand(input.as_ths(), &mut actual, &ctx, 0).unwrap();
+        let actual: TokenSeq = actual
+            .into_iter()
+            .map(|tok| tok.0)
+            .collect::<Vec<_>>()
+            .into();
+
+        log::debug!("expected = {:?}", expected);
+        log::debug!("actual = {:?}", actual);
+        assert_eq!(actual, expected, "(actual is on the left)");
+    }
 
     #[test]
     fn test_iterative1() {
-        let ts: TokenSeq = vec![Token::name("ONE"), '+'.into(), Token::int(3)].into();
-        dbg!(&ts);
-
-        let is = ts.as_ths();
-        let mut os = Vec::new();
         let mut ctx = Context::new();
-        ctx.push(Define::ObjectLike {
-            name: "ONE".into(),
-            value: vec![Token::name("TWO")].into(),
-        });
-        ctx.push(Define::ObjectLike {
-            name: "TWO".into(),
-            value: vec![Token::name("THREE")].into(),
-        });
-        ctx.push(Define::ObjectLike {
-            name: "THREE".into(),
-            value: vec![Token::name("FOUR")].into(),
-        });
-        ctx.push(Define::ObjectLike {
-            name: "FOUR".into(),
-            value: vec![Token::name("FIVE")].into(),
-        });
-        ctx.push(Define::ObjectLike {
-            name: "FIVE".into(),
-            value: vec![Token::int(5)].into(),
-        });
-        expand(is, &mut os, &ctx, 0).unwrap();
+        def(&mut ctx, "#define ONE TWO");
+        def(&mut ctx, "#define TWO THREE");
+        def(&mut ctx, "#define THREE FOUR");
+        def(&mut ctx, "#define FOUR FIVE");
+        def(&mut ctx, "#define FIVE 21");
 
-        dbg!(&os);
+        exp(&ctx, "ONE+3", "21+3");
     }
 
     #[test]
     fn test_iterative2() {
-        let ts: TokenSeq = vec![
-            Token::name("ADD"),
-            Token::WS,
-            Token::WS,
-            Token::WS,
-            '('.into(),
-            Token::WS,
-            Token::WS,
-            Token::int(1),
-            Token::WS,
-            ','.into(),
-            Token::WS,
-            Token::int(2),
-            Token::WS,
-            Token::WS,
-            ')'.into(),
-        ]
-        .into();
-        dbg!(&ts);
-
-        let is = ts.as_ths();
-        let mut os = Vec::new();
         let mut ctx = Context::new();
-        ctx.push(Define::FunctionLike {
-            name: "ADD".into(),
-            params: MacroParams {
-                names: vec!["x".into(), "y".into()],
-                has_trailing: false,
-            },
-            value: vec![Token::name("x"), '+'.into(), Token::name("y")].into(),
-        });
-        expand(is, &mut os, &ctx, 0).unwrap();
-
-        dbg!(&os);
+        def(&mut ctx, "#define ADD(x,y) x+y");
+        exp(&ctx, "ADD   (  1,  2  )", "1+2");
     }
 
     #[test]
     fn test_iterative3() {
-        let ts: TokenSeq = vec![
-            Token::name("ADD"),
-            Token::WS,
-            Token::WS,
-            Token::WS,
-            '('.into(),
-            Token::WS,
-            Token::int(1),
-            ','.into(),
-            Token::int(2),
-            Token::WS,
-            Token::WS,
-            ')'.into(),
-        ]
-        .into();
-        dbg!(&ts);
-
-        let is = ts.as_ths();
-        let mut os = Vec::new();
         let mut ctx = Context::new();
-        expand(is, &mut os, &ctx, 0).unwrap();
-
-        dbg!(&os);
+        let input = "ADD   (  1,  2  )";
+        exp(&ctx, input, input);
     }
 }
