@@ -176,7 +176,7 @@ fn expand_single_macro_invocation<'a>(
             let mut hs = first.1.clone();
             hs.insert(name.to_string());
             let mut temp = Vec::new();
-            subst(value.as_ths(), None, &hs, &mut temp, depth + 1);
+            subst(value.as_ths(), None, &hs, &mut temp, depth + 1)?;
             is = Box::new(temp.into_iter().chain(is));
             return Ok(BranchOutcome::Advance(is));
         }
@@ -216,7 +216,7 @@ fn expand_single_macro_invocation<'a>(
                 &sub_hs,
                 &mut temp,
                 depth + 1,
-            );
+            )?;
 
             return Ok(BranchOutcome::Advance(Box::new(temp.into_iter().chain(is))));
         }
@@ -361,7 +361,7 @@ fn subst<'a>(
     hs: &'a HashSet<String>,
     os: &'a mut Vec<THS>,
     depth: usize,
-) {
+) -> Result<(), ExpandError> {
     let mut cycle = 0;
 
     'subst_all: loop {
@@ -374,14 +374,51 @@ fn subst<'a>(
         );
 
         match is.next() {
-            None => {
-                return;
-            }
+            None => return Ok(()),
             Some(first) => {
                 // TODO: stringizing
+
                 // TODO: token pasting (argument lhs)
                 // TODO: token pasting (non-argument)
                 // TODO: token pasting (argument lhs)
+
+                if let Token::Paste = &first.0 {
+                    let mut saved = vec![];
+                    let rhs = skip_ws(&mut is, &mut saved).ok_or_else(|| {
+                        ExpandError::InvalidTokenPaste(
+                            "encountered EOF immediately after `##`".into(),
+                        )
+                    })?;
+
+                    let mut lhs = THS(Token::WS, Default::default());
+                    while let Token::WS = &lhs.0 {
+                        lhs = os.pop().ok_or_else(|| {
+                            ExpandError::InvalidTokenPaste(
+                                "no left-hand-side operand before `##`".into(),
+                            )
+                        })?;
+                    }
+
+                    if let Token::Name(name) = &rhs.0 {
+                        if let Some(sel) = params.as_ref().and_then(|p| p.lookup(name.as_str())) {
+                            let mut rest = sel.iter().cloned();
+                            let rhs = rest.next().ok_or_else(|| 
+                                ExpandError::InvalidTokenPaste(
+                                    format!("no right-hand-side operand after `##` (after substituting argument {:?})", name)
+                                )
+                            )?;
+
+                            log::trace!("pasting, lhs = {:?}, rhs-argument = {:?}, rest = {:?}", lhs, rhs, rest);
+                            os.push(lhs.glue(rhs));
+                            os.extend(rest);
+                            continue 'subst_all;
+                        }
+                    }
+
+                    log::trace!("pasting, lhs = {:?}, rhs = {:?}", lhs, rhs);
+                    os.push(lhs.glue(rhs));
+                    continue 'subst_all;
+                }
 
                 // Regular argument replacement
                 if let Some(params) = params.as_ref() {

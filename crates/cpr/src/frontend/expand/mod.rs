@@ -84,6 +84,8 @@ pub enum ExpandError {
     UnclosedMacroInvocation { name: String },
     #[error("invalid 'defined' operator usage: {0}")]
     InvalidDefined(String),
+    #[error("invalid token pasting: {0}")]
+    InvalidTokenPaste(String),
 }
 
 impl ExpandError {
@@ -91,6 +93,7 @@ impl ExpandError {
         match self {
             ExpandError::UnclosedMacroInvocation { .. } => true,
             ExpandError::InvalidDefined(..) => false,
+            ExpandError::InvalidTokenPaste(..) => false,
         }
     }
 }
