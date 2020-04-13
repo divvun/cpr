@@ -7,7 +7,7 @@ use crate::frontend::{
     grammar::{Define, Token, TokenSeq},
     Context, SymbolState,
 };
-use std::collections::HashSet;
+use std::collections::{HashSet, VecDeque};
 
 trait Expandable2 {
     fn as_ths<'a>(&'a self) -> Box<dyn Iterator<Item = THS> + 'a>;
@@ -154,24 +154,26 @@ fn skip_ws(is: &mut dyn Iterator<Item = THS>, saved: &mut Vec<THS>) -> Option<TH
 
 #[derive(Debug)]
 struct ParsedActuals {
-    actuals: Vec<Vec<THS>>,
+    actuals: VecDeque<VecDeque<THS>>,
     closparen_hs: Option<HS>,
 }
 
 impl ParsedActuals {
     fn new() -> Self {
+        let mut actuals = VecDeque::new();
+        actuals.push_back(VecDeque::new());
         Self {
-            actuals: vec![vec![]],
+            actuals,
             closparen_hs: None,
         }
     }
 
     fn push(&mut self, tok: THS) {
-        self.actuals.last_mut().unwrap().push(tok);
+        self.actuals.back_mut().unwrap().push_back(tok);
     }
 
     fn next_arg(&mut self) {
-        self.actuals.push(vec![]);
+        self.actuals.push_back(VecDeque::new());
     }
 }
 
