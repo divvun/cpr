@@ -108,7 +108,7 @@ fn expand_single_macro_invocation<'a>(
             let mut hs = first.1.clone();
             hs.insert(name.to_string());
             let mut temp = Vec::new();
-            subst(value.as_ths(), &[], &[], &hs, &mut temp, depth + 1);
+            subst(value.as_ths(), &[], None, &hs, &mut temp, depth + 1);
             is = Box::new(temp.into_iter().chain(is));
             return Ok(BranchOutcome::Advance(is));
         }
@@ -129,8 +129,26 @@ fn expand_single_macro_invocation<'a>(
             }
 
             log::trace!("Found opening paren, first was: {:?}", first);
-            let res = parse_actuals(&mut is, saved, name)?;
-            todo!("gotta subst now, actuals = {:#?}", res);
+            let mut actuals = parse_actuals(&mut is, saved, name)?;
+            let closparen_hs = actuals.closparen_hs.take().unwrap();
+
+            log::trace!("gotta subst now, actuals = {:#?}", actuals);
+
+            let mut hs = HashSet::new();
+            hs.insert(name.into());
+
+            let sub_hs = super::hs_union(&super::hs_intersection(&first.1, &closparen_hs), &hs);
+            let mut temp = Vec::new();
+            subst(
+                value.as_ths(),
+                &params.names[..],
+                Some(&actuals),
+                &sub_hs,
+                &mut temp,
+                depth + 1,
+            );
+
+            todo!("os = {:#?}", temp);
         }
     }
 }
@@ -190,11 +208,11 @@ fn parse_actuals<'a>(
     name: &str,
 ) -> Result<ParsedActuals, ExpandError> {
     let mut res = ParsedActuals::new();
-    let mut next = is.next();
     let mut depth = 1;
 
+    // parse until we reach end of input (error), or until all parentheses are balanced
     while depth > 0 {
-        match next {
+        match is.next() {
             None => {
                 return Err(ExpandError::UnclosedMacroInvocation {
                     name: name.to_string(),
@@ -229,9 +247,7 @@ fn parse_actuals<'a>(
                         res.push(tok.clone());
                     }
                 }
-
                 saved.push(tok);
-                next = is.next();
             }
         }
     }
@@ -252,7 +268,7 @@ fn parse_actuals<'a>(
 fn subst<'a>(
     mut is: Box<dyn Iterator<Item = THS> + 'a>,
     fp: &'a [String],
-    ap: &'a [Vec<THS>],
+    ap: Option<&ParsedActuals>,
     hs: &'a HashSet<String>,
     os: &'a mut Vec<THS>,
     depth: usize,
