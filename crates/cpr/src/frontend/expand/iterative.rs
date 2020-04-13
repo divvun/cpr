@@ -236,6 +236,16 @@ fn parse_actuals<'a>(
         }
     }
 
+    // trim whitespace from all arguments
+    for arg in res.actuals.iter_mut() {
+        while let Some(THS(Token::WS, _)) = arg.front() {
+            arg.pop_front();
+        }
+        while let Some(THS(Token::WS, _)) = arg.back() {
+            arg.pop_back();
+        }
+    }
+
     Ok(res)
 }
 
@@ -327,9 +337,15 @@ mod tests {
             Token::WS,
             Token::WS,
             '('.into(),
+            Token::WS,
+            Token::WS,
             Token::int(1),
+            Token::WS,
             ','.into(),
+            Token::WS,
             Token::int(2),
+            Token::WS,
+            Token::WS,
             ')'.into(),
         ]
         .into();
@@ -359,9 +375,12 @@ mod tests {
             Token::WS,
             Token::WS,
             '('.into(),
+            Token::WS,
             Token::int(1),
             ','.into(),
             Token::int(2),
+            Token::WS,
+            Token::WS,
             ')'.into(),
         ]
         .into();
