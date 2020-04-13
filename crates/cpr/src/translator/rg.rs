@@ -159,6 +159,13 @@ pub enum TopLevel {
     StructDeclaration(StructDeclaration),
     EnumDeclaration(EnumDeclaration),
     FunctionDeclaration(FunctionDeclaration),
+    Constant(Constant),
+}
+
+impl From<Constant> for TopLevel {
+    fn from(v: Constant) -> Self {
+        TopLevel::Constant(v)
+    }
 }
 
 impl From<AliasDeclaration> for TopLevel {
@@ -200,7 +207,31 @@ impl fmt::Display for TopLevel {
             Self::FunctionDeclaration(d) => {
                 write!(f, "{}", d)?;
             }
+            Self::Constant(c) => {
+                write!(f, "{}", c)?;
+            }
         }
+        Ok(())
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct Constant {
+    pub name: Identifier,
+    pub typ: Type,
+    pub value: String,
+}
+
+impl fmt::Display for Constant {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(
+            f,
+            "{vis} const {name}: {typ} = {value};",
+            vis = Visi::Pub,
+            typ = self.typ,
+            name = self.name,
+            value = self.value
+        )?;
         Ok(())
     }
 }

@@ -8,6 +8,7 @@ use std::{
 
 mod rg;
 mod utils;
+use crate::frontend::UnitDeclaration;
 use utils::*;
 
 struct Translator<'a> {
@@ -77,28 +78,84 @@ impl<'a> Translator<'a> {
         self.unit.toplevels.push(top);
     }
 
-    fn visit_unit(&mut self, declarations: &[ast::ExternalDeclaration]) {
+    fn visit_unit(&mut self, declarations: &[UnitDeclaration]) {
         let stack = &[];
 
-        for extdecl in declarations {
-            if let ast::ExternalDeclaration::Declaration(declaration) = &extdecl {
-                let declaration = &declaration.node;
+        for d in declarations {
+            match d {
+                UnitDeclaration::External(extdecl) => {
+                    if let ast::ExternalDeclaration::Declaration(declaration) = &extdecl {
+                        let declaration = &declaration.node;
 
-                for spec in nodes(&declaration.specifiers) {
-                    match spec {
-                        ast::DeclarationSpecifier::TypeSpecifier(ts) => {
-                            self.predeclare_types(&[], &ts.node);
+                        for spec in nodes(&declaration.specifiers) {
+                            match spec {
+                                ast::DeclarationSpecifier::TypeSpecifier(ts) => {
+                                    self.predeclare_types(&[], &ts.node);
+                                }
+                                _ => {}
+                            }
                         }
-                        _ => {}
+
+                        for init_declarator in nodes(&declaration.declarators[..]) {
+                            let declarator = &init_declarator.declarator.node;
+                            self.visit_declarator(stack, declaration, declarator);
+                        }
+                    } else {
+                        log::debug!("visit_unit: not a Declaration: {:#?}", extdecl);
                     }
                 }
-
-                for init_declarator in nodes(&declaration.declarators[..]) {
-                    let declarator = &init_declarator.declarator.node;
-                    self.visit_declarator(stack, declaration, declarator);
-                }
-            } else {
-                log::debug!("visit_unit: not a Declaration: {:#?}", extdecl);
+                UnitDeclaration::Constant(konst) => match &konst.value {
+                    ast::Constant::Integer(ast::Integer {
+                        suffix,
+                        base,
+                        number,
+                    }) => {
+                        println!(
+                            "should translate constant {}: number {}, base {:?} suffix {:?}",
+                            konst.name, number, base, suffix
+                        );
+                        let typ = if konst.negated {
+                            // use signed
+                            let number = format!("-{}", number);
+                            match number.parse::<i32>() {
+                                Ok(_) => Some(builtin("i32")),
+                                Err(_) => match number.parse::<i64>() {
+                                    Ok(_) => Some(builtin("i64")),
+                                    Err(_) => {
+                                        log::debug!(
+                                            "Could not parse as signed integer: {:?}",
+                                            number
+                                        );
+                                        None
+                                    }
+                                },
+                            }
+                        } else {
+                            // use unsigned
+                            match number.parse::<u32>() {
+                                Ok(_) => Some(builtin("u32")),
+                                Err(_) => match number.parse::<u64>() {
+                                    Ok(_) => Some(builtin("u64")),
+                                    Err(_) => {
+                                        log::debug!(
+                                            "Could not parse as signed integer: {:?}",
+                                            number
+                                        );
+                                        None
+                                    }
+                                },
+                            }
+                        };
+                        if let Some(typ) = typ {
+                            self.push(rg::Constant {
+                                name: rg::Identifier::name(&konst.name),
+                                typ,
+                                value: number.to_string(),
+                            })
+                        }
+                    }
+                    _ => {}
+                },
             }
         }
     }
@@ -266,14 +323,6 @@ impl<'a> Translator<'a> {
                 }
                 _ => break 'process_prefixes,
             }
-        }
-
-        fn builtin<S: AsRef<str>>(s: S) -> rg::Type {
-            rg::Type::Name(rg::Identifier::name(s.as_ref()))
-        }
-
-        fn ctype(s: &str) -> rg::Type {
-            builtin(format!("::std::os::raw::c_{}", s))
         }
 
         fn pick_sign(signed: Option<bool>, uver: rg::Type, sver: rg::Type) -> rg::Type {
@@ -563,7 +612,7 @@ impl AsExpr for ast::Expression {
 pub(crate) fn translate_unit(
     config: &Config,
     path: PathBuf,
-    decls: &[ast::ExternalDeclaration],
+    decls: &[UnitDeclaration],
 ) -> rg::Unit {
     let mut translator = Translator::new(config, path);
     translator.visit_unit(decls);
@@ -583,6 +632,14 @@ pub(crate) fn prelude() -> &'static str {
         #![allow(non_snake_case)]
         "#
     );
+}
+
+fn builtin<S: AsRef<str>>(s: S) -> rg::Type {
+    rg::Type::Name(rg::Identifier::name(s.as_ref()))
+}
+
+fn ctype(s: &str) -> rg::Type {
+    builtin(format!("::std::os::raw::c_{}", s))
 }
 
 #[cfg(test)]

@@ -12,7 +12,7 @@ use grammar::{Define, Directive, Expr, Include, IncludeDirective, Token, TokenSe
 use thiserror::Error;
 
 use indexmap::IndexSet;
-use lang_c::{ast as c_ast, driver, env::Env};
+use lang_c::{ast as c_ast, driver, env::Env, span::Node};
 use std::{
     collections::{HashMap, HashSet},
     fmt, io,
@@ -151,7 +151,26 @@ where
 pub struct Unit {
     pub path: PathBuf,
     pub dependencies: Vec<Include>,
-    pub declarations: Vec<c_ast::ExternalDeclaration>,
+    pub declarations: Vec<UnitDeclaration>,
+}
+
+#[derive(Debug)]
+pub enum UnitDeclaration {
+    External(c_ast::ExternalDeclaration),
+    Constant(UnitConstant),
+}
+
+#[derive(Debug)]
+pub struct UnitConstant {
+    pub name: String,
+    pub value: c_ast::Constant,
+    pub negated: bool,
+}
+
+impl From<c_ast::ExternalDeclaration> for UnitDeclaration {
+    fn from(v: c_ast::ExternalDeclaration) -> Self {
+        UnitDeclaration::External(v)
+    }
 }
 
 pub struct Parser {
@@ -275,12 +294,67 @@ impl Parser {
                     }
                     Directive::Define(def) => {
                         if taken {
-                            log::debug!("{}:{} defining {}", inc, lineno, def.name());
                             match &def {
                                 Define::ObjectLike { value, .. } => {
-                                    log::debug!("...to: {}", value);
+                                    log::debug!(
+                                        "{}:{} defining {} to {}",
+                                        inc,
+                                        lineno,
+                                        def.name(),
+                                        value
+                                    );
+
+                                    let s = value.expand(&self.ctx)?.to_string();
+                                    match lang_c::parser::constant_expression(&s, &mut self.env) {
+                                        Ok(node) => {
+                                            let expr = &node.node;
+                                            if let c_ast::Expression::Constant(c) = expr {
+                                                unit.declarations.push(UnitDeclaration::Constant(
+                                                    UnitConstant {
+                                                        name: def.name().to_string(),
+                                                        value: c.node.clone(),
+                                                        negated: false,
+                                                    },
+                                                ));
+                                            } else if let c_ast::Expression::UnaryOperator(un) =
+                                                expr
+                                            {
+                                                if let c_ast::UnaryOperatorExpression {
+                                                    operator:
+                                                        Node {
+                                                            node: c_ast::UnaryOperator::Minus,
+                                                            ..
+                                                        },
+                                                    operand,
+                                                } = &un.node
+                                                {
+                                                    if let c_ast::Expression::Constant(c) =
+                                                        &operand.node
+                                                    {
+                                                        unit.declarations.push(
+                                                            UnitDeclaration::Constant(
+                                                                UnitConstant {
+                                                                    name: def.name().to_string(),
+                                                                    value: c.node.clone(),
+                                                                    negated: true,
+                                                                },
+                                                            ),
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        _ => {}
+                                    }
                                 }
-                                _ => {}
+                                _ => {
+                                    log::debug!(
+                                        "{}:{} defining {} (function-like)",
+                                        inc,
+                                        lineno,
+                                        def.name()
+                                    );
+                                }
                             }
                             self.ctx.push(def);
                         } else {
@@ -418,7 +492,7 @@ impl Parser {
                     match lang_c::parser::translation_unit(&block_str, &mut self.env) {
                         Ok(mut node) => {
                             unit.declarations
-                                .extend(node.0.drain(..).map(|node| node.node));
+                                .extend(node.0.drain(..).map(|node| node.node.into()));
 
                             log::debug!("{}:{} parsed C:\n{}", inc, lineno, block_str);
                             block.clear();
