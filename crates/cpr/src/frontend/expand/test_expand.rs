@@ -48,10 +48,7 @@ fn function_like_noargs() {
     let mut ctx = Context::new();
     ctx.push(Define::FunctionLike {
         name: "FOO".into(),
-        params: MacroParams {
-            names: vec![],
-            has_trailing: false,
-        },
+        params: MacroParams::new(&[], false),
         value: vec![].into(),
     });
 
@@ -68,10 +65,7 @@ fn function_like_one_arg() {
     let mut ctx = Context::new();
     ctx.push(Define::FunctionLike {
         name: "FOO".into(),
-        params: MacroParams {
-            names: vec!["X".into()],
-            has_trailing: false,
-        },
+        params: MacroParams::new(&["X"], false),
         value: vec![Token::name("X")].into(),
     });
 
@@ -107,18 +101,12 @@ fn function_like_two_args() {
     let mut ctx = Context::new();
     ctx.push(Define::FunctionLike {
         name: "ADD".into(),
-        params: MacroParams {
-            names: vec!["X".into(), "Y".into()],
-            has_trailing: false,
-        },
+        params: MacroParams::new(&["X", "Y"], false),
         value: vec![Token::name("X"), '+'.into(), Token::name("Y")].into(),
     });
     ctx.push(Define::FunctionLike {
         name: "MUL".into(),
-        params: MacroParams {
-            names: vec!["X".into(), "Y".into()],
-            has_trailing: false,
-        },
+        params: MacroParams::new(&["X", "Y"], false),
         value: vec![Token::name("X"), '*'.into(), Token::name("Y")].into(),
     });
 

@@ -5,6 +5,7 @@ pub use qmc_conversion::*;
 
 use peg::ParseLiteral;
 use std::{
+    collections::HashMap,
     fmt,
     ops::{Add, BitAnd, BitOr, Not},
     path::{Path, PathBuf},
@@ -114,11 +115,15 @@ peg::parser! { pub(crate) grammar rules() for str {
     rule macro_params() -> MacroParams
         = _ "..." {
             MacroParams {
-                names: vec![],
+                names: Default::default(),
                 has_trailing: true,
             }
         }
-        / names:identifier() ** (_ "," _) _ e:("," _ "...")? {
+        / names_list:identifier() ** (_ "," _) _ e:("," _ "...")? {
+            let mut names: HashMap<String, usize> = names_list.into_iter()
+                .enumerate()
+                .map(|(index, name)| (name, index)).collect();
+
             MacroParams {
                 names,
                 has_trailing: e.is_some(),
@@ -369,13 +374,26 @@ impl TokenSeq {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MacroParams {
-    pub names: Vec<String>,
+    pub names: HashMap<String, usize>,
     pub has_trailing: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+impl MacroParams {
+    pub fn new(names: &[&str], has_trailing: bool) -> Self {
+        Self {
+            names: names
+                .into_iter()
+                .enumerate()
+                .map(|(k, v)| (v.to_string(), k))
+                .collect(),
+            has_trailing,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Define {
     ObjectLike {
         name: String,

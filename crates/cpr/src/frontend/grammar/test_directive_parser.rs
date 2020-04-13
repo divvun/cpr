@@ -56,10 +56,7 @@ fn define_functionlike_1() {
         directive("#define FOO(X, Y) X + Y"),
         Ok(Some(Directive::Define(Define::FunctionLike {
             name: "FOO".into(),
-            params: MacroParams {
-                names: vec!["X".into(), "Y".into()],
-                has_trailing: false
-            },
+            params: MacroParams::new(&["X", "Y"], false),
             value: vec![name("X"), __, '+'.into(), __, name("Y")].into()
         })))
     );
@@ -71,10 +68,7 @@ fn define_functionlike_variadic_1() {
         directive("#define WHY(...) __VA_ARGS__"),
         Ok(Some(Directive::Define(Define::FunctionLike {
             name: "WHY".into(),
-            params: MacroParams {
-                names: vec![],
-                has_trailing: true,
-            },
+            params: MacroParams::new(&[], true),
             value: vec![name("__VA_ARGS__")].into(),
         })))
     )
@@ -86,10 +80,7 @@ fn define_functionlike_variadic_2() {
         directive("#define WHY(a, b, ...) a b __VA_ARGS__"),
         Ok(Some(Directive::Define(Define::FunctionLike {
             name: "WHY".into(),
-            params: MacroParams {
-                names: vec!["a".into(), "b".into()],
-                has_trailing: true,
-            },
+            params: MacroParams::new(&["a", "b"], true),
             value: vec![name("a"), __, name("b"), __, name("__VA_ARGS__")].into(),
         })))
     )

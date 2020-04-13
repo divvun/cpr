@@ -4,7 +4,7 @@
 
 use super::{ExpandError, HS, THS};
 use crate::frontend::{
-    grammar::{Define, Token, TokenSeq},
+    grammar::{Define, MacroParams, Token, TokenSeq},
     Context, SymbolState,
 };
 use std::collections::{HashSet, VecDeque};
@@ -108,7 +108,7 @@ fn expand_single_macro_invocation<'a>(
             let mut hs = first.1.clone();
             hs.insert(name.to_string());
             let mut temp = Vec::new();
-            subst(value.as_ths(), &[], None, &hs, &mut temp, depth + 1);
+            subst(value.as_ths(), None, None, &hs, &mut temp, depth + 1);
             is = Box::new(temp.into_iter().chain(is));
             return Ok(BranchOutcome::Advance(is));
         }
@@ -141,7 +141,7 @@ fn expand_single_macro_invocation<'a>(
             let mut temp = Vec::new();
             subst(
                 value.as_ths(),
-                &params.names[..],
+                Some(&params),
                 Some(&actuals),
                 &sub_hs,
                 &mut temp,
@@ -267,7 +267,7 @@ fn parse_actuals<'a>(
 
 fn subst<'a>(
     mut is: Box<dyn Iterator<Item = THS> + 'a>,
-    fp: &'a [String],
+    fp: Option<&MacroParams>,
     ap: Option<&ParsedActuals>,
     hs: &'a HashSet<String>,
     os: &'a mut Vec<THS>,
@@ -295,6 +295,11 @@ fn subst<'a>(
                 // TODO: token pasting (argument lhs)
 
                 // Regular argument replacement
+                if let THS(Token::Name(name), _) = &first {
+                    if let Some(&i) = fp.and_then(|fp| fp.names.get(name.as_str())) {
+                        todo!("found argument {}", name)
+                    }
+                }
 
                 // Verbatim token
                 let mut tok = first.clone();

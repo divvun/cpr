@@ -75,7 +75,7 @@ fn ws_trimboth(is: &[THS]) -> &[THS] {
     ws_triml(ws_trimr(is))
 }
 
-use grammar::TokenSeq;
+use grammar::{MacroParams, TokenSeq};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -142,7 +142,7 @@ pub fn expand_ths(ts: &[THS], ctx: &Context) -> Result<Vec<THS>, ExpandError> {
                 log::trace!("expanding object-like macro {}", def.name());
                 let mut hs = t.1.clone();
                 hs.insert(name.clone());
-                let sub = subst(value.as_ths().as_ref(), &[], &[], &hs, Default::default());
+                let sub = subst(value.as_ths().as_ref(), None, &[], &hs, Default::default());
                 return expand_ths(concat(sub.as_ref(), ts_p.as_ref()).as_ref(), ctx);
             }
         }
@@ -232,7 +232,7 @@ pub fn expand_ths(ts: &[THS], ctx: &Context) -> Result<Vec<THS>, ExpandError> {
                         log::trace!("sub_hs = {:?}", sub_hs);
                         let sub_res = subst(
                             value.as_ths().as_ref(),
-                            &params.names[..],
+                            Some(&params),
                             &actuals[..],
                             &sub_hs,
                             vec![],
@@ -327,7 +327,7 @@ pub fn expand_ths(ts: &[THS], ctx: &Context) -> Result<Vec<THS>, ExpandError> {
 // ap = actual params, aka 'actuals' (arguments)
 pub fn subst(
     is: &[THS],
-    fp: &[String],
+    fp: Option<&MacroParams>,
     ap: &[Vec<THS>],
     hs: &HashSet<String>,
     os: Vec<THS>,
@@ -345,7 +345,7 @@ pub fn subst(
     match is {
         [THS(Token::Stringize, _), rest @ ..] => match ws_triml(rest) {
             [THS(Token::Name(name), _), rest @ ..] => {
-                if let Some(i) = fp.iter().position(|x| x == name) {
+                if let Some(&i) = fp.and_then(|fp| fp.names.get(name.as_str())) {
                     log::trace!("subst => stringizing");
                     return subst(
                         rest,
@@ -365,7 +365,7 @@ pub fn subst(
     match is {
         [THS(Token::Paste, _), rest @ ..] => match ws_triml(rest) {
             [THS(Token::Name(name), _), rest @ ..] => {
-                if let Some(i) = fp.iter().position(|x| x == name) {
+                if let Some(&i) = fp.and_then(|fp| fp.names.get(name.as_str())) {
                     log::trace!("subst => pasting (argument rhs)");
                     let sel = &ap[i];
                     if sel.is_empty() {
@@ -397,14 +397,14 @@ pub fn subst(
     match is {
         [THS(Token::Name(name_i), _), rest @ ..] => match ws_triml(rest) {
             [pastetok @ THS(Token::Paste, _), rest @ ..] => {
-                if let Some(i) = fp.iter().position(|x| x == name_i) {
+                if let Some(&i) = fp.and_then(|fp| fp.names.get(name_i.as_str())) {
                     log::trace!("subst => pasting (argument lhs)");
 
                     let sel_i = ap[i].clone();
                     if sel_i.is_empty() {
                         match ws_triml(rest) {
                             [THS(Token::Name(name_j), _), rest @ ..] => {
-                                if let Some(j) = fp.iter().position(|x| x == name_j) {
+                                if let Some(&j) = fp.and_then(|fp| fp.names.get(name_j.as_str())) {
                                     let sel_j = ap[j].clone();
                                     return subst(
                                         rest,
@@ -438,7 +438,7 @@ pub fn subst(
     // Regular argument replacement
     match is {
         [THS(Token::Name(name), _), rest @ ..] => {
-            if let Some(i) = fp.iter().position(|x| x == name) {
+            if let Some(&i) = fp.and_then(|fp| fp.names.get(name.as_str())) {
                 let sel = ap[i].clone();
                 log::trace!("subst => argument replacement, sel = {:?}", sel);
                 return subst(rest, fp, ap, hs, concat(os.as_ref(), sel.as_ref()));
