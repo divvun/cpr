@@ -123,8 +123,13 @@ impl Expandable for TokenSeq {
     }
 
     fn expand(&self, ctx: &Context) -> Result<TokenSeq, ExpandError> {
-        let res = expand_ths(&self.as_ths(), ctx)?;
-        Ok(TokenSeq(res.into_iter().map(|ths| ths.0).collect()))
+        // let res = expand_ths(&self.as_ths(), ctx)?;
+        // Ok(TokenSeq(res.into_iter().map(|ths| ths.0).collect()))
+
+        let is = iterative::Expandable2::as_ths(self);
+        let mut os = vec![];
+        iterative::expand(is, &mut os, ctx, 0)?;
+        Ok(os.into_iter().map(|ths| ths.0).collect::<Vec<_>>().into())
     }
 }
 

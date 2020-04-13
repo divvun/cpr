@@ -9,7 +9,7 @@ use crate::frontend::{
 };
 use std::collections::{HashSet, VecDeque};
 
-trait Expandable2 {
+pub trait Expandable2 {
     fn as_ths<'a>(&'a self) -> Box<dyn Iterator<Item = THS> + 'a>;
 }
 
@@ -24,7 +24,7 @@ impl Expandable2 for TokenSeq {
 }
 
 /// Main expand routine, calls `subst`
-fn expand<'a>(
+pub fn expand<'a>(
     mut is: Box<dyn Iterator<Item = THS> + 'a>,
     os: &'a mut Vec<THS>,
     ctx: &'a Context,
