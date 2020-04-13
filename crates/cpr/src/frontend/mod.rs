@@ -13,21 +13,15 @@ use thiserror::Error;
 
 use indexmap::IndexSet;
 use lang_c::{ast as c_ast, driver, env::Env, span::Node};
-use std::{
-    collections::{HashMap, HashSet},
-    fmt, io,
-    path::PathBuf,
-};
+use std::{collections::HashMap, fmt, io, path::PathBuf};
 
 #[derive(Debug, Clone)]
 pub struct Context {
     defines: HashMap<String, Define>,
-    unknowns: HashSet<String>,
 }
 
 #[derive(Debug)]
 pub enum SymbolState<'a> {
-    Unknown,
     Undefined,
     Defined(&'a Define),
 }
@@ -36,13 +30,8 @@ impl Context {
     pub fn new() -> Self {
         let res = Context {
             defines: HashMap::new(),
-            unknowns: HashSet::new(),
         };
         res
-    }
-
-    pub fn add_unknown(&mut self, unknown: &str) {
-        self.unknowns.insert(unknown.into());
     }
 
     pub fn simple_define(&mut self, s: &str) {
@@ -67,9 +56,6 @@ impl Context {
     }
 
     pub fn lookup(&self, name: &str) -> SymbolState<'_> {
-        if self.unknowns.contains(name) {
-            return SymbolState::Undefined;
-        }
         if let Some(def) = self.defines.get(name) {
             return SymbolState::Defined(def);
         }

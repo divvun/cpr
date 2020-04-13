@@ -82,12 +82,15 @@ use thiserror::Error;
 pub enum ExpandError {
     #[error("unclosed macro invocation: {name}")]
     UnclosedMacroInvocation { name: String },
+    #[error("invalid 'defined' operator usage: {0}")]
+    InvalidDefined(String),
 }
 
 impl ExpandError {
     pub fn needs_more(&self) -> bool {
         match self {
             ExpandError::UnclosedMacroInvocation { .. } => true,
+            ExpandError::InvalidDefined(..) => false,
         }
     }
 }
@@ -291,7 +294,6 @@ pub fn expand_ths(ts: &[THS], ctx: &Context) -> Result<Vec<THS>, ExpandError> {
                 &[THS(Token::Int(1), hs.clone())],
                 &expand_ths(rest, ctx)?,
             )),
-            SymbolState::Unknown => panic!("todo: definedness of {:?} is unknown", name),
         }
     }
 

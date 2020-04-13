@@ -41,55 +41,123 @@ fn expand<'a>(
             os.len(),
         );
 
-        match is.next() {
-            None => {
-                // First, if TS is the empty set, the result is the empty set.
-                return Ok(());
-            }
-            Some(first) => {
-                // Otherwise, if the token sequence begins with a token whose hide set
-                // contains that token, then the result is the token sequence beginning
-                // with that token (including its hide set) followed by the result of
-                // expand on the rest of the token sequence.
-                if first.hides(&first.0) {
-                    log::trace!("macro {} is hidden by hideset of {:?}", first.0, first);
-                    os.push(first.clone());
-                    continue 'expand_all;
-                }
-
-                // Otherwise, if the token sequence begins with an object-like macro, the
-                // result is the expansion of the rest of the token sequence beginning with
-                // the sequence returned by subst invoked with the replacement token
-                // sequence for the macro, two empty sets, the union of the macro’s hide set
-                // and the macro itself, and an empty set.
-                if let Token::Name(name) = &first.0 {
-                    if let SymbolState::Defined(def) = ctx.lookup(name) {
-                        let mut saved = vec![];
-                        match expand_single_macro_invocation(
-                            is, os, name, &first, def, &mut saved, depth,
-                        )? {
-                            BranchOutcome::Advance(rest) => {
-                                is = rest;
-                                continue 'expand_all;
-                            }
-                            BranchOutcome::Rewind(rest) => {
-                                is = Box::new(saved.into_iter().chain(rest));
-                            }
-                        }
+        macro_rules! apply_outcome {
+            ($outcome: expr, $saved: expr) => {
+                match $outcome {
+                    BranchOutcome::Advance(rest) => {
+                        is = rest;
+                        continue 'expand_all;
+                    }
+                    BranchOutcome::Rewind(rest) => {
+                        is = Box::new($saved.into_iter().chain(rest));
                     }
                 }
+            };
+        }
 
-                // Verbatim token
-                os.push(first);
-                continue 'expand_all;
+        let first = match is.next() {
+            // First, if TS is the empty set, the result is the empty set.
+            None => return Ok(()),
+            Some(x) => x,
+        };
+
+        // Otherwise, if the token sequence begins with a token whose hide set
+        // contains that token, then the result is the token sequence beginning
+        // with that token (including its hide set) followed by the result of
+        // expand on the rest of the token sequence.
+        if first.hides(&first.0) {
+            log::trace!("macro {} is hidden by hideset of {:?}", first.0, first);
+            os.push(first.clone());
+            continue 'expand_all;
+        }
+
+        // Otherwise, if the token sequence begins with an object-like macro, the
+        // result is the expansion of the rest of the token sequence beginning with
+        // the sequence returned by subst invoked with the replacement token
+        // sequence for the macro, two empty sets, the union of the macro’s hide set
+        // and the macro itself, and an empty set.
+        if let Token::Name(name) = &first.0 {
+            if let SymbolState::Defined(def) = ctx.lookup(name) {
+                let mut saved = vec![];
+                let outcome =
+                    expand_single_macro_invocation(is, os, name, &first, def, &mut saved, depth)?;
+                apply_outcome!(outcome, saved);
             }
         }
+
+        // Expand `DEFINED x`, `DEFINED(x)`, `DEFINED (x)`, `DEFINED(  x)`, etc.
+        if let Token::Defined = &first.0 {
+            let mut saved = vec![];
+            let outcome = expand_defined(is, os, &mut saved, ctx, &first, depth)?;
+            apply_outcome!(outcome, saved);
+        }
+
+        // Verbatim token
+        os.push(first);
     }
 }
 
 pub enum BranchOutcome<'a> {
     Advance(Box<dyn Iterator<Item = THS> + 'a>),
     Rewind(Box<dyn Iterator<Item = THS> + 'a>),
+}
+
+// Expand `DEFINED x`, `DEFINED(x)`, `DEFINED (x)`, `DEFINED(  x)`, etc.
+fn expand_defined<'a>(
+    mut is: Box<dyn Iterator<Item = THS> + 'a>,
+    os: &mut Vec<THS>,
+    saved: &mut Vec<THS>,
+    ctx: &Context,
+    first: &THS,
+    depth: usize,
+) -> Result<BranchOutcome<'a>, ExpandError> {
+    let next = skip_ws(&mut is, saved)
+        .ok_or_else(|| ExpandError::InvalidDefined("EOF immediately after `defined`".into()))?;
+
+    let def = match &next.0 {
+        Token::Name(name) => ctx.lookup(name),
+        Token::Pun('(') => {
+            let next = skip_ws(&mut is, saved).ok_or_else(|| {
+                ExpandError::InvalidDefined("EOF immediately after `defined(`".into())
+            })?;
+
+            let name = match &next.0 {
+                Token::Name(name) => name,
+                tok => {
+                    return Err(ExpandError::InvalidDefined(format!(
+                        "unexpected token after `defined(`: expected name, got {:#?}",
+                        tok
+                    )))
+                }
+            };
+            let next = skip_ws(&mut is, saved)
+                .ok_or_else(|| ExpandError::InvalidDefined("EOF after `defined(NAME`".into()))?;
+            match &next.0 {
+                Token::Pun(')') => {} // good!
+                tok => {
+                    return Err(ExpandError::InvalidDefined(format!(
+                        "unexpected token after `defined(NAME`: expected `)`, got {:?}",
+                        tok
+                    )))
+                }
+            }
+            ctx.lookup(name)
+        }
+        tok => {
+            return Err(ExpandError::InvalidDefined(format!(
+                "unexpected token after defined operator: {:?}",
+                tok
+            )))
+        }
+    };
+
+    let val = match def {
+        SymbolState::Undefined => 0,
+        SymbolState::Defined(_) => 1,
+    };
+
+    os.push(THS(Token::Int(val), first.1.clone()));
+    Ok(BranchOutcome::Advance(is))
 }
 
 /// Expands a single macro invocation, either object-like or function-like
@@ -372,7 +440,7 @@ mod tests {
     }
 
     #[test]
-    fn test_iterative1() {
+    fn test_nested_invocation_rescan() {
         let mut ctx = Context::new();
         def(&mut ctx, "#define ONE TWO");
         def(&mut ctx, "#define TWO THREE");
@@ -384,16 +452,29 @@ mod tests {
     }
 
     #[test]
-    fn test_iterative2() {
+    fn test_macro_invocation_strip_whitespace() {
         let mut ctx = Context::new();
         def(&mut ctx, "#define ADD(x,y) x+y");
         exp(&ctx, "ADD   (  1,  2  )", "1+2");
     }
 
     #[test]
-    fn test_iterative3() {
+    fn test_undefined_macro_invocation_keep_verbatim() {
         let mut ctx = Context::new();
         let input = "ADD   (  1,  2  )";
         exp(&ctx, input, input);
+    }
+
+    #[test]
+    fn test_empty() {
+        let mut ctx = Context::new();
+        def(&mut ctx, "#define EMPTY() ");
+        exp(&ctx, "defined EMPTY", "1");
+        exp(&ctx, "defined (EMPTY)", "1");
+        exp(&ctx, "defined(EMPTY )", "1");
+        exp(&ctx, "defined  (    EMPTY  ) ", "1 ");
+
+        exp(&ctx, "EMPTY()", "");
+        exp(&ctx, "1+EMPTY()3", "1+3");
     }
 }
