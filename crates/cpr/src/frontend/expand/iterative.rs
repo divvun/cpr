@@ -319,7 +319,9 @@ fn subst<'a>(
                 if let Some(params) = params.as_ref() {
                     if let THS(Token::Name(name), _) = &first {
                         if let Some(sel) = params.lookup(name) {
-                            todo!("found argument {} = {:?}", name, sel)
+                            log::trace!("regular argument replacement: {} => {:?}", name, sel);
+                            os.extend(sel.iter().cloned());
+                            continue 'subst_all;
                         }
                     }
                 }
