@@ -477,4 +477,27 @@ mod tests {
         exp(&ctx, "EMPTY()", "");
         exp(&ctx, "1+EMPTY()3", "1+3");
     }
+
+    #[test]
+    fn test_identity() {
+        let mut ctx = Context::new();
+        def(&mut ctx, "#define IDENTITY(x) x");
+        exp(&ctx, "IDENTITY(9)+IDENTITY(2)", "9+2");
+    }
+
+    #[test]
+    fn test_add_mul() {
+        let mut ctx = Context::new();
+        def(&mut ctx, "#define ADD(x, y) x+y");
+        def(&mut ctx, "#define MUL(x, y) x*y");
+        exp(&ctx, "ADD(MUL(1,2),3)", "1*2+3");
+        exp(&ctx, "ADD(ADD(ADD(1,2),3),4)", "1+2+3+4");
+    }
+
+    #[test]
+    fn test_hideset() {
+        let mut ctx = Context::new();
+        def(&mut ctx, "#define FOO(x) FOO()");
+        exp(&ctx, "FOO(y)", "FOO()");
+    }
 }
