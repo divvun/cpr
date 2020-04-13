@@ -12,6 +12,7 @@ trait UnitExtension {
     fn must_have_enum<N: AsRef<str>>(&self, name: N, f: &dyn Fn(&rg::EnumDeclaration));
     fn must_have_struct<N: AsRef<str>>(&self, name: N, f: &dyn Fn(&rg::StructDeclaration));
     fn must_have_function<N: AsRef<str>>(&self, name: N, f: &dyn Fn(&rg::FunctionDeclaration));
+    fn must_have_constant<N: AsRef<str>>(&self, name: N, f: &dyn Fn(&rg::Constant));
 
     fn must_have_alias_count(&self, count: usize);
     fn must_have_struct_count(&self, count: usize);
@@ -103,6 +104,27 @@ impl UnitExtension for rg::Unit {
         f(d);
     }
 
+    fn must_have_constant<N: AsRef<str>>(&self, name: N, f: &dyn Fn(&rg::Constant)) {
+        let name = name.as_ref();
+        let d = self
+            .toplevels
+            .iter()
+            .filter_map(|tl| {
+                match tl {
+                    rg::TopLevel::Constant(d) => {
+                        if d.name.value == name {
+                            return Some(d);
+                        }
+                    }
+                    _ => {}
+                };
+                None
+            })
+            .next()
+            .unwrap_or_else(|| panic!("should have a constant with name {:?}", name));
+        f(d);
+    }
+
     fn must_have_alias_count(&self, count: usize) {
         let actual = self
             .toplevels
@@ -128,6 +150,19 @@ impl UnitExtension for rg::Unit {
             .filter(|tl| matches!(tl, rg::TopLevel::EnumDeclaration(_)))
             .count();
         assert_eq!(count, actual, "(expected is on the left)");
+    }
+}
+
+trait ConstantExtension {
+    fn must_be(&self, val: &str);
+}
+
+impl ConstantExtension for rg::Constant {
+    fn must_be(&self, val: &str) {
+        assert_eq!(
+            val, self.value,
+            "(checking constant value, expected is on the left)"
+        );
     }
 }
 
@@ -715,4 +750,51 @@ fn typedef_deja_vu() {
     ));
     unit.must_have_alias("INT", &|d| d.typ.must_be("int".ctype()));
     unit.must_have_alias_count(1);
+}
+
+#[test]
+fn mega_constant() {
+    // trivia: this made the older, recursive function of the macro expander
+    // blow the stack, because of the sheer amount of expansion and substitution
+    // going on.
+    let unit = parse_unit(indoc!(
+        "
+        #define XSTATE_LEGACY_FLOATING_POINT        (0)
+        #define XSTATE_LEGACY_SSE                   (1)
+        #define XSTATE_GSSE                         (2)
+        #define XSTATE_AVX                          (XSTATE_GSSE)
+        #define XSTATE_MPX_BNDREGS                  (3)
+        #define XSTATE_MPX_BNDCSR                   (4)
+        #define XSTATE_AVX512_KMASK                 (5)
+        #define XSTATE_AVX512_ZMM_H                 (6)
+        #define XSTATE_AVX512_ZMM                   (7)
+        #define XSTATE_IPT                          (8)
+        #define XSTATE_CET_U                        (11)
+        #define XSTATE_LWP                          (62)
+        #define MAXIMUM_XSTATE_FEATURES             (64)
+
+        #define XSTATE_MASK_LEGACY_FLOATING_POINT   (1ui64 << (XSTATE_LEGACY_FLOATING_POINT))
+        #define XSTATE_MASK_LEGACY_SSE              (1ui64 << (XSTATE_LEGACY_SSE))
+        #define XSTATE_MASK_LEGACY                  (XSTATE_MASK_LEGACY_FLOATING_POINT | \
+                                                    XSTATE_MASK_LEGACY_SSE)
+
+        #define XSTATE_MASK_GSSE                    (1ui64 << (XSTATE_GSSE))
+        #define XSTATE_MASK_AVX                     (XSTATE_MASK_GSSE)
+        #define XSTATE_MASK_MPX                     ((1ui64 << (XSTATE_MPX_BNDREGS)) | \
+                                                    (1ui64 << (XSTATE_MPX_BNDCSR)))
+
+        #define XSTATE_MASK_AVX512                  ((1ui64 << (XSTATE_AVX512_KMASK)) | \
+                                                    (1ui64 << (XSTATE_AVX512_ZMM_H)) | \
+                                                    (1ui64 << (XSTATE_AVX512_ZMM)))
+
+        #define XSTATE_MASK_IPT                     (1ui64 << (XSTATE_IPT))
+        #define XSTATE_MASK_CET_U                   (1ui64 << (XSTATE_CET_U))
+        #define XSTATE_MASK_LWP                     (1ui64 << (XSTATE_LWP))
+
+        #define XSTATE_MASK_ALLOWED \
+        (XSTATE_MASK_LEGACY | XSTATE_MASK_AVX | XSTATE_MASK_MPX | XSTATE_MASK_AVX512 | \
+        XSTATE_MASK_IPT | XSTATE_MASK_CET_U | XSTATE_MASK_LWP)
+        "
+    ));
+    unit.must_have_constant("XSTATE_IPT", &|c| c.must_be("8"));
 }
