@@ -440,7 +440,7 @@ mod tests {
     }
 
     #[test]
-    fn test_nested_invocation_rescan() {
+    fn nested_invocation_rescan() {
         let mut ctx = Context::new();
         def(&mut ctx, "#define ONE TWO");
         def(&mut ctx, "#define TWO THREE");
@@ -452,21 +452,21 @@ mod tests {
     }
 
     #[test]
-    fn test_macro_invocation_strip_whitespace() {
+    fn macro_invocation_strip_whitespace() {
         let mut ctx = Context::new();
         def(&mut ctx, "#define ADD(x,y) x+y");
         exp(&ctx, "ADD   (  1,  2  )", "1+2");
     }
 
     #[test]
-    fn test_undefined_macro_invocation_keep_verbatim() {
+    fn undefined_macro_invocation_keep_verbatim() {
         let mut ctx = Context::new();
         let input = "ADD   (  1,  2  )";
         exp(&ctx, input, input);
     }
 
     #[test]
-    fn test_empty() {
+    fn empty() {
         let mut ctx = Context::new();
         def(&mut ctx, "#define EMPTY() ");
         exp(&ctx, "defined EMPTY", "1");
@@ -479,14 +479,14 @@ mod tests {
     }
 
     #[test]
-    fn test_identity() {
+    fn identity() {
         let mut ctx = Context::new();
         def(&mut ctx, "#define IDENTITY(x) x");
         exp(&ctx, "IDENTITY(9)+IDENTITY(2)", "9+2");
     }
 
     #[test]
-    fn test_add_mul() {
+    fn add_mul() {
         let mut ctx = Context::new();
         def(&mut ctx, "#define ADD(x, y) x+y");
         def(&mut ctx, "#define MUL(x, y) x*y");
@@ -495,9 +495,21 @@ mod tests {
     }
 
     #[test]
-    fn test_hideset() {
+    fn hideset() {
         let mut ctx = Context::new();
         def(&mut ctx, "#define FOO(x) FOO()");
         exp(&ctx, "FOO(y)", "FOO()");
+    }
+
+    #[test]
+    fn paste() {
+        let mut ctx = Context::new();
+        def(&mut ctx, "#define PASTE(x, y) x ## y");
+        def(&mut ctx, "#define PASTE_PRE(x) pre ## x");
+        def(&mut ctx, "#define PASTE_POST(x) x ## post");
+        exp(&ctx, "PASTE(foo,bar)", "foobar");
+        exp(&ctx, "PASTE(123,456)", "123456");
+        exp(&ctx, "PASTE_PRE(foo)", "prefoo");
+        exp(&ctx, "PASTE_POST(foo)", "foopost");
     }
 }
