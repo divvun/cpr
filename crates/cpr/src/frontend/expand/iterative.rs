@@ -2,7 +2,7 @@
 #![allow(unused_assignments)]
 #![allow(unused_mut)]
 
-use super::{ExpandError, THS};
+use super::{ExpandError, HS, THS};
 use crate::frontend::{
     grammar::{Define, Token, TokenSeq},
     Context, SymbolState,
@@ -23,22 +23,21 @@ impl Expandable2 for TokenSeq {
     }
 }
 
-pub fn expand<'a>(
+/// Main expand routine, calls `subst`
+fn expand<'a>(
     mut is: Box<dyn Iterator<Item = THS> + 'a>,
     os: &'a mut Vec<THS>,
     ctx: &'a Context,
     depth: usize,
 ) -> Result<(), ExpandError> {
     let mut cycle = 0;
-    let mut rescan = 0;
 
     'expand_all: loop {
         cycle += 1;
         log::trace!(
-            "[depth {}, cycle {}, rescan {}] expand (out len {})",
+            "[depth {}, cycle {}] expand (out len {})",
             depth,
             cycle,
-            rescan,
             os.len(),
         );
 
@@ -65,90 +64,16 @@ pub fn expand<'a>(
                 // and the macro itself, and an empty set.
                 if let Token::Name(name) = &first.0 {
                     if let SymbolState::Defined(def) = ctx.lookup(name) {
-                        match def {
-                            Define::ObjectLike { value, .. } => {
-                                log::trace!("expanding object-like macro {}", def.name());
-                                let mut hs = first.1.clone();
-                                hs.insert(name.clone());
-                                let mut temp = Vec::new();
-                                subst(value.as_ths(), &[], &[], &hs, &mut temp, depth + 1);
-                                is = Box::new(temp.into_iter().chain(is));
-                                rescan += 1;
+                        let mut saved = vec![];
+                        match expand_single_macro_invocation(
+                            is, os, name, &first, def, &mut saved, depth,
+                        )? {
+                            BranchOutcome::Advance(rest) => {
+                                is = rest;
                                 continue 'expand_all;
                             }
-                            Define::FunctionLike {
-                                value,
-                                name,
-                                params,
-                            } => {
-                                let mut saved = vec![];
-                                let mut next = skip_ws(&mut is, &mut saved);
-                                if let Some(tok) = next {
-                                    match tok {
-                                        THS(Token::Pun('('), _) => {
-                                            log::trace!(
-                                                "Found opening paren, first was: {:?}",
-                                                first
-                                            );
-
-                                            let mut actuals: Vec<Vec<THS>> = vec![vec![]];
-                                            let mut depth = 1;
-                                            let mut closparen_hs = None;
-
-                                            fn push(actuals: &mut Vec<Vec<THS>>, tok: THS) {
-                                                actuals.last_mut().unwrap().push(tok);
-                                            }
-
-                                            let mut next = is.next();
-                                            while depth > 0 {
-                                                match next {
-                                                    None => {
-                                                        return Err(
-                                                            ExpandError::UnclosedMacroInvocation {
-                                                                name: name.clone(),
-                                                            },
-                                                        )
-                                                    }
-                                                    Some(tok) => {
-                                                        match depth {
-                                                            1 => match &tok.0 {
-                                                                Token::Pun(',') => {
-                                                                    actuals.push(vec![]);
-                                                                }
-                                                                Token::Pun('(') => {
-                                                                    depth += 1;
-                                                                    push(&mut actuals, tok.clone());
-                                                                }
-                                                                Token::Pun(')') => {
-                                                                    depth -= 1;
-                                                                    closparen_hs =
-                                                                        Some(tok.1.clone());
-                                                                }
-                                                                _ => {
-                                                                    push(&mut actuals, tok.clone());
-                                                                }
-                                                            },
-                                                            _ => {
-                                                                todo!();
-                                                            }
-                                                        }
-
-                                                        saved.push(tok);
-                                                        next = is.next();
-                                                    }
-                                                }
-                                            }
-
-                                            todo!("gotta subst now, actuals = {:?}", actuals);
-                                        }
-                                        t => {
-                                            saved.push(t);
-                                        }
-                                    }
-                                }
-
-                                // rewind
-                                is = Box::new(saved.into_iter().chain(is));
+                            BranchOutcome::Rewind(rest) => {
+                                is = Box::new(saved.into_iter().chain(rest));
                             }
                         }
                     }
@@ -162,25 +87,157 @@ pub fn expand<'a>(
     }
 }
 
-pub fn skip_ws<'a>(is: &mut dyn Iterator<Item = THS>, saved: &mut Vec<THS>) -> Option<THS> {
+pub enum BranchOutcome<'a> {
+    Advance(Box<dyn Iterator<Item = THS> + 'a>),
+    Rewind(Box<dyn Iterator<Item = THS> + 'a>),
+}
+
+/// Expands a single macro invocation, either object-like or function-like
+fn expand_single_macro_invocation<'a>(
+    mut is: Box<dyn Iterator<Item = THS> + 'a>,
+    os: &mut Vec<THS>,
+    name: &str,
+    first: &THS,
+    def: &Define,
+    saved: &mut Vec<THS>,
+    depth: usize,
+) -> Result<BranchOutcome<'a>, ExpandError> {
+    match def {
+        Define::ObjectLike { value, .. } => {
+            log::trace!("expanding object-like macro {}", def.name());
+            let mut hs = first.1.clone();
+            hs.insert(name.to_string());
+            let mut temp = Vec::new();
+            subst(value.as_ths(), &[], &[], &hs, &mut temp, depth + 1);
+            is = Box::new(temp.into_iter().chain(is));
+            return Ok(BranchOutcome::Advance(is));
+        }
+        Define::FunctionLike {
+            value,
+            name,
+            params,
+        } => {
+            match skip_ws(&mut is, saved) {
+                Some(THS(Token::Pun('('), _)) => {
+                    // looks like a function invocation, continue
+                }
+                mut val => {
+                    val.take().map(|tok| saved.push(tok));
+                    // rewind
+                    return Ok(BranchOutcome::Rewind(is));
+                }
+            }
+
+            log::trace!("Found opening paren, first was: {:?}", first);
+            let res = parse_actuals(&mut is, saved, name)?;
+            todo!("gotta subst now, actuals = {:#?}", res);
+        }
+    }
+}
+
+/// Skip whitespace, pushing skipped tokens to `saved` for possible rewinding.
+fn skip_ws(is: &mut dyn Iterator<Item = THS>, saved: &mut Vec<THS>) -> Option<THS> {
     let mut next = is.next();
     loop {
         match next {
-            Some(t) => match t.0 {
-                Token::WS => {
-                    saved.push(t);
-                    next = is.next();
-                }
-                _ => {
-                    return Some(t);
-                }
-            },
+            // as long as we match whitespace, save it and skip it
+            Some(t @ THS(Token::WS, _)) => {
+                saved.push(t);
+                next = is.next();
+            }
+            // anything else: stop and return it
+            Some(t) => return Some(t),
             None => return None,
         }
     }
 }
 
-pub fn subst<'a>(
+#[derive(Debug)]
+struct ParsedActuals {
+    actuals: Vec<Vec<THS>>,
+    closparen_hs: Option<HS>,
+}
+
+impl ParsedActuals {
+    fn new() -> Self {
+        Self {
+            actuals: vec![vec![]],
+            closparen_hs: None,
+        }
+    }
+
+    fn push(&mut self, tok: THS) {
+        self.actuals.last_mut().unwrap().push(tok);
+    }
+
+    fn next_arg(&mut self) {
+        self.actuals.push(vec![]);
+    }
+}
+
+/// Parse arguments for macro invocations
+///
+///     FOO(BAR(A, B), C)
+///         ^           ^
+///         starting    ending here
+///         here
+///
+fn parse_actuals<'a>(
+    is: &mut dyn Iterator<Item = THS>,
+    saved: &mut Vec<THS>,
+    name: &str,
+) -> Result<ParsedActuals, ExpandError> {
+    let mut res = ParsedActuals::new();
+    let mut next = is.next();
+    let mut depth = 1;
+
+    while depth > 0 {
+        match next {
+            None => {
+                return Err(ExpandError::UnclosedMacroInvocation {
+                    name: name.to_string(),
+                })
+            }
+            Some(tok) => {
+                match depth {
+                    1 => match &tok.0 {
+                        Token::Pun(',') => {
+                            res.next_arg();
+                        }
+                        Token::Pun('(') => {
+                            depth += 1;
+                            res.push(tok.clone());
+                        }
+                        Token::Pun(')') => {
+                            depth -= 1;
+                            res.closparen_hs = Some(tok.1.clone());
+                        }
+                        _ => {
+                            res.push(tok.clone());
+                        }
+                    },
+                    _ => {
+                        // depth > 1 - keep track of parens but do not advance
+                        // arguments
+                        match &tok.0 {
+                            Token::Pun('(') => depth += 1,
+                            Token::Pun(')') => depth -= 1,
+                            _ => {}
+                        };
+                        res.push(tok.clone());
+                    }
+                }
+
+                saved.push(tok);
+                next = is.next();
+            }
+        }
+    }
+
+    Ok(res)
+}
+
+fn subst<'a>(
     mut is: Box<dyn Iterator<Item = THS> + 'a>,
     fp: &'a [String],
     ap: &'a [Vec<THS>],
@@ -189,15 +246,13 @@ pub fn subst<'a>(
     depth: usize,
 ) {
     let mut cycle = 0;
-    let mut rescan = 0;
 
     'subst_all: loop {
         cycle += 1;
         log::trace!(
-            "[depth {}, cycle {}, rescan {}] subst (out len = {})",
+            "[depth {}, cycle {}] subst (out len = {})",
             depth,
             cycle,
-            rescan,
             os.len()
         );
 
