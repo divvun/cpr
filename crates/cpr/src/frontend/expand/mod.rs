@@ -5,6 +5,7 @@
 
 use super::{grammar, Context, Define, SymbolState, Token};
 use std::{collections::HashSet, fmt};
+mod iterative;
 
 /// Hide set
 pub type HS = HashSet<String>;
@@ -28,7 +29,7 @@ impl THS {
         false
     }
 
-    /// Glue two tokens together, by printing them litterally next to each
+    /// Glue two tokens together, by printing them literally next to each
     /// other and re-lexing them.
     ///
     /// TODO: proper error handling
@@ -117,7 +118,7 @@ pub fn expand_ths(ts: &[THS], ctx: &Context) -> Result<Vec<THS>, ExpandError> {
 
     // First, if TS is the empty set, the result is the empty set.
     if ts.is_empty() {
-        return Ok(vec![]);
+        return Ok(Default::default());
     }
 
     // Otherwise, if the token sequence begins with a token whose hide set
