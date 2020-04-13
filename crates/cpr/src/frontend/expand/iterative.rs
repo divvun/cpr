@@ -85,6 +85,36 @@ fn expand<'a>(
             }
         }
 
+        // Concatenate strings
+        if let THS(Token::Str(l), hs_l) = &first {
+            let mut parts = vec![l.to_string()];
+            let mut hs = hs_l.clone();
+
+            'concat_strings: loop {
+                let mut saved = vec![];
+                match skip_ws(&mut is, &mut saved) {
+                    None => {
+                        // rewind
+                        is = Box::new(saved.into_iter().chain(is));
+                        break 'concat_strings;
+                    }
+                    Some(THS(Token::Str(r), hs_r)) => {
+                        parts.push(r.to_string());
+                        hs = super::hs_union(&hs, &hs_r);
+                    }
+                    Some(tok) => {
+                        saved.push(tok);
+                        // rewind
+                        is = Box::new(saved.into_iter().chain(is));
+                        break 'concat_strings;
+                    }
+                }
+            }
+
+            os.push(THS(Token::Str(parts.join("")), hs));
+            continue 'expand_all;
+        }
+
         // Expand `DEFINED x`, `DEFINED(x)`, `DEFINED (x)`, `DEFINED(  x)`, etc.
         if let Token::Defined = &first.0 {
             let mut saved = vec![];
@@ -198,6 +228,8 @@ fn expand_single_macro_invocation<'a>(
 
             log::trace!("parsing actuals for macro {:?}", first);
             let mut actuals = parse_actuals(&mut is, saved, name)?;
+            // panic check: this unwrap can never panic - parse_actuals can only return
+            // Ok if it assigns something to it.
             let closparen_hs = actuals.closparen_hs.take().unwrap();
 
             log::trace!("actuals = {:?}", actuals);
@@ -257,6 +289,9 @@ impl ParsedActuals {
     }
 
     fn push(&mut self, tok: THS) {
+        // panic check: this unwrap can never panic - actuals is
+        // initialized with one element and no elements are ever
+        // removed from it.
         self.actuals.back_mut().unwrap().push_back(tok);
     }
 
@@ -343,15 +378,19 @@ struct Params<'a> {
 }
 
 impl Params<'_> {
-    fn lookup<N: AsRef<str>>(&self, name: N) -> Option<&VecDeque<THS>> {
-        self.fp.names.get(name.as_ref()).map(|&index| {
-            self.ap.actuals.get(index).unwrap_or_else(|| {
-                panic!(
+    fn lookup<N: AsRef<str>>(&self, name: N) -> Result<Option<&VecDeque<THS>>, ExpandError> {
+        if let Some(&index) = self.fp.names.get(name.as_ref()) {
+            if let Some(actual) = self.ap.actuals.get(index) {
+                return Ok(Some(actual));
+            } else {
+                return Err(ExpandError::MissingMacroParam(format!(
                     "macro param {} should be passed as an argument",
                     name.as_ref()
-                )
-            })
-        })
+                )));
+            }
+        }
+
+        Ok(None)
     }
 }
 
@@ -376,11 +415,41 @@ fn subst<'a>(
         match is.next() {
             None => return Ok(()),
             Some(first) => {
-                // TODO: stringizing
+                if let Token::Stringize = &first.0 {
+                    let mut saved = vec![];
+                    let tok = skip_ws(&mut is, &mut saved).ok_or_else(|| {
+                        ExpandError::InvalidStringizing("encountered EOF after `#`".into())
+                    })?;
+                    log::trace!("stringize => tok = {:?}", tok);
 
-                // TODO: token pasting (argument lhs)
-                // TODO: token pasting (non-argument)
-                // TODO: token pasting (argument lhs)
+                    let name = match &tok.0 {
+                        Token::Name(name) => name,
+                        tok => {
+                            return Err(ExpandError::InvalidStringizing(format!(
+                                "expected name after stringizing operator `#`, got {:?}",
+                                tok
+                            )))
+                        }
+                    };
+                    log::trace!("stringize => name = {:?}", name);
+
+                    if let Some(params) = params.as_ref() {
+                        log::trace!("stringize => fp = {:?}, ap = {:?}", params.fp, params.ap);
+                        if let Some(sel) = params.lookup(name.as_str())? {
+                            log::trace!("stringize => sel = {:?}", sel);
+
+                            let mut s = String::new();
+                            use std::fmt::Write;
+                            for tok in sel {
+                                write!(&mut s, "{}", tok.0).unwrap();
+                            }
+                            let stringized = THS(Token::Str(s), tok.1.clone());
+                            log::trace!("stringized {:?} => {:?}", tok, stringized);
+                            os.push(stringized);
+                            continue 'subst_all;
+                        }
+                    }
+                }
 
                 if let Token::Paste = &first.0 {
                     let mut saved = vec![];
@@ -400,18 +469,24 @@ fn subst<'a>(
                     }
 
                     if let Token::Name(name) = &rhs.0 {
-                        if let Some(sel) = params.as_ref().and_then(|p| p.lookup(name.as_str())) {
-                            let mut rest = sel.iter().cloned();
-                            let rhs = rest.next().ok_or_else(|| 
-                                ExpandError::InvalidTokenPaste(
-                                    format!("no right-hand-side operand after `##` (after substituting argument {:?})", name)
-                                )
-                            )?;
+                        if let Some(params) = params.as_ref() {
+                            if let Some(sel) = params.lookup(name.as_str())? {
+                                let mut rest = sel.iter().cloned();
+                                let rhs = rest.next().ok_or_else(|| ExpandError::InvalidTokenPaste(
+                                        format!("no right-hand-side operand after `##` (after substituting argument {:?})", name)
+                                    )
+                                )?;
 
-                            log::trace!("pasting, lhs = {:?}, rhs-argument = {:?}, rest = {:?}", lhs, rhs, rest);
-                            os.push(lhs.glue(rhs));
-                            os.extend(rest);
-                            continue 'subst_all;
+                                log::trace!(
+                                    "pasting, lhs = {:?}, rhs-argument = {:?}, rest = {:?}",
+                                    lhs,
+                                    rhs,
+                                    rest
+                                );
+                                os.push(lhs.glue(rhs));
+                                os.extend(rest);
+                                continue 'subst_all;
+                            }
                         }
                     }
 
@@ -423,7 +498,7 @@ fn subst<'a>(
                 // Regular argument replacement
                 if let Some(params) = params.as_ref() {
                     if let THS(Token::Name(name), _) = &first {
-                        if let Some(sel) = params.lookup(name) {
+                        if let Some(sel) = params.lookup(name)? {
                             log::trace!("regular argument replacement: {} => {:?}", name, sel);
                             os.extend(sel.iter().cloned());
                             continue 'subst_all;
@@ -548,5 +623,24 @@ mod tests {
         exp(&ctx, "PASTE(123,456)", "123456");
         exp(&ctx, "PASTE_PRE(foo)", "prefoo");
         exp(&ctx, "PASTE_POST(foo)", "foopost");
+    }
+
+    #[test]
+    fn adjacent_string_literals() {
+        let mut ctx = Context::new();
+        def(&mut ctx, "#define ADJ(a, b) a b");
+        exp(&ctx, r#"ADJ("foo", "bar")"#, r#""foobar""#);
+    }
+
+    #[test]
+    fn stringize() {
+        let mut ctx = Context::new();
+        def(&mut ctx, "#define STRGZ(x) # x");
+        def(&mut ctx, "#define STRGZ2(x, y) # x # y");
+        def(&mut ctx, "#define STRGZ3(x, y, z) # x # y # z");
+        exp(&ctx, "STRGZ(2 + 3)", r#""2 + 3""#);
+        exp(&ctx, "STRGZ(   2 + 3        )", r#""2 + 3""#);
+        exp(&ctx, "STRGZ2(  foo ,  bar )", r#""foo" "bar""#);
+        exp(&ctx, "STRGZ3( foo, bar , baz)", r#""foo" "bar" "baz""#);
     }
 }

@@ -86,14 +86,24 @@ pub enum ExpandError {
     InvalidDefined(String),
     #[error("invalid token pasting: {0}")]
     InvalidTokenPaste(String),
+    #[error("invalid stringizing: {0}")]
+    InvalidStringizing(String),
+    #[error("missing macro parameter: {0}")]
+    MissingMacroParam(String),
 }
 
 impl ExpandError {
     pub fn needs_more(&self) -> bool {
+        // N.B. this match looks dumb, but don't just add a catch-all that
+        // returns `false` - the truth errors need to be more granular. Some
+        // cases of "invalid defined", "invalid token paste" and "invalid
+        // stringizing" are *actually* just us needing more input.
         match self {
             ExpandError::UnclosedMacroInvocation { .. } => true,
             ExpandError::InvalidDefined(..) => false,
             ExpandError::InvalidTokenPaste(..) => false,
+            ExpandError::InvalidStringizing(..) => false,
+            ExpandError::MissingMacroParam(..) => false,
         }
     }
 }
