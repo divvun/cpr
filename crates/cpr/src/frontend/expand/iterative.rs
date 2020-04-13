@@ -1,3 +1,7 @@
+#![allow(unused_variables)]
+#![allow(unused_assignments)]
+#![allow(unused_mut)]
+
 use super::{ExpandError, THS};
 use crate::frontend::{
     grammar::{Define, Token, TokenSeq},
@@ -61,15 +65,91 @@ pub fn expand<'a>(
                 // and the macro itself, and an empty set.
                 if let Token::Name(name) = &first.0 {
                     if let SymbolState::Defined(def) = ctx.lookup(name) {
-                        if let Define::ObjectLike { value, .. } = def {
-                            log::trace!("expanding object-like macro {}", def.name());
-                            let mut hs = first.1.clone();
-                            hs.insert(name.clone());
-                            let mut temp = Vec::new();
-                            subst(value.as_ths(), &[], &[], &hs, &mut temp, depth + 1);
-                            is = Box::new(temp.into_iter().chain(is));
-                            rescan += 1;
-                            continue 'expand_all;
+                        match def {
+                            Define::ObjectLike { value, .. } => {
+                                log::trace!("expanding object-like macro {}", def.name());
+                                let mut hs = first.1.clone();
+                                hs.insert(name.clone());
+                                let mut temp = Vec::new();
+                                subst(value.as_ths(), &[], &[], &hs, &mut temp, depth + 1);
+                                is = Box::new(temp.into_iter().chain(is));
+                                rescan += 1;
+                                continue 'expand_all;
+                            }
+                            Define::FunctionLike {
+                                value,
+                                name,
+                                params,
+                            } => {
+                                let mut saved = vec![];
+                                let mut next = skip_ws(&mut is, &mut saved);
+                                if let Some(tok) = next {
+                                    match tok {
+                                        THS(Token::Pun('('), _) => {
+                                            log::trace!(
+                                                "Found opening paren, first was: {:?}",
+                                                first
+                                            );
+
+                                            let mut actuals: Vec<Vec<THS>> = vec![vec![]];
+                                            let mut depth = 1;
+                                            let mut closparen_hs = None;
+
+                                            fn push(actuals: &mut Vec<Vec<THS>>, tok: THS) {
+                                                actuals.last_mut().unwrap().push(tok);
+                                            }
+
+                                            let mut next = is.next();
+                                            while depth > 0 {
+                                                match next {
+                                                    None => {
+                                                        return Err(
+                                                            ExpandError::UnclosedMacroInvocation {
+                                                                name: name.clone(),
+                                                            },
+                                                        )
+                                                    }
+                                                    Some(tok) => {
+                                                        match depth {
+                                                            1 => match &tok.0 {
+                                                                Token::Pun(',') => {
+                                                                    actuals.push(vec![]);
+                                                                }
+                                                                Token::Pun('(') => {
+                                                                    depth += 1;
+                                                                    push(&mut actuals, tok.clone());
+                                                                }
+                                                                Token::Pun(')') => {
+                                                                    depth -= 1;
+                                                                    closparen_hs =
+                                                                        Some(tok.1.clone());
+                                                                }
+                                                                _ => {
+                                                                    push(&mut actuals, tok.clone());
+                                                                }
+                                                            },
+                                                            _ => {
+                                                                todo!();
+                                                            }
+                                                        }
+
+                                                        saved.push(tok);
+                                                        next = is.next();
+                                                    }
+                                                }
+                                            }
+
+                                            todo!("gotta subst now, actuals = {:?}", actuals);
+                                        }
+                                        t => {
+                                            saved.push(t);
+                                        }
+                                    }
+                                }
+
+                                // rewind
+                                is = Box::new(saved.into_iter().chain(is));
+                            }
                         }
                     }
                 }
@@ -78,6 +158,24 @@ pub fn expand<'a>(
                 os.push(first);
                 continue 'expand_all;
             }
+        }
+    }
+}
+
+pub fn skip_ws<'a>(is: &mut dyn Iterator<Item = THS>, saved: &mut Vec<THS>) -> Option<THS> {
+    let mut next = is.next();
+    loop {
+        match next {
+            Some(t) => match t.0 {
+                Token::WS => {
+                    saved.push(t);
+                    next = is.next();
+                }
+                _ => {
+                    return Some(t);
+                }
+            },
+            None => return None,
         }
     }
 }
@@ -129,9 +227,10 @@ pub fn subst<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::frontend::grammar::MacroParams;
 
     #[test]
-    fn test_iterative() {
+    fn test_iterative1() {
         let ts: TokenSeq = vec![Token::name("ONE"), '+'.into(), Token::int(3)].into();
         dbg!(&ts);
 
@@ -158,6 +257,62 @@ mod tests {
             name: "FIVE".into(),
             value: vec![Token::int(5)].into(),
         });
+        expand(is, &mut os, &ctx, 0).unwrap();
+
+        dbg!(&os);
+    }
+
+    #[test]
+    fn test_iterative2() {
+        let ts: TokenSeq = vec![
+            Token::name("ADD"),
+            Token::WS,
+            Token::WS,
+            Token::WS,
+            '('.into(),
+            Token::int(1),
+            ','.into(),
+            Token::int(2),
+            ')'.into(),
+        ]
+        .into();
+        dbg!(&ts);
+
+        let is = ts.as_ths();
+        let mut os = Vec::new();
+        let mut ctx = Context::new();
+        ctx.push(Define::FunctionLike {
+            name: "ADD".into(),
+            params: MacroParams {
+                names: vec!["x".into(), "y".into()],
+                has_trailing: false,
+            },
+            value: vec![Token::name("x"), '+'.into(), Token::name("y")].into(),
+        });
+        expand(is, &mut os, &ctx, 0).unwrap();
+
+        dbg!(&os);
+    }
+
+    #[test]
+    fn test_iterative3() {
+        let ts: TokenSeq = vec![
+            Token::name("ADD"),
+            Token::WS,
+            Token::WS,
+            Token::WS,
+            '('.into(),
+            Token::int(1),
+            ','.into(),
+            Token::int(2),
+            ')'.into(),
+        ]
+        .into();
+        dbg!(&ts);
+
+        let is = ts.as_ths();
+        let mut os = Vec::new();
+        let mut ctx = Context::new();
         expand(is, &mut os, &ctx, 0).unwrap();
 
         dbg!(&os);
