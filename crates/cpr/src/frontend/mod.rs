@@ -21,7 +21,7 @@ use std::{
 
 #[derive(Debug, Clone)]
 pub struct Context {
-    defines: HashMap<String, Vec<(Expr, Define)>>,
+    defines: HashMap<String, Define>,
     unknowns: HashSet<String>,
 }
 
@@ -29,8 +29,7 @@ pub struct Context {
 pub enum SymbolState<'a> {
     Unknown,
     Undefined,
-    Defined((&'a Expr, &'a Define)),
-    MultipleDefines(Vec<(&'a Expr, &'a Define)>),
+    Defined(&'a Define),
 }
 
 impl Context {
@@ -47,30 +46,14 @@ impl Context {
     }
 
     pub fn simple_define(&mut self, s: &str) {
-        self.push(
-            grammar::Expr::bool(true),
-            grammar::Define::ObjectLike {
-                name: s.to_string(),
-                value: vec![grammar::Token::Int(1)].into(),
-            },
-        );
+        self.push(grammar::Define::ObjectLike {
+            name: s.to_string(),
+            value: vec![grammar::Token::Int(1)].into(),
+        });
     }
 
-    pub fn push(&mut self, expr: Expr, def: Define) {
-        let name = def.name().to_string();
-        let bucket = match self.defines.get_mut(&name) {
-            Some(bucket) => bucket,
-            None => {
-                self.defines.insert(name.clone(), Vec::new());
-                self.defines.get_mut(&name).unwrap()
-            }
-        };
-        // TODO: change if we start supporting multiple defines again
-        if !bucket.is_empty() {
-            log::debug!("re-defining {:?}", name);
-            bucket.clear();
-        }
-        bucket.push((expr, def));
+    pub fn push(&mut self, def: Define) {
+        self.defines.insert(def.name().to_string(), def);
     }
 
     pub fn pop(&mut self, name: &str) {
@@ -78,10 +61,8 @@ impl Context {
     }
 
     pub fn extend(&mut self, other: &Context) {
-        for (_, bucket) in &other.defines {
-            for (expr, def) in bucket {
-                self.push(expr.clone(), def.clone());
-            }
+        for (_, def) in &other.defines {
+            self.push(def.clone());
         }
     }
 
@@ -89,18 +70,8 @@ impl Context {
         if self.unknowns.contains(name) {
             return SymbolState::Undefined;
         }
-        if let Some(defs) = self.defines.get(&*name) {
-            // only one def...
-            if let [(expr, def)] = &defs[..] {
-                return SymbolState::Defined((&expr, &def));
-            } else {
-                log::debug!(
-                    "Multiple defines are unsupported for now, returning last: {:?}",
-                    defs
-                );
-                let (expr, def) = &defs[defs.len() - 1];
-                return SymbolState::Defined((&expr, &def));
-            }
+        if let Some(def) = self.defines.get(name) {
+            return SymbolState::Defined(def);
         }
         SymbolState::Undefined
     }
@@ -311,7 +282,7 @@ impl Parser {
                                 }
                                 _ => {}
                             }
-                            self.ctx.push(Expr::bool(true), def);
+                            self.ctx.push(def);
                         } else {
                             log::debug!("{}:{} not defining {}", inc, lineno, def.name());
                         }

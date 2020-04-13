@@ -128,7 +128,7 @@ pub fn expand_ths(ts: &[THS], ctx: &Context) -> Result<Vec<THS>, ExpandError> {
     // sequence for the macro, two empty sets, the union of the macro’s hide set
     // and the macro itself, and an empty set.
     if let Token::Name(name) = &t.0 {
-        if let SymbolState::Defined((_expr, def)) = ctx.lookup(name) {
+        if let SymbolState::Defined(def) = ctx.lookup(name) {
             if let Define::ObjectLike { value, .. } = def {
                 log::trace!("object-like macro");
                 let mut hs = t.1.clone();
@@ -142,7 +142,7 @@ pub fn expand_ths(ts: &[THS], ctx: &Context) -> Result<Vec<THS>, ExpandError> {
     match ws_triml(ts_p) {
         [THS(Token::Pun('('), _), rest @ ..] => {
             if let Token::Name(name) = &t.0 {
-                if let SymbolState::Defined((_expr, def)) = ctx.lookup(name) {
+                if let SymbolState::Defined(def) = ctx.lookup(name) {
                     if let Define::FunctionLike { value, params, .. } = def {
                         log::trace!("function-like macro");
 
@@ -279,7 +279,7 @@ pub fn expand_ths(ts: &[THS], ctx: &Context) -> Result<Vec<THS>, ExpandError> {
                 &[THS(Token::Int(0), hs.clone())],
                 &expand_ths(rest, ctx)?,
             )),
-            SymbolState::Defined(_) | SymbolState::MultipleDefines(_) => Ok(concat(
+            SymbolState::Defined(_) => Ok(concat(
                 &[THS(Token::Int(1), hs.clone())],
                 &expand_ths(rest, ctx)?,
             )),

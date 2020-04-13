@@ -19,6 +19,9 @@
 // typedef A (*B);
 // typedef B C;
 
-#include <minwindef.h>
-#include <fileapi.h>
+#define A 3
+#define B "haha"
+
+// #include <minwindef.h>
+// #include <fileapi.h>
 // #include <projectedfslib.h>

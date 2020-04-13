@@ -1,5 +1,5 @@
 use super::*;
-use grammar::{Directive, Expr, MacroParams, TokenSeq};
+use grammar::{Directive, MacroParams, TokenSeq};
 
 fn expands_to(ctx: &Context, src: &[Token], dst: &[Token], msg: &str) {
     let input: TokenSeq = src.iter().cloned().collect::<Vec<_>>().into();
@@ -10,13 +10,10 @@ fn expands_to(ctx: &Context, src: &[Token], dst: &[Token], msg: &str) {
 #[test]
 fn defined() {
     let mut ctx = Context::new();
-    ctx.push(
-        Expr::bool(true),
-        Define::ObjectLike {
-            name: "FOO".into(),
-            value: vec![].into(),
-        },
-    );
+    ctx.push(Define::ObjectLike {
+        name: "FOO".into(),
+        value: vec![].into(),
+    });
 
     expands_to(&ctx, &[], &[], "empty stream should stay empty");
     expands_to(&ctx, &[Token::name("FOO")], &[], "empty def should expand");
@@ -49,17 +46,14 @@ fn defined() {
 #[test]
 fn function_like_noargs() {
     let mut ctx = Context::new();
-    ctx.push(
-        Expr::bool(true),
-        Define::FunctionLike {
-            name: "FOO".into(),
-            params: MacroParams {
-                names: vec![],
-                has_trailing: false,
-            },
-            value: vec![].into(),
+    ctx.push(Define::FunctionLike {
+        name: "FOO".into(),
+        params: MacroParams {
+            names: vec![],
+            has_trailing: false,
         },
-    );
+        value: vec![].into(),
+    });
 
     expands_to(
         &ctx,
@@ -72,17 +66,14 @@ fn function_like_noargs() {
 #[test]
 fn function_like_one_arg() {
     let mut ctx = Context::new();
-    ctx.push(
-        Expr::bool(true),
-        Define::FunctionLike {
-            name: "FOO".into(),
-            params: MacroParams {
-                names: vec!["X".into()],
-                has_trailing: false,
-            },
-            value: vec![Token::name("X")].into(),
+    ctx.push(Define::FunctionLike {
+        name: "FOO".into(),
+        params: MacroParams {
+            names: vec!["X".into()],
+            has_trailing: false,
         },
-    );
+        value: vec![Token::name("X")].into(),
+    });
 
     expands_to(
         &ctx,
@@ -114,28 +105,22 @@ fn function_like_one_arg() {
 #[test]
 fn function_like_two_args() {
     let mut ctx = Context::new();
-    ctx.push(
-        Expr::bool(true),
-        Define::FunctionLike {
-            name: "ADD".into(),
-            params: MacroParams {
-                names: vec!["X".into(), "Y".into()],
-                has_trailing: false,
-            },
-            value: vec![Token::name("X"), '+'.into(), Token::name("Y")].into(),
+    ctx.push(Define::FunctionLike {
+        name: "ADD".into(),
+        params: MacroParams {
+            names: vec!["X".into(), "Y".into()],
+            has_trailing: false,
         },
-    );
-    ctx.push(
-        Expr::bool(true),
-        Define::FunctionLike {
-            name: "MUL".into(),
-            params: MacroParams {
-                names: vec!["X".into(), "Y".into()],
-                has_trailing: false,
-            },
-            value: vec![Token::name("X"), '*'.into(), Token::name("Y")].into(),
+        value: vec![Token::name("X"), '+'.into(), Token::name("Y")].into(),
+    });
+    ctx.push(Define::FunctionLike {
+        name: "MUL".into(),
+        params: MacroParams {
+            names: vec!["X".into(), "Y".into()],
+            has_trailing: false,
         },
-    );
+        value: vec![Token::name("X"), '*'.into(), Token::name("Y")].into(),
+    });
 
     expands_to(
         &ctx,
@@ -187,7 +172,7 @@ fn readable_tests() {
             Directive::Define(d) => d,
             _ => panic!(),
         };
-        ctx.push(Expr::bool(true), def)
+        ctx.push(def)
     }
 
     fn exp(ctx: &Context, input: &str, output: &str) {
@@ -221,7 +206,7 @@ fn test_compliant() {
             Directive::Define(d) => d,
             _ => panic!(),
         };
-        ctx.push(Expr::bool(true), def)
+        ctx.push(def)
     }
 
     fn exp(ctx: &Context, input: &str, output: &str) {
