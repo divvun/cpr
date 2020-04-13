@@ -134,7 +134,7 @@ impl Expandable for TokenSeq {
 }
 
 /// Expand a token sequence, in the given context
-pub fn expand_ths(ts: &[THS], ctx: &Context) -> Result<Vec<THS>, ExpandError> {
+fn expand_ths(ts: &[THS], ctx: &Context) -> Result<Vec<THS>, ExpandError> {
     log::trace!("expand {:?}", ts);
 
     // First, if TS is the empty set, the result is the empty set.
@@ -345,7 +345,7 @@ pub fn expand_ths(ts: &[THS], ctx: &Context) -> Result<Vec<THS>, ExpandError> {
 
 // fp = formal params (parameter names)
 // ap = actual params, aka 'actuals' (arguments)
-pub fn subst(
+fn subst(
     is: &[THS],
     fp: Option<&MacroParams>,
     ap: &[Vec<THS>],
@@ -479,7 +479,7 @@ pub fn subst(
     }
 }
 
-pub fn glue(ls: &[THS], rs: &[THS]) -> Vec<THS> {
+fn glue(ls: &[THS], rs: &[THS]) -> Vec<THS> {
     match ls {
         [] => rs.iter().cloned().collect(),
         _ => {
@@ -495,7 +495,7 @@ pub fn glue(ls: &[THS], rs: &[THS]) -> Vec<THS> {
     }
 }
 
-pub fn stringize(input: &[THS]) -> THS {
+fn stringize(input: &[THS]) -> THS {
     let mut s = String::new();
     use std::fmt::Write;
     for tok in input {
