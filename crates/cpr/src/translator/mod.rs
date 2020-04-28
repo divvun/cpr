@@ -3,17 +3,17 @@ use lang_c::{ast, span::Node};
 use std::{
     collections::hash_map::DefaultHasher,
     hash::{Hash, Hasher},
-    path::PathBuf,
 };
 
 mod rg;
 mod utils;
-use crate::frontend::UnitDeclaration;
+use crate::frontend::{FileId, SourceProvider, UnitDeclaration};
 use utils::*;
 
 struct Translator<'a> {
     unit: rg::Unit,
     config: &'a Config,
+    provider: &'a dyn SourceProvider,
     forward_struct_names: IndexSet<String>,
     declared_struct_names: IndexSet<String>,
     declared_alias_names: IndexSet<String>,
@@ -55,10 +55,11 @@ impl argh::FromArgValue for Arch {
 }
 
 impl<'a> Translator<'a> {
-    fn new(config: &'a Config, path: PathBuf) -> Self {
+    fn new(config: &'a Config, provider: &'a dyn SourceProvider, id: FileId) -> Self {
         Self {
             config,
-            unit: rg::Unit::new(path.to_owned()),
+            provider,
+            unit: rg::Unit::new(id),
             declared_struct_names: Default::default(),
             forward_struct_names: Default::default(),
             declared_alias_names: Default::default(),
@@ -382,7 +383,7 @@ impl<'a> Translator<'a> {
             }
             _ => unimplemented!(
                 "{:?}: don't know how to translate type: {:#?}",
-                self.unit.path,
+                self.provider.info(self.unit.id).unwrap().path,
                 typ
             ),
         };
@@ -612,10 +613,11 @@ impl AsExpr for ast::Expression {
 
 pub(crate) fn translate_unit(
     config: &Config,
-    path: PathBuf,
+    provider: &dyn SourceProvider,
+    id: FileId,
     decls: &[UnitDeclaration],
 ) -> rg::Unit {
-    let mut translator = Translator::new(config, path);
+    let mut translator = Translator::new(config, provider, id);
     translator.visit_unit(decls);
     translator.collect_opaque_structs();
     translator.unit

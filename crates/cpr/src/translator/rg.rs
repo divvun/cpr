@@ -1,9 +1,9 @@
+use crate::frontend::FileId;
 use lang_c::ast;
 use once_cell::sync::Lazy;
 use std::{
     collections::HashSet,
     fmt::{self, Write},
-    path::PathBuf,
 };
 
 static RUST_KEYWORDS: Lazy<HashSet<String>> = Lazy::new(|| {
@@ -131,14 +131,14 @@ impl fmt::Display for Repr {
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct Unit {
-    pub path: PathBuf,
+    pub id: FileId,
     pub toplevels: Vec<TopLevel>,
 }
 
 impl Unit {
-    pub fn new(path: PathBuf) -> Self {
+    pub fn new(id: FileId) -> Self {
         Self {
-            path,
+            id,
             toplevels: Default::default(),
         }
     }

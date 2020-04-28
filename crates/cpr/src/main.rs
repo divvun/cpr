@@ -5,7 +5,7 @@ mod frontend;
 mod translator;
 
 use argh::*;
-use frontend::Parser;
+use frontend::{grammar::Include, Parser, SourceDir};
 use std::{error::Error, path::PathBuf};
 
 #[derive(FromArgs)]
@@ -51,13 +51,27 @@ fn main() -> Result<(), Box<dyn Error>> {
         .or(devenv::get_msvc_path())
         .expect("MSVC include path should be autodetected or specified with --msvc-path");
 
-    let system_paths = vec![
-        kits.join("ucrt"),
-        kits.join("shared"),
-        kits.join("um"),
-        kits.join("km"),
-        msvc_path,
-        PathBuf::from(r"."),
+    let system_dirs = vec![
+        SourceDir {
+            pkg: "ucrt".into(),
+            path: kits.join("ucrt"),
+        },
+        SourceDir {
+            pkg: "shared".into(),
+            path: kits.join("shared"),
+        },
+        SourceDir {
+            pkg: "um".into(),
+            path: kits.join("um"),
+        },
+        SourceDir {
+            pkg: "km".into(),
+            path: kits.join("km"),
+        },
+        SourceDir {
+            pkg: "vc".into(),
+            path: msvc_path,
+        },
     ];
 
     let arch = args.arch.unwrap_or_default();
@@ -76,17 +90,28 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     }
 
-    let working_path = args
-        .file
-        .parent()
-        .expect("file should have a parent")
-        .to_path_buf();
+    log::info!("System dirs: {:#?}", system_dirs);
+    let provider = frontend::FileSourceProvider::new(system_dirs);
 
-    log::info!("System paths: {:#?}", system_paths);
-    let provider = frontend::FileSourceProvider::new(system_paths, working_path);
+    let root_file = &args.file;
+    let root_parent = root_file.parent().unwrap();
+    let root_source_dir = SourceDir {
+        pkg: root_parent
+            .file_name()
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_string(),
+        path: root_parent.to_path_buf(),
+    };
+    let root_include = Include::Quoted(PathBuf::from(root_file.file_name().unwrap()));
 
     let mut parser = Parser::new(Box::new(provider), ctx, Env::with_msvc());
-    parser.parse_path(args.file.file_name().expect("invalid file").into())?;
+    let root_id = parser
+        .provider
+        .resolve(&mut parser.idgen, &root_source_dir, &root_include)?;
+
+    parser.parse_file(root_id)?;
     log::info!("Done parsing!");
 
     let config = translator::Config { arch };
@@ -94,20 +119,20 @@ fn main() -> Result<(), Box<dyn Error>> {
     use std::{fs, io::Write};
     let manifest_path = args.output.join("Cargo.toml");
     fs::create_dir_all(manifest_path.parent().unwrap())?;
-    use indoc::indoc;
     std::fs::write(
         &manifest_path,
-        indoc!(
+        format!(
             r#"
-            [package]
-            name = "bindings"
-            version = "0.1.0"
-            authors = ["Jane Doe <jane@example.org>"]
-            edition = "2018"
+[package]
+name = "{crate_name}"
+version = "0.1.0"
+authors = []
+edition = "2018"
 
-            # workaround for cpr itself being a workspace
-            [workspace]
-            "#
+# workaround for cpr itself being a workspace
+[workspace]
+"#,
+            crate_name = root_source_dir.pkg
         ),
     )?;
 
@@ -115,19 +140,27 @@ fn main() -> Result<(), Box<dyn Error>> {
     fs::create_dir_all(top_level_path.parent().unwrap())?;
     let mut top_level = fs::File::create(&top_level_path)?;
 
-    for incl in &parser.includes {
+    for incl in &parser.ordered_files {
         let unit = parser.units.get(incl).unwrap();
+        let file_info = parser.provider.info(unit.id).unwrap();
+
         if unit.declarations.is_empty() {
-            println!("{} | skipping (no decls)", unit.path.display());
+            println!("{} | skipping (no decls)", file_info.path);
             continue;
         }
 
-        let trans_unit = translator::translate_unit(&config, unit.path.clone(), &unit.declarations);
-        let stem = incl.as_ref().file_stem().unwrap();
+        let trans_unit = translator::translate_unit(
+            &config,
+            parser.provider.as_ref(),
+            unit.id,
+            &unit.declarations,
+        );
+        let pkg_components = file_info.path.pkg_components();
+        let stem = pkg_components.last().unwrap();
 
         // TODO: this is all kinds of wrong
-        writeln!(top_level, "pub mod {};", stem.to_string_lossy())?;
-        writeln!(top_level, "pub use {}::*;", stem.to_string_lossy())?;
+        writeln!(top_level, "pub mod {};", stem)?;
+        writeln!(top_level, "pub use {}::*;", stem)?;
 
         let mut out_path = args.output.join("src").join(stem);
         out_path.set_extension("rs");
@@ -135,14 +168,14 @@ fn main() -> Result<(), Box<dyn Error>> {
         fs::create_dir_all(out_path.parent().unwrap())?;
         let mut f = fs::File::create(&out_path)?;
         writeln!(f, "{}", translator::prelude())?;
-        writeln!(f, "// @generated from {:?}", unit.path)?;
+        writeln!(f, "// @generated from {:?}", file_info.path.source_path())?;
         writeln!(f)?;
 
         writeln!(f, "pub use super::*;")?;
         write!(f, "{}", trans_unit)?;
         println!(
             "{} | ({} C => {} Rust) => {}",
-            unit.path.display(),
+            file_info.path,
             unit.declarations.len(),
             trans_unit.toplevels.len(),
             out_path.display()

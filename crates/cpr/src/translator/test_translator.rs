@@ -1,5 +1,8 @@
 use super::*;
-use crate::frontend::{grammar::Include, Context, Parser, SourceProvider};
+use crate::frontend::{
+    grammar::Include, Context, Error, FileInfo, FilePath, IdGenerator, Parser, SourceDir,
+    SourceProvider,
+};
 use indoc::indoc;
 use lang_c::{ast, env::Env};
 use std::{
@@ -355,37 +358,80 @@ impl ExprExtension for rg::Expr {
 
 struct TestSourceProvider {
     files: HashMap<PathBuf, String>,
+    path_to_id: HashMap<FilePath, FileId>,
+    id_to_info: HashMap<FileId, FileInfo>,
 }
 
 impl TestSourceProvider {
     fn new() -> Self {
         Self {
             files: Default::default(),
+            path_to_id: Default::default(),
+            id_to_info: Default::default(),
         }
     }
 }
 
 impl SourceProvider for TestSourceProvider {
-    fn resolve(&self, include: &Include) -> Option<(PathBuf, String)> {
-        let path: &Path = include.as_ref();
-        self.files
-            .get(path)
-            .map(|s| (path.to_path_buf(), s.clone()))
+    fn resolve(
+        &mut self,
+        idgen: &mut IdGenerator,
+        working_dir: &SourceDir,
+        include: &Include,
+    ) -> Result<FileId, Error> {
+        let inc_path: &Path = include.as_ref();
+        let path = FilePath {
+            dir: working_dir.clone(),
+            rel_path: inc_path.to_path_buf(),
+        };
+
+        let id = self.path_to_id.get(&path).copied().unwrap_or_else(|| {
+            let id = idgen.generate_id();
+            let info = FileInfo {
+                id,
+                path: path.clone(),
+            };
+            self.path_to_id.insert(path, info.id);
+            self.id_to_info.insert(info.id, info);
+            id
+        });
+
+        Ok(id)
+    }
+    fn info(&self, id: FileId) -> Option<&FileInfo> {
+        self.id_to_info.get(&id)
+    }
+    fn read(&self, id: FileId) -> Result<String, Error> {
+        let info = self.id_to_info.get(&id).ok_or(Error::UnknownFileId)?;
+        Ok(self.files.get(&info.path.rel_path).unwrap().clone())
     }
 }
 
 fn parse_units_with(provider: Box<dyn SourceProvider>, ctx: Context, env: Env) -> Vec<rg::Unit> {
     let mut parser = Parser::new(provider, ctx, env);
-    parser.parse_path("root.h".into()).unwrap();
+    let dir = SourceDir {
+        pkg: "root".into(),
+        path: ".".into(),
+    };
+    let id = parser
+        .provider
+        .resolve(&mut parser.idgen, &dir, &Include::Quoted("root.h".into()))
+        .unwrap();
+    parser.parse_file(id).unwrap();
 
     let config = Config { arch: Arch::X86_64 };
 
     parser
-        .includes
+        .ordered_files
         .iter()
         .map(|inc| {
             let unit = parser.units.get(inc).unwrap();
-            translate_unit(&config, unit.path.clone(), &unit.declarations[..])
+            translate_unit(
+                &config,
+                parser.provider.as_ref(),
+                id,
+                &unit.declarations[..],
+            )
         })
         .collect()
 }
@@ -677,10 +723,8 @@ fn stddef_wchar_t() {
             ),
         ),
     ]));
-    let unit = units
-        .iter()
-        .find(|u| u.path.to_string_lossy() == "root.h")
-        .unwrap();
+
+    let unit = units.iter().find(|&u| u.id == FileId(2)).unwrap();
     unit.must_have_function("foobar", &|f| {
         f.must_have_param("c", &|p| p.typ.must_be("wchar_t"));
         f.must_have_param("s", &|p| p.typ.must_be("size_t"));
@@ -767,6 +811,22 @@ fn typedef_deja_vu_multi() {
         d.typ.must_be("A".struct_name().mut_pointer_name())
     });
     unit.must_have_alias_count(2);
+}
+
+#[test]
+fn declspec() {
+    let unit = parse_unit(indoc!(
+        "
+        __declspec(dllimport)
+        int
+
+        get_number(
+            int a,
+            int b
+        );
+        "
+    ));
+    unit.must_have_function("get_number", &|_| {})
 }
 
 #[test]

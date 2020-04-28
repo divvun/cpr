@@ -15,6 +15,41 @@ use indexmap::IndexSet;
 use lang_c::{ast as c_ast, driver, env::Env, span::Node};
 use std::{collections::HashMap, fmt, io, path::PathBuf};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct LineNo(pub u64);
+
+impl fmt::Display for LineNo {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+pub struct Location {
+    id: FileId,
+    lineno: LineNo,
+}
+
+impl Location {
+    fn display<'a>(&'a self, provider: &'a dyn SourceProvider) -> LocationDisplay<'a> {
+        return LocationDisplay {
+            loc: self,
+            provider,
+        };
+    }
+}
+
+struct LocationDisplay<'a> {
+    loc: &'a Location,
+    provider: &'a dyn SourceProvider,
+}
+
+impl<'a> fmt::Display for LocationDisplay<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let info = self.provider.info(self.loc.id).unwrap();
+        write!(f, "{}:{}", info.path, self.loc.lineno)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Context {
     defines: HashMap<String, Define>,
@@ -74,8 +109,6 @@ impl Define {
 
 #[derive(Error, Debug)]
 pub enum Error {
-    #[error("invalid file")]
-    InvalidFile,
     #[error("io error: {0}")]
     Io(#[from] io::Error),
     #[error("utf-8 error: {0}")]
@@ -88,6 +121,8 @@ pub enum Error {
     Syntax(SyntaxError), // has custom From implementation
     #[error("C token expansion error: {0}")]
     Expand(#[from] ExpandError),
+    #[error("unknown file ID (internal error)")]
+    UnknownFileId,
 }
 
 #[derive(Debug)]
@@ -135,7 +170,7 @@ where
 
 #[derive(Debug)]
 pub struct Unit {
-    pub path: PathBuf,
+    pub id: FileId,
     pub dependencies: Vec<Include>,
     pub declarations: Vec<UnitDeclaration>,
 }
@@ -160,15 +195,97 @@ impl From<c_ast::ExternalDeclaration> for UnitDeclaration {
 }
 
 pub struct Parser {
-    provider: Box<dyn SourceProvider>,
-    pub includes: IndexSet<Include>,
-    pub units: HashMap<Include, Unit>,
+    pub provider: Box<dyn SourceProvider>,
+    pub ordered_files: IndexSet<FileId>,
+    pub units: HashMap<FileId, Unit>,
     pub ctx: Context,
     pub env: Env,
+    pub idgen: IdGenerator,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct FileId(pub u64);
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct FileInfo {
+    /// Unique identifier for file
+    pub id: FileId,
+    /// Path relative to `dir`
+    pub path: FilePath,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct FilePath {
+    /// Source directory this file was read from
+    pub dir: SourceDir,
+    /// Path relative from `dir`
+    pub rel_path: PathBuf,
+}
+
+impl fmt::Display for FilePath {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}/{}", self.dir.pkg, self.rel_path.display())
+    }
+}
+
+impl FilePath {
+    /// Returns path of source file on disk
+    pub fn source_path(&self) -> PathBuf {
+        self.dir.path.join(&self.rel_path)
+    }
+
+    /// Returns Rust package components, like ["um", "WinTrust.h"]
+    pub fn pkg_components(&self) -> Vec<String> {
+        let mut res = vec![];
+        res.push(self.dir.pkg.to_string());
+        for comp in self.rel_path.components() {
+            match comp {
+                std::path::Component::Prefix(_) => {}
+                std::path::Component::RootDir => {}
+                std::path::Component::CurDir => {}
+                std::path::Component::ParentDir => {}
+                std::path::Component::Normal(comp) => {
+                    res.push(comp.to_string_lossy().to_string());
+                }
+            }
+        }
+        res
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct SourceDir {
+    /// Name of top-level rust package for crate
+    pub pkg: String,
+    /// Absolute filesystem path for source dir
+    pub path: PathBuf,
+}
+
+pub struct IdGenerator {
+    file_id_seed: u64,
+}
+
+impl IdGenerator {
+    fn new() -> Self {
+        Self { file_id_seed: 1 }
+    }
+
+    pub fn generate_id(&mut self) -> FileId {
+        let res = FileId(self.file_id_seed);
+        self.file_id_seed += 1;
+        res
+    }
 }
 
 pub trait SourceProvider {
-    fn resolve(&self, include: &Include) -> Option<(PathBuf, String)>;
+    fn resolve(
+        &mut self,
+        idgen: &mut IdGenerator,
+        working_dir: &SourceDir,
+        include: &Include,
+    ) -> Result<FileId, Error>;
+    fn info(&self, id: FileId) -> Option<&FileInfo>;
+    fn read(&self, id: FileId) -> Result<String, Error>;
 }
 
 impl Parser {
@@ -181,31 +298,30 @@ impl Parser {
             provider,
             ctx,
             env,
-            includes: Default::default(),
+            ordered_files: Default::default(),
             units: Default::default(),
+            idgen: IdGenerator::new(),
         }
     }
 
-    pub fn parse_path(&mut self, path: PathBuf) -> Result<(), Error> {
-        self.parse_include(Include::Quoted(path))
-    }
-
-    pub fn parse_include(&mut self, inc: Include) -> Result<(), Error> {
-        self.includes.insert(inc.clone());
-
-        let (path, source) = self
+    pub fn parse_file(&mut self, file_id: FileId) -> Result<(), Error> {
+        let file_info = self
             .provider
-            .resolve(&inc)
-            .ok_or_else(|| Error::NotFound(inc.clone()))?;
+            .info(file_id)
+            .ok_or(Error::UnknownFileId)?
+            .clone();
+        self.ordered_files.insert(file_id.clone());
+        let path = &file_info.path;
 
-        let source = utils::process_line_continuations_and_comments(&source);
-        let mut lines = source.lines().enumerate();
+        let source = self.provider.read(file_id)?;
+        let lines = utils::process_line_continuations_and_comments(&source);
+        let mut lines = lines.iter();
         let mut block: Vec<String> = Vec::new();
 
         let mut unit = Unit {
+            id: file_id,
             dependencies: vec![],
             declarations: vec![],
-            path,
         };
 
         let mut stack: Vec<(bool, TokenSeq)> = Vec::new();
@@ -233,6 +349,18 @@ impl Parser {
                 Some(line) => line,
                 None => break 'each_line,
             };
+            let lineno = *lineno;
+            let loc = Location {
+                id: file_id,
+                lineno,
+            };
+
+            macro_rules! loc {
+                () => {
+                    loc.display(self.provider.as_ref())
+                };
+            }
+
             let line = line.trim();
             if line.is_empty() {
                 continue 'each_line;
@@ -241,7 +369,7 @@ impl Parser {
             let taken = path_taken(&stack);
 
             log::trace!("====================================");
-            log::trace!("{:?}:{} | {}", inc, lineno, line);
+            log::trace!("{:?}:{} | {}", path, lineno, line);
             let dir = grammar::directive(line).unwrap_or_else(|e| {
                 panic!("could not parse directive `{}`\n\ngot error: {:?}", line, e)
             });
@@ -266,14 +394,15 @@ impl Parser {
                                     }
                                 }
                             };
-                            log::info!(
-                                "{}:{} including {:?}, stack = {:?}",
-                                inc,
-                                lineno,
-                                dep,
-                                stack
-                            );
-                            self.parse_include(dep)?;
+                            log::info!("{} including {:?}, stack = {:?}", loc!(), dep, stack);
+
+                            // FIXME: working dir is wrong here
+                            let dep_id = self.provider.resolve(
+                                &mut self.idgen,
+                                &file_info.path.dir,
+                                &dep,
+                            )?;
+                            self.parse_file(dep_id)?;
                         } else {
                             log::debug!("path not taken, not including");
                         }
@@ -284,7 +413,7 @@ impl Parser {
                                 Define::ObjectLike { value, .. } => {
                                     log::debug!(
                                         "{}:{} defining {} to {}",
-                                        inc,
+                                        path,
                                         lineno,
                                         def.name(),
                                         value
@@ -336,7 +465,7 @@ impl Parser {
                                 _ => {
                                     log::debug!(
                                         "{}:{} defining {} (function-like)",
-                                        inc,
+                                        path,
                                         lineno,
                                         def.name()
                                     );
@@ -344,7 +473,7 @@ impl Parser {
                             }
                             self.ctx.push(def);
                         } else {
-                            log::debug!("{}:{} not defining {}", inc, lineno, def.name());
+                            log::debug!("{}:{} not defining {}", path, lineno, def.name());
                         }
                     }
                     Directive::Undefine(name) => {
@@ -361,7 +490,7 @@ impl Parser {
                         if_stack.push(vec![truthy]);
 
                         let tup = (expr.truthy(), tokens);
-                        log::debug!("{}:{} if | {} {}", inc, lineno, tup.0, tup.1);
+                        log::debug!("{}:{} if | {} {}", path, lineno, tup.0, tup.1);
                         stack.push(tup)
                     }
                     Directive::Else => {
@@ -371,7 +500,7 @@ impl Parser {
                         v.push(branch_taken);
 
                         let tup = (branch_taken, vec![].into());
-                        log::debug!("{}:{} else | {} {}", inc, lineno, tup.0, tup.1);
+                        log::debug!("{}:{} else | {} {}", path, lineno, tup.0, tup.1);
                         if_stack.push(v);
                         stack.push(tup);
                     }
@@ -384,7 +513,7 @@ impl Parser {
                         v.push(truthy);
 
                         let tup = (branch_taken, tokens);
-                        log::debug!("{}:{} elseif | {} {}", inc, lineno, tup.0, tup.1);
+                        log::debug!("{} elseif | {} {}", loc!(), tup.0, tup.1);
                         if_stack.push(v);
                         stack.push(tup);
                     }
@@ -394,26 +523,20 @@ impl Parser {
                         log::debug!("endif");
                     }
                     Directive::Pragma(s) => {
-                        log::debug!("{}:{} ignoring pragma: {}", inc, lineno, s);
+                        log::debug!("{} ignoring pragma: {}", loc!(), s);
                     }
                     Directive::Error(s) => {
                         if taken {
-                            panic!("{}:{} pragma error: {}", inc, lineno, s);
+                            panic!("{} pragma error: {}", loc!(), s);
                         }
                     }
                     Directive::Unknown(a, b) => {
-                        log::warn!(
-                            "{}:{} ignoring unknown directive: {} {}\n",
-                            inc,
-                            lineno,
-                            a,
-                            b
-                        );
+                        log::warn!("{} ignoring unknown directive: {} {}\n", loc!(), a, b);
                     }
                 },
                 None => {
                     if !taken {
-                        log::debug!("{}:{} not taken | {}", inc, lineno, line);
+                        log::debug!("{} not taken | {}", loc!(), line);
                         continue 'each_line;
                     }
 
@@ -448,9 +571,8 @@ impl Parser {
 
                     if block_str.trim() == ";" {
                         log::debug!(
-                            "{}:{} is a single semi-colon (sloppy macro invocation), ignoring...",
-                            inc,
-                            lineno
+                            "{} is a single semi-colon (sloppy macro invocation), ignoring...",
+                            loc!(),
                         );
                         block.clear();
                         continue 'each_line;
@@ -458,9 +580,8 @@ impl Parser {
 
                     if block.len() > Self::MAX_AGGREGATE_LINES {
                         panic!(
-                            "{}:{} suspiciously long block ({} lines):\n\n{}",
-                            inc,
-                            lineno,
+                            "{} suspiciously long block ({} lines):\n\n{}",
+                            loc!(),
                             block.len(),
                             block_str
                         );
@@ -482,7 +603,7 @@ impl Parser {
                             unit.declarations
                                 .extend(node.0.drain(..).map(|node| node.node.into()));
 
-                            log::debug!("{}:{} parsed C:\n{}", inc, lineno, block_str);
+                            log::debug!("{} parsed C:\n{}", loc!(), block_str);
                             block.clear();
                             continue 'each_line;
                         }
@@ -508,13 +629,13 @@ impl Parser {
             );
         }
 
-        log::debug!("=== {:?} (end) ===", inc);
+        log::debug!("=== {:?} (end) ===", file_info.path);
         // TODO: merge declarations if it was included several times?
         // this seems *really* unlikely but ohwell
-        if self.units.contains_key(&inc) {
-            log::debug!("included several times: {:?}", inc);
+        if self.units.contains_key(&file_id) {
+            log::debug!("included several times: {:?}", file_info.path);
         } else {
-            self.units.insert(inc, unit);
+            self.units.insert(file_id, unit);
         }
         Ok(())
     }

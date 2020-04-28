@@ -1,17 +1,77 @@
+use super::LineNo;
+
 trait Sink {
     fn push(&mut self, c: char);
 }
 
-impl Sink for String {
+trait MiddleSink: Sink {
+    fn set_lineno(&mut self, lineno: LineNo);
+}
+
+struct LinesSink {
+    lines: Vec<(LineNo, String)>,
+    current_line: String,
+    current_lineno: LineNo,
+    next_lineno: LineNo,
+}
+
+impl LinesSink {
+    fn new() -> Self {
+        Self {
+            lines: vec![],
+            current_line: Default::default(),
+            current_lineno: LineNo(1),
+            next_lineno: LineNo(1),
+        }
+    }
+}
+
+impl Sink for LinesSink {
     fn push(&mut self, c: char) {
-        String::push(self, c);
+        if c == '\n' {
+            let mut l = "".into();
+            std::mem::swap(&mut l, &mut self.current_line);
+            self.lines.push((self.current_lineno, l));
+            self.current_lineno = self.next_lineno;
+        } else {
+            self.current_line.push(c);
+        }
+    }
+}
+
+impl MiddleSink for LinesSink {
+    fn set_lineno(&mut self, lineno: LineNo) {
+        self.next_lineno = lineno;
+    }
+}
+
+struct LineCounter<'a> {
+    lineno: LineNo,
+    sink: &'a mut dyn MiddleSink,
+}
+
+impl<'a> LineCounter<'a> {
+    fn new(sink: &'a mut dyn MiddleSink) -> Self {
+        let lineno = LineNo(1);
+        sink.set_lineno(lineno);
+        Self { lineno, sink }
+    }
+}
+
+impl<'a> Sink for LineCounter<'a> {
+    fn push(&mut self, c: char) {
+        if c == '\n' {
+            self.lineno = LineNo(self.lineno.0 + 1);
+            self.sink.set_lineno(self.lineno);
+        }
+        self.sink.push(c);
     }
 }
 
 /// Line continuation processor
 struct LProcessor<'a> {
     state: LState,
-    sink: &'a mut dyn Sink,
+    sink: &'a mut dyn MiddleSink,
 }
 
 #[derive(Debug)]
@@ -50,10 +110,16 @@ impl<'a> Sink for LProcessor<'a> {
     }
 }
 
+impl<'a> MiddleSink for LProcessor<'a> {
+    fn set_lineno(&mut self, lineno: LineNo) {
+        self.sink.set_lineno(lineno);
+    }
+}
+
 /// Comment processor
 struct CProcessor<'a> {
     state: CState,
-    sink: &'a mut dyn Sink,
+    sink: &'a mut dyn MiddleSink,
 }
 
 #[derive(Debug)]
@@ -167,25 +233,36 @@ impl<'a> Sink for CProcessor<'a> {
     }
 }
 
+impl<'a> MiddleSink for CProcessor<'a> {
+    fn set_lineno(&mut self, lineno: LineNo) {
+        self.sink.set_lineno(lineno)
+    }
+}
+
 /// Given a BufRead, does exactly two things, in this (conceptual) order:
 ///
 ///   * Process line continuations, ie. replace "foo\\\nbar" with "foobar"
 ///   * Strip single-line and multi-line comments, replacing them with a single space
-pub fn process_line_continuations_and_comments(input: &str) -> String {
-    let mut out = String::new();
+pub fn process_line_continuations_and_comments(input: &str) -> Vec<(LineNo, String)> {
+    let mut ls = LinesSink::new();
+
     let mut cproc = CProcessor {
         state: CState::Normal,
-        sink: &mut out,
+        sink: &mut ls,
     };
     let mut lcproc = LProcessor {
         state: LState::Normal,
         sink: &mut cproc,
     };
+    let mut lc = LineCounter {
+        lineno: LineNo(0),
+        sink: &mut lcproc,
+    };
 
     for c in input.chars() {
-        lcproc.push(c);
+        lc.push(c);
     }
-    out
+    ls.lines
 }
 
 #[cfg(test)]
@@ -205,7 +282,11 @@ mod tests {
         assert_eq!(
             process_line_continuations_and_comments(&input),
             // comment block is reduced to 'one space'
-            " \nint foobar();\n"
+            vec![
+                (LineNo(1), " ".into()),
+                (LineNo(2), "int foobar();".into()),
+                (LineNo(3), "".into())
+            ],
         );
     }
 }
