@@ -429,7 +429,7 @@ fn parse_units_with(provider: Box<dyn SourceProvider>, ctx: Context, env: Env) -
             translate_unit(
                 &config,
                 parser.provider.as_ref(),
-                id,
+                unit.id,
                 &unit.declarations[..],
             )
         })
@@ -724,7 +724,7 @@ fn stddef_wchar_t() {
         ),
     ]));
 
-    let unit = units.iter().find(|&u| u.id == FileId(2)).unwrap();
+    let unit = units.iter().find(|&u| u.id == FileId(1)).unwrap();
     unit.must_have_function("foobar", &|f| {
         f.must_have_param("c", &|p| p.typ.must_be("wchar_t"));
         f.must_have_param("s", &|p| p.typ.must_be("size_t"));
