@@ -1,4 +1,3 @@
-
 // #include <minwindef.h>
 // #include <wintrust.h>
 // #include <fileapi.h>
@@ -10,9 +9,14 @@
 // typedef struct _A { int two; } A;
 // typedef struct _A { int two; } *PA;
 
-typedef struct A {
-    int a;
+#define UNSIGNED unsigned
+
+#define TWOFIELDS int a; \
     int b;
+
+typedef struct A {
+    TWOFIELDS
     char c;
-    unsigned long long big;
+    // woop
+    UNSIGNED long lon big;
 } A, *PA;

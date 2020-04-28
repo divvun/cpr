@@ -277,6 +277,79 @@ impl IdGenerator {
     }
 }
 
+#[derive(Debug)]
+struct Block {
+    lines: Vec<(LineNo, TokenSeq)>,
+}
+
+impl Block {
+    fn new() -> Self {
+        Self {
+            lines: Default::default(),
+        }
+    }
+
+    fn clear(&mut self) {
+        self.lines.clear();
+    }
+
+    fn tokens(&self) -> impl Iterator<Item = &Token> {
+        self.lines.iter().flat_map(|(_, ts)| ts.0.iter())
+    }
+
+    fn is_balanced(&self) -> bool {
+        let mut count = 0;
+        for tok in self.tokens() {
+            match tok {
+                Token::Pun('{') => {
+                    count += 1;
+                }
+                Token::Pun('}') => {
+                    count -= 1;
+                }
+                _ => {}
+            }
+        }
+        count == 0
+    }
+
+    fn is_degenerate_macro_invocation(&self) -> bool {
+        for tok in self.tokens() {
+            match tok {
+                Token::Pun(';') => {}
+                Token::WS => {}
+                _ => return false,
+            }
+        }
+        true
+    }
+
+    /// Returns true if only whitespace
+    fn is_empty(&self) -> bool {
+        !self.tokens().any(|t| !matches!(t, Token::WS))
+    }
+
+    fn len(&self) -> usize {
+        self.lines.len()
+    }
+
+    fn start_line(&self) -> LineNo {
+        self.lines
+            .first()
+            .map(|(l, _t)| *l)
+            .unwrap_or_else(|| LineNo(1))
+    }
+
+    fn as_string(&self) -> String {
+        let mut out = String::new();
+        for (_, ts) in &self.lines {
+            use std::fmt::Write;
+            write!(&mut out, "{}\n", ts).unwrap();
+        }
+        out
+    }
+}
+
 pub trait SourceProvider {
     fn resolve(
         &mut self,
@@ -316,7 +389,7 @@ impl Parser {
         let source = self.provider.read(file_id)?;
         let lines = utils::process_line_continuations_and_comments(&source);
         let mut lines = lines.iter();
-        let mut block: Vec<String> = Vec::new();
+        let mut block = Block::new();
 
         let mut unit = Unit {
             id: file_id,
@@ -369,7 +442,7 @@ impl Parser {
             let taken = path_taken(&stack);
 
             log::trace!("====================================");
-            log::trace!("{:?}:{} | {}", path, lineno, line);
+            log::trace!("{} | {}", loc!(), line);
             let dir = grammar::directive(line).unwrap_or_else(|e| {
                 panic!("could not parse directive `{}`\n\ngot error: {:?}", line, e)
             });
@@ -563,13 +636,9 @@ impl Parser {
                         }
                     }
 
-                    let line = expanded.unwrap().to_string();
-                    log::debug!("expanded line | {}", line);
+                    block.lines.push((lineno, expanded?));
 
-                    block.push(line);
-                    let block_str = block.join("\n");
-
-                    if block_str.trim() == ";" {
+                    if block.is_degenerate_macro_invocation() {
                         log::debug!(
                             "{} is a single semi-colon (sloppy macro invocation), ignoring...",
                             loc!(),
@@ -579,57 +648,63 @@ impl Parser {
                     }
 
                     if block.len() > Self::MAX_AGGREGATE_LINES {
-                        panic!(
-                            "{} suspiciously long block ({} lines):\n\n{}",
-                            loc!(),
-                            block.len(),
-                            block_str
-                        );
+                        log::error!("Suspiciously long block ({} lines), aborting", block.len());
+                        break 'each_line;
                     }
 
-                    match grammar::pragma(&block_str) {
-                        Ok(p) => {
-                            log::debug!("skipping pragma:\n__pragma{}", p);
-                            block.clear();
-                            continue 'each_line;
+                    if block.is_balanced() {
+                        let block_str = block.as_string();
+                        match grammar::pragma(&block_str) {
+                            Ok(p) => {
+                                log::debug!("skipping pragma:\n__pragma{}", p);
+                                block.clear();
+                                continue 'each_line;
+                            }
+                            Err(_) => {
+                                // continue
+                            }
                         }
-                        Err(_) => {
-                            // continue
-                        }
-                    }
 
-                    match lang_c::parser::translation_unit(&block_str, &mut self.env) {
-                        Ok(mut node) => {
-                            unit.declarations
-                                .extend(node.0.drain(..).map(|node| node.node.into()));
+                        match lang_c::parser::translation_unit(&block_str, &mut self.env) {
+                            Ok(mut node) => {
+                                unit.declarations
+                                    .extend(node.0.drain(..).map(|node| node.node.into()));
 
-                            log::debug!("{} parsed C:\n{}", loc!(), block_str);
-                            block.clear();
-                            continue 'each_line;
-                        }
-                        Err(e) => {
-                            log::trace!("parse error (probably incomplete block): {:?}", e);
+                                log::debug!("{} parsed C:\n{}", loc!(), block_str);
+                                block.clear();
+                                continue 'each_line;
+                            }
+                            Err(e) => {
+                                log::trace!("parse error (probably incomplete block): {:?}", e);
+                            }
                         }
                     }
                 }
             }
         }
 
-        let unprocessed_lines: Vec<_> = block
-            .iter()
-            .map(|x| x.trim())
-            .filter(|x| !x.is_empty())
-            .collect();
+        if !block.is_empty() {
+            log::error!("In {}:", file_info.path);
+            let input = block.as_string();
+            let err = lang_c::parser::translation_unit(&input, &mut self.env)
+                .err()
+                .unwrap();
 
-        if !unprocessed_lines.is_empty() {
-            panic!(
-                "Unprocessed lines: {:#?}\n\nParse result: {:#?}",
-                unprocessed_lines,
-                lang_c::parser::translation_unit(&unprocessed_lines.join("\n"), &mut self.env)
-            );
+            let padding = 8 + 3;
+            for (logical_lineno, (lineno, s)) in block.lines.iter().enumerate() {
+                log::error!("{:>8} | {}", lineno.0, s);
+                if logical_lineno + 1 == err.line {
+                    log::error!(
+                        "{}^ expected {:?}",
+                        " ".repeat(err.column - 1 + padding),
+                        err.expected
+                    );
+                }
+            }
+            panic!("Some lines couldn't be processed.");
         }
 
-        log::debug!("=== {:?} (end) ===", file_info.path);
+        log::debug!("=== {} (end) ===", file_info.path);
         // TODO: merge declarations if it was included several times?
         // this seems *really* unlikely but ohwell
         if self.units.contains_key(&file_id) {

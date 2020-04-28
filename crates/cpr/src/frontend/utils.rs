@@ -12,7 +12,6 @@ struct LinesSink {
     lines: Vec<(LineNo, String)>,
     current_line: String,
     current_lineno: LineNo,
-    next_lineno: LineNo,
 }
 
 impl LinesSink {
@@ -21,7 +20,6 @@ impl LinesSink {
             lines: vec![],
             current_line: Default::default(),
             current_lineno: LineNo(1),
-            next_lineno: LineNo(1),
         }
     }
 }
@@ -32,7 +30,6 @@ impl Sink for LinesSink {
             let mut l = "".into();
             std::mem::swap(&mut l, &mut self.current_line);
             self.lines.push((self.current_lineno, l));
-            self.current_lineno = self.next_lineno;
         } else {
             self.current_line.push(c);
         }
@@ -41,7 +38,7 @@ impl Sink for LinesSink {
 
 impl MiddleSink for LinesSink {
     fn set_lineno(&mut self, lineno: LineNo) {
-        self.next_lineno = lineno;
+        self.current_lineno = lineno;
     }
 }
 
@@ -282,11 +279,7 @@ mod tests {
         assert_eq!(
             process_line_continuations_and_comments(&input),
             // comment block is reduced to 'one space'
-            vec![
-                (LineNo(1), " ".into()),
-                (LineNo(2), "int foobar();".into()),
-                (LineNo(3), "".into())
-            ],
+            vec![(LineNo(2), " ".into()), (LineNo(3), "int foobar();".into())],
         );
     }
 }
