@@ -753,6 +753,23 @@ fn typedef_deja_vu() {
 }
 
 #[test]
+fn typedef_deja_vu_multi() {
+    let unit = parse_unit(indoc!(
+        "
+        typedef struct A { int one; } A, *PA;
+        typedef struct A { int two; } A, *PA;
+        typedef struct A { int two; } A;
+        typedef struct A { int two; } *PA;
+        "
+    ));
+    unit.must_have_alias("A", &|d| d.typ.must_be("A".struct_name()));
+    unit.must_have_alias("PA", &|d| {
+        d.typ.must_be("A".struct_name().mut_pointer_name())
+    });
+    unit.must_have_alias_count(2);
+}
+
+#[test]
 fn mega_constant() {
     // trivia: this made the older, recursive function of the macro expander
     // blow the stack, because of the sheer amount of expansion and substitution

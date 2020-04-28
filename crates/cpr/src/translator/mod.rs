@@ -105,15 +105,11 @@ impl<'a> Translator<'a> {
                     }
                 }
                 UnitDeclaration::Constant(konst) => match &konst.value {
-                    ast::Constant::Integer(ast::Integer {
-                        suffix,
-                        base,
-                        number,
-                    }) => {
-                        println!(
-                            "should translate constant {}: number {}, base {:?} suffix {:?}",
-                            konst.name, number, base, suffix
-                        );
+                    ast::Constant::Integer(ast::Integer { number, .. }) => {
+                        // println!(
+                        //     "should translate constant {}: number {}, base {:?} suffix {:?}",
+                        //     konst.name, number, base, suffix
+                        // );
                         let typ = if konst.negated {
                             // use signed
                             let number = format!("-{}", number);
@@ -244,6 +240,11 @@ impl<'a> Translator<'a> {
                     _ => {}
                 }
             }
+        }
+
+        if self.declared_struct_names.contains(&res.name.value) {
+            log::debug!("ignoring redundant struct declaration {:?}", res.name.value);
+            return name;
         }
 
         match mode {

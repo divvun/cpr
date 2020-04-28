@@ -6442,7 +6442,35 @@ fn __parse_type_specifier0<'input>(__input: &'input str, __state: &mut ParseStat
                                                                                                                 let __choice_res = {
                                                                                                                     let __seq_res = __parse_typedef_name(__input, __state, __pos, env);
                                                                                                                     match __seq_res {
-                                                                                                                        Matched(__pos, t) => Matched(__pos, { TypeSpecifier::TypedefName(t) }),
+                                                                                                                        Matched(__pos, t) => {
+                                                                                                                            let __seq_res = __parse__(__input, __state, __pos, env);
+                                                                                                                            match __seq_res {
+                                                                                                                                Matched(__pos, _) => {
+                                                                                                                                    let __seq_res = {
+                                                                                                                                        __state.suppress_fail += 1;
+                                                                                                                                        let __assert_res = if __input.len() > __pos {
+                                                                                                                                            let (__ch, __next) = char_range_at(__input, __pos);
+                                                                                                                                            match __ch {
+                                                                                                                                                ',' | ';' => Matched(__next, ()),
+                                                                                                                                                _ => __state.mark_failure(__pos, "[,;]"),
+                                                                                                                                            }
+                                                                                                                                        } else {
+                                                                                                                                            __state.mark_failure(__pos, "[,;]")
+                                                                                                                                        };
+                                                                                                                                        __state.suppress_fail -= 1;
+                                                                                                                                        match __assert_res {
+                                                                                                                                            Failed => Matched(__pos, ()),
+                                                                                                                                            Matched(..) => Failed,
+                                                                                                                                        }
+                                                                                                                                    };
+                                                                                                                                    match __seq_res {
+                                                                                                                                        Matched(__pos, _) => Matched(__pos, { TypeSpecifier::TypedefName(t) }),
+                                                                                                                                        Failed => Failed,
+                                                                                                                                    }
+                                                                                                                                }
+                                                                                                                                Failed => Failed,
+                                                                                                                            }
+                                                                                                                        }
                                                                                                                         Failed => Failed,
                                                                                                                     }
                                                                                                                 };
