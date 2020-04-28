@@ -1,5 +1,7 @@
-// #include <minwindef.h>
-// #include <wintrust.h>
+// #include <windows.h>
+
 // #include <fileapi.h>
 // #include <projectedfslib.h>
-// #include <wincrypt.h>
+
+typedef unsigned long DWORD;
+typedef int (*proc)(const void *, const void *, DWORD, int);

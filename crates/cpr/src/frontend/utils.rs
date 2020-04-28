@@ -84,6 +84,9 @@ impl<'a> Sink for LProcessor<'a> {
                 '\\' => {
                     self.state = LState::Backslash;
                 }
+                '\r' => {
+                    // ignore the CR in CRLF
+                }
                 c => {
                     self.sink.push(c);
                 }
@@ -247,13 +250,13 @@ pub fn process_line_continuations_and_comments(input: &str) -> Vec<(LineNo, Stri
         state: CState::Normal,
         sink: &mut ls,
     };
-    let mut lcproc = LProcessor {
+    let mut lproc = LProcessor {
         state: LState::Normal,
         sink: &mut cproc,
     };
     let mut lc = LineCounter {
         lineno: LineNo(0),
-        sink: &mut lcproc,
+        sink: &mut lproc,
     };
 
     for c in input.chars() {

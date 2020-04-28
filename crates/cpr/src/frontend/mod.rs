@@ -342,9 +342,12 @@ impl Block {
 
     fn as_string(&self) -> String {
         let mut out = String::new();
-        for (_, ts) in &self.lines {
+        for (i, (_, ts)) in self.lines.iter().enumerate() {
             use std::fmt::Write;
-            write!(&mut out, "{}\n", ts).unwrap();
+            write!(&mut out, "{}", ts).unwrap();
+            if i + 1 < self.lines.len() {
+                write!(&mut out, "\n").unwrap();
+            }
         }
         out
     }
@@ -467,7 +470,16 @@ impl Parser {
                                     }
                                 }
                             };
-                            log::info!("{} including {:?}, stack = {:?}", loc!(), dep, stack);
+                            log::info!(
+                                "{} including {:?} | {}",
+                                loc!(),
+                                dep,
+                                stack
+                                    .iter()
+                                    .map(|(b, ts)| format!("({})={}", ts, b))
+                                    .collect::<Vec<_>>()
+                                    .join(", ")
+                            );
 
                             // FIXME: working dir is wrong here
                             let dep_id = self.provider.resolve(
@@ -624,7 +636,12 @@ impl Parser {
                                 let (_, next_line) =
                                     lines.next().expect("ran out of lines while aggregating");
                                 let mut next_tokens = grammar::token_stream(next_line)
-                                    .expect("should tokenize everything");
+                                    .unwrap_or_else(|e| {
+                                        log::error!("Could not tokenize input line:");
+                                        log::error!("| {:?}", next_line);
+                                        log::error!("  {}^", " ".repeat(e.location.offset));
+                                        panic!("Failed to tokenize");
+                                    });
                                 tokens.0.push(Token::WS);
                                 tokens.0.append(&mut next_tokens.0);
                                 expanded = tokens.expand(&self.ctx);
@@ -656,12 +673,12 @@ impl Parser {
                         let block_str = block.as_string();
                         match grammar::pragma(&block_str) {
                             Ok(p) => {
-                                log::debug!("skipping pragma:\n__pragma{}", p);
+                                log::debug!("skipping pragma: __pragma{}", p);
                                 block.clear();
                                 continue 'each_line;
                             }
-                            Err(_) => {
-                                // continue
+                            Err(_e) => {
+                                // log::debug!("pragma error: {:?}", e);
                             }
                         }
 
