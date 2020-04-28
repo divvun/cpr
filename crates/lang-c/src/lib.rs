@@ -384,7 +384,7 @@ rule binary_expression() -> Box<Node<Expression>> = box(<binary_expression0()>)
 //     x o:infix("%") y { infix(o, BinaryOperator::Modulo, x, y) }
 // }
 
-rule infix<T>(ex: rule<T>) -> T = _ n:node(<ex()>) _ { n }
+rule infix<T>(ex: rule<T>) -> Node<T> = _ n:node(<ex()>) _ { n }
 
 rule binary_operand() -> Node<Expression> = node(<cast_expression0()>)
 
