@@ -14,3 +14,6 @@ edition = "2018"
 
 [badges]
 travis-ci = { repository = "vickenty/lang-c" }
+
+[dependencies]
+peg = "0.6.2"

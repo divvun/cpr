@@ -356,6 +356,9 @@ dependencies = [
 [[package]]
 name = "lang-c"
 version = "0.7.0"
+dependencies = [
+ "peg",
+]
 
 [[package]]
 name = "lazy_static"
