@@ -458,7 +458,9 @@ impl Parser {
 
                     if block.len() > Self::MAX_AGGREGATE_LINES {
                         panic!(
-                            "suspiciously long block ({} lines):\n\n{}",
+                            "{}:{} suspiciously long block ({} lines):\n\n{}",
+                            inc,
+                            lineno,
                             block.len(),
                             block_str
                         );
