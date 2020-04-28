@@ -1,8 +1,8 @@
 use std::collections::HashSet;
 
-use ast::*;
-use span::Node;
-use strings;
+use crate::ast::*;
+use crate::span::Node;
+use crate::strings;
 
 pub struct Env {
     pub builtin_typenames: HashSet<String>,

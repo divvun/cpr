@@ -1,6 +1,6 @@
-use ast::*;
-use env::Env;
-use span::{Node, Span};
+use crate::ast::*;
+use crate::env::Env;
+use crate::span::{Node, Span};
 
 fn ident<T: From<Identifier>>(i: &str) -> T {
     Identifier {
@@ -94,8 +94,8 @@ mk_from_inner! {
 }
 
 mod expr {
-    use ast::*;
-    use span::Node;
+    use crate::ast::*;
+    use crate::span::Node;
 
     pub fn string<T: From<Expression>>(i: &str) -> T {
         Expression::StringLiteral(vec![i.to_string()].into()).into()
@@ -142,7 +142,7 @@ mod expr {
 }
 
 mod int {
-    use ast::*;
+    use crate::ast::*;
 
     pub fn num<T: From<Constant>>(base: IntegerBase, number: &str, suffix: IntegerSuffix) -> T {
         Constant::Integer(Integer {
@@ -175,7 +175,7 @@ mod int {
 }
 
 mod float {
-    use ast::*;
+    use crate::ast::*;
 
     pub fn num<T: From<Constant>>(base: FloatBase, number: &str, suffix: FloatSuffix) -> T {
         Constant::Float(Float {
@@ -210,8 +210,8 @@ fn cstr<T: From<StringLiteral>>(i: &[&str]) -> T {
 #[test]
 fn test_integer() {
     use self::int::{num, NONE, UL};
-    use ast::IntegerBase::*;
-    use parser::constant;
+    use crate::ast::IntegerBase::*;
+    use crate::parser::constant;
 
     let env = &mut Env::new();
 
@@ -243,8 +243,8 @@ fn test_integer() {
 #[test]
 fn test_floating() {
     use self::float::*;
-    use ast::FloatBase::*;
-    use parser::constant;
+    use crate::ast::FloatBase::*;
+    use crate::parser::constant;
 
     let env = &mut Env::new();
 
@@ -309,8 +309,8 @@ fn test_floating() {
 #[test]
 fn ts18661_literal() {
     use self::float::*;
-    use ast::FloatBase::*;
-    use parser::constant;
+    use crate::ast::FloatBase::*;
+    use crate::parser::constant;
 
     let env = &mut Env::new();
 
@@ -342,7 +342,7 @@ fn ts18661_literal() {
 
 #[test]
 fn test_character() {
-    use parser::constant;
+    use crate::parser::constant;
 
     let env = &mut Env::new();
 
@@ -359,7 +359,7 @@ fn test_character() {
 #[test]
 fn test_string() {
     use self::expr::*;
-    use parser::expression;
+    use crate::parser::expression;
 
     let env = &mut Env::new();
 
@@ -372,10 +372,10 @@ fn test_string() {
 #[test]
 fn test_postfix() {
     use self::expr::*;
-    use ast::BinaryOperator::Index;
-    use ast::MemberOperator::{Direct, Indirect};
-    use ast::UnaryOperator::PostIncrement;
-    use parser::expression;
+    use crate::ast::BinaryOperator::Index;
+    use crate::ast::MemberOperator::{Direct, Indirect};
+    use crate::ast::UnaryOperator::PostIncrement;
+    use crate::parser::expression;
 
     let env = &mut Env::new();
 
@@ -399,9 +399,9 @@ fn test_postfix() {
 #[test]
 fn test_multiplicative() {
     use self::expr::*;
-    use ast::BinaryOperator::{Divide, Multiply};
-    use ast::UnaryOperator::{PostDecrement, PreIncrement};
-    use parser::expression;
+    use crate::ast::BinaryOperator::{Divide, Multiply};
+    use crate::ast::UnaryOperator::{PostDecrement, PreIncrement};
+    use crate::parser::expression;
 
     let env = &mut Env::new();
 
@@ -422,8 +422,8 @@ fn test_multiplicative() {
 #[test]
 fn test_logical_and() {
     use self::expr::*;
-    use ast::BinaryOperator::LogicalAnd;
-    use parser::expression;
+    use crate::ast::BinaryOperator::LogicalAnd;
+    use crate::parser::expression;
     let env = &mut Env::new();
 
     assert_eq!(
@@ -435,8 +435,8 @@ fn test_logical_and() {
 #[test]
 fn test_chained_and() {
     use self::expr::*;
-    use ast::BinaryOperator::LogicalAnd;
-    use parser::expression;
+    use crate::ast::BinaryOperator::LogicalAnd;
+    use crate::parser::expression;
     let env = &mut Env::new();
 
     assert_eq!(
@@ -452,8 +452,8 @@ fn test_chained_and() {
 #[test]
 fn test_chained_or() {
     use self::expr::*;
-    use ast::BinaryOperator::LogicalOr;
-    use parser::expression;
+    use crate::ast::BinaryOperator::LogicalOr;
+    use crate::parser::expression;
     let env = &mut Env::new();
     assert_eq!(
         expression("a || b || c", env),
@@ -468,8 +468,8 @@ fn test_chained_or() {
 #[test]
 fn test_chained_shl() {
     use self::expr::*;
-    use ast::BinaryOperator::ShiftLeft;
-    use parser::expression;
+    use crate::ast::BinaryOperator::ShiftLeft;
+    use crate::parser::expression;
     let env = &mut Env::new();
     assert_eq!(
         expression("a << b << c", env),
@@ -484,8 +484,8 @@ fn test_chained_shl() {
 #[test]
 fn test_chained_shr() {
     use self::expr::*;
-    use ast::BinaryOperator::ShiftRight;
-    use parser::expression;
+    use crate::ast::BinaryOperator::ShiftRight;
+    use crate::parser::expression;
     let env = &mut Env::new();
     assert_eq!(
         expression("a >> b >> c", env),
@@ -499,8 +499,8 @@ fn test_chained_shr() {
 
 #[test]
 fn test_comma() {
-    use ast::Expression::Comma;
-    use parser::expression;
+    use crate::ast::Expression::Comma;
+    use crate::parser::expression;
 
     let env = &mut Env::new();
 
@@ -513,10 +513,10 @@ fn test_comma() {
 
 #[test]
 fn test_cast() {
-    use ast::TypeName;
-    use ast::TypeSpecifier::Int;
-    use env::Env;
-    use parser::expression;
+    use crate::ast::TypeName;
+    use crate::ast::TypeSpecifier::Int;
+    use crate::env::Env;
+    use crate::parser::expression;
 
     let env = &mut Env::new();
 
@@ -539,13 +539,13 @@ fn test_cast() {
 #[test]
 fn test_declaration1() {
     use self::expr::*;
-    use ast::ArraySize::{StaticExpression, VariableUnknown};
-    use ast::DerivedDeclarator::Pointer;
-    use ast::StorageClassSpecifier::Typedef;
-    use ast::TypeQualifier::Const;
-    use ast::TypeSpecifier::Int;
-    use ast::UnaryOperator::Address;
-    use parser::declaration;
+    use crate::ast::ArraySize::{StaticExpression, VariableUnknown};
+    use crate::ast::DerivedDeclarator::Pointer;
+    use crate::ast::StorageClassSpecifier::Typedef;
+    use crate::ast::TypeQualifier::Const;
+    use crate::ast::TypeSpecifier::Int;
+    use crate::ast::UnaryOperator::Address;
+    use crate::parser::declaration;
 
     let env = &mut Env::new();
 
@@ -596,11 +596,11 @@ fn test_declaration1() {
 
 #[test]
 fn test_declaration2() {
-    use ast::DerivedDeclarator::Pointer;
-    use ast::Enumerator;
-    use ast::StorageClassSpecifier::Typedef;
-    use ast::TypeQualifier::Const;
-    use parser::declaration;
+    use crate::ast::DerivedDeclarator::Pointer;
+    use crate::ast::Enumerator;
+    use crate::ast::StorageClassSpecifier::Typedef;
+    use crate::ast::TypeQualifier::Const;
+    use crate::parser::declaration;
 
     let env = &mut Env::new();
 
@@ -645,8 +645,8 @@ fn test_declaration2() {
 
 #[test]
 fn test_declaration3() {
-    use ast::TypeSpecifier::{Float, Int};
-    use parser::declaration;
+    use crate::ast::TypeSpecifier::{Float, Int};
+    use crate::parser::declaration;
 
     let env = &mut Env::new();
 
@@ -726,9 +726,9 @@ fn test_declaration3() {
 
 #[test]
 fn test_declaration4() {
-    use ast::TypeQualifier::Restrict;
-    use ast::TypeSpecifier::Int;
-    use parser::declaration;
+    use crate::ast::TypeQualifier::Restrict;
+    use crate::ast::TypeSpecifier::Int;
+    use crate::parser::declaration;
 
     assert_eq!(
         declaration("int __restrict__;", &mut Env::with_core()),
@@ -761,12 +761,12 @@ fn test_declaration4() {
 #[test]
 fn test_declaration5() {
     use self::int::dec;
-    use ast::ArraySize::VariableExpression;
-    use ast::DeclaratorKind::Abstract;
-    use ast::DerivedDeclarator::Pointer;
-    use ast::TypeQualifier::Const;
-    use ast::TypeSpecifier::{Char, Int, TypedefName};
-    use parser::declaration;
+    use crate::ast::ArraySize::VariableExpression;
+    use crate::ast::DeclaratorKind::Abstract;
+    use crate::ast::DerivedDeclarator::Pointer;
+    use crate::ast::TypeQualifier::Const;
+    use crate::ast::TypeSpecifier::{Char, Int, TypedefName};
+    use crate::parser::declaration;
 
     let env = &mut Env::new();
 
@@ -867,11 +867,11 @@ fn test_declaration5() {
 
 #[test]
 fn test_attribute() {
-    use ast::DerivedDeclarator::Pointer;
-    use ast::Extension::AsmLabel;
-    use ast::StorageClassSpecifier::Extern;
-    use ast::TypeSpecifier::{Char, Int, TypedefName};
-    use parser::declaration;
+    use crate::ast::DerivedDeclarator::Pointer;
+    use crate::ast::Extension::AsmLabel;
+    use crate::ast::StorageClassSpecifier::Extern;
+    use crate::ast::TypeSpecifier::{Char, Int, TypedefName};
+    use crate::parser::declaration;
 
     let env = &mut Env::new();
     env.add_typename("size_t");
@@ -966,12 +966,12 @@ fn test_attribute() {
 #[test]
 fn test_attribute2() {
     use self::int::dec;
-    use ast::DeclarationSpecifier::Extension;
-    use ast::DeclaratorKind::Abstract;
-    use ast::DerivedDeclarator::Pointer;
-    use ast::TypeQualifier::Const;
-    use ast::TypeSpecifier::{Char, Void};
-    use parser::declaration;
+    use crate::ast::DeclarationSpecifier::Extension;
+    use crate::ast::DeclaratorKind::Abstract;
+    use crate::ast::DerivedDeclarator::Pointer;
+    use crate::ast::TypeQualifier::Const;
+    use crate::ast::TypeSpecifier::{Char, Void};
+    use crate::parser::declaration;
 
     assert_eq!(
         declaration(
@@ -1067,14 +1067,14 @@ fn test_attribute2() {
 
 #[test]
 fn test_attribute3() {
-    use ast::DeclarationSpecifier::Extension;
-    use ast::DerivedDeclarator::Pointer;
-    use ast::FunctionSpecifier::Inline;
-    use ast::Statement::Compound;
-    use ast::StorageClassSpecifier::Extern;
-    use ast::TypeQualifier::{Const, Restrict};
-    use ast::TypeSpecifier::Char;
-    use parser::translation_unit;
+    use crate::ast::DeclarationSpecifier::Extension;
+    use crate::ast::DerivedDeclarator::Pointer;
+    use crate::ast::FunctionSpecifier::Inline;
+    use crate::ast::Statement::Compound;
+    use crate::ast::StorageClassSpecifier::Extern;
+    use crate::ast::TypeQualifier::{Const, Restrict};
+    use crate::ast::TypeSpecifier::Char;
+    use crate::parser::translation_unit;
 
     assert_eq!(
         translation_unit(
@@ -1184,9 +1184,9 @@ fn test_attribute3() {
 
 #[test]
 fn test_alignof() {
-    use ast::Expression::AlignOf;
-    use ast::TypeSpecifier::Long;
-    use parser::expression;
+    use crate::ast::Expression::AlignOf;
+    use crate::ast::TypeSpecifier::Long;
+    use crate::parser::expression;
 
     assert_eq!(
         expression("_Alignof(long long)", &mut Env::new()),
@@ -1227,9 +1227,9 @@ fn test_alignof() {
 
 #[test]
 fn test_stmt_expr() {
-    use ast::Statement::{Compound, Expression};
-    use ast::TypeSpecifier::Int;
-    use parser::expression;
+    use crate::ast::Statement::{Compound, Expression};
+    use crate::ast::TypeSpecifier::Int;
+    use crate::parser::expression;
 
     assert_eq!(
         expression("({ int p = 0; p; })", &mut Env::new()),
@@ -1256,9 +1256,9 @@ fn test_stmt_expr() {
 
 #[test]
 fn test_expr_cast() {
-    use ast::TypeName;
-    use ast::TypeSpecifier::TypedefName;
-    use parser::expression;
+    use crate::ast::TypeName;
+    use crate::ast::TypeSpecifier::TypedefName;
+    use crate::parser::expression;
 
     let env = &mut Env::new();
     env.add_typename("U64");
@@ -1279,7 +1279,7 @@ fn test_expr_cast() {
 
 #[test]
 fn test_directives() {
-    use parser::translation_unit;
+    use crate::parser::translation_unit;
 
     assert_eq!(
         translation_unit(
@@ -1313,7 +1313,7 @@ fn test_directives() {
 
 #[test]
 fn test_gnu_asm() {
-    use parser::statement;
+    use crate::parser::statement;
 
     assert_eq!(
         statement(
@@ -1343,7 +1343,7 @@ fn test_gnu_asm() {
 
 #[test]
 fn test_single_line_expr() {
-    use parser::constant_expression;
+    use crate::parser::constant_expression;
 
     let mut env = Env::with_core();
     env.single_line_mode(true);
@@ -1355,11 +1355,11 @@ fn test_single_line_expr() {
 #[test]
 fn test_union() {
     use self::int::dec;
-    use ast::ArraySize::VariableExpression;
-    use ast::Designator::Member;
-    use ast::Initializer::{Expression, List};
-    use ast::TypeSpecifier::{Double, Int, Long};
-    use parser::declaration;
+    use crate::ast::ArraySize::VariableExpression;
+    use crate::ast::Designator::Member;
+    use crate::ast::Initializer::{Expression, List};
+    use crate::ast::TypeSpecifier::{Double, Int, Long};
+    use crate::parser::declaration;
 
     assert_eq!(
         declaration(
@@ -1438,11 +1438,11 @@ fn test_union() {
 #[test]
 fn test_offsetof() {
     use self::int::dec;
-    use ast::ArraySize::VariableExpression;
-    use ast::Expression::OffsetOf;
-    use ast::OffsetMember::IndirectMember;
-    use ast::TypeSpecifier::Int;
-    use parser::expression;
+    use crate::ast::ArraySize::VariableExpression;
+    use crate::ast::Expression::OffsetOf;
+    use crate::ast::OffsetMember::IndirectMember;
+    use crate::ast::TypeSpecifier::Int;
+    use crate::parser::expression;
 
     assert_eq!(
         expression(
@@ -1518,7 +1518,7 @@ fn test_offsetof() {
 
 #[test]
 fn test_call() {
-    use parser::expression;
+    use crate::parser::expression;
 
     assert_eq!(
         expression("foo(bar, baz)", &mut Env::new()),
@@ -1532,8 +1532,8 @@ fn test_call() {
 
 #[test]
 fn test_typeof() {
-    use ast::TypeSpecifier::TypeOf;
-    use parser::declaration;
+    use crate::ast::TypeSpecifier::TypeOf;
+    use crate::parser::declaration;
 
     assert_eq!(
         declaration(
@@ -1572,8 +1572,8 @@ fn test_typeof() {
 
 #[test]
 fn test_if() {
-    use ast::Statement::Compound;
-    use parser::statement;
+    use crate::ast::Statement::Compound;
+    use crate::parser::statement;
 
     assert_eq!(
         statement("if (x) do {} while(y); else z();", &mut Env::new()),
@@ -1610,10 +1610,10 @@ fn test_if() {
 // ```:
 #[test]
 fn test_attribute4() {
-    use ast::Statement::Compound;
-    use ast::StorageClassSpecifier::Typedef;
-    use ast::TypeSpecifier::Int;
-    use parser::translation_unit;
+    use crate::ast::Statement::Compound;
+    use crate::ast::StorageClassSpecifier::Typedef;
+    use crate::ast::TypeSpecifier::Int;
+    use crate::parser::translation_unit;
 
     let env = &mut Env::new();
 
@@ -1702,9 +1702,9 @@ fn test_attribute4() {
 
 #[test]
 fn test_attribute5() {
-    use ast::Statement::Compound;
-    use ast::TypeSpecifier::Int;
-    use parser::translation_unit;
+    use crate::ast::Statement::Compound;
+    use crate::ast::TypeSpecifier::Int;
+    use crate::parser::translation_unit;
 
     assert_eq!(
         translation_unit(
@@ -1767,10 +1767,10 @@ fn test_attribute5() {
 
 #[test]
 fn test_declaration6() {
-    use ast::Expression::AlignOf;
-    use ast::StorageClassSpecifier::Typedef;
-    use ast::TypeSpecifier::{Double, Long};
-    use parser::declaration;
+    use crate::ast::Expression::AlignOf;
+    use crate::ast::StorageClassSpecifier::Typedef;
+    use crate::ast::TypeSpecifier::{Double, Long};
+    use crate::parser::declaration;
 
     assert_eq!(
         declaration(
@@ -1865,7 +1865,7 @@ fn test_declaration6() {
 
 #[test]
 fn test_keyword_expr() {
-    use parser::expression;
+    use crate::parser::expression;
 
     assert_eq!(
         expression("__func__", &mut Env::new()),
@@ -1885,7 +1885,7 @@ fn test_keyword_expr() {
 
 #[test]
 fn test_ts18661_float() {
-    use parser::declaration;
+    use crate::parser::declaration;
     assert_eq!(
         declaration("_Float64 foo = 1.5;", &mut Env::new()),
         Ok(Declaration {
@@ -1911,19 +1911,19 @@ fn test_ts18661_float() {
 
 #[test]
 fn test_msvc_extension() {
-    use parser::translation_unit;
+    use crate::parser::translation_unit;
     translation_unit("__declspec(deprecated) int test();", &mut Env::with_msvc()).unwrap();
 }
 
 #[test]
 fn test_msvc_calling_convention() {
-    use parser::translation_unit;
+    use crate::parser::translation_unit;
     translation_unit("extern int __stdcall test();", &mut Env::with_msvc()).unwrap();
 }
 
 #[test]
 fn test_typedef_msvc() {
-    use parser::translation_unit;
+    use crate::parser::translation_unit;
     translation_unit(
         "typedef signed __int64 INT64, *PINT64;",
         &mut Env::with_msvc(),
@@ -1933,31 +1933,31 @@ fn test_typedef_msvc() {
 
 #[test]
 fn test_msvc_unaligned() {
-    use parser::translation_unit;
+    use crate::parser::translation_unit;
     translation_unit("typedef void __unaligned *LPUWSTR;", &mut Env::with_msvc()).unwrap();
 }
 
 #[test]
 fn test_msvc_inline() {
-    use parser::translation_unit;
+    use crate::parser::translation_unit;
     translation_unit("__inline void foo();", &mut Env::with_msvc()).unwrap();
 }
 
 #[test]
 fn test_msvc_forceinline() {
-    use parser::translation_unit;
+    use crate::parser::translation_unit;
     translation_unit("__forceinline void foo();", &mut Env::with_msvc()).unwrap();
 }
 
 #[test]
 fn test_msvc_sal_param() {
-    use parser::translation_unit;
+    use crate::parser::translation_unit;
     translation_unit("void foo(_In_ void *ptr);", &mut Env::with_msvc()).unwrap();
 }
 
 #[test]
 fn test_msvc_sal_param2() {
-    use parser::translation_unit;
+    use crate::parser::translation_unit;
     translation_unit(
         "int foo(_Out_writes_bytes_to_(meow, kmeow) void *ptr, _In_ int meow);",
         &mut Env::with_msvc(),
@@ -1967,7 +1967,7 @@ fn test_msvc_sal_param2() {
 
 #[test]
 fn test_msvc_sal_param3() {
-    use parser::translation_unit;
+    use crate::parser::translation_unit;
     translation_unit(
         "int foo(_Out_writes_bytes_to_(meow, return) void *ptr, _In_ int meow);",
         &mut Env::with_msvc(),
@@ -1977,19 +1977,19 @@ fn test_msvc_sal_param3() {
 
 #[test]
 fn test_msvc_sal_function() {
-    use parser::translation_unit;
+    use crate::parser::translation_unit;
     translation_unit("_Check_return_ int foo();", &mut Env::with_msvc()).unwrap();
 }
 
 #[test]
 fn test_msvc_sal_function2() {
-    use parser::translation_unit;
+    use crate::parser::translation_unit;
     translation_unit("_Success_(return >= 0) int foo();", &mut Env::with_msvc()).unwrap();
 }
 
 #[test]
 fn test_msvc_sal_function3() {
-    use parser::translation_unit;
+    use crate::parser::translation_unit;
     translation_unit(
         "_Success_(return >= 0) _Check_return_ int foo();",
         &mut Env::with_msvc(),
@@ -1999,8 +1999,8 @@ fn test_msvc_sal_function3() {
 
 #[test]
 fn test_gnu_extension() {
-    use ast::TypeSpecifier::Long;
-    use parser::translation_unit;
+    use crate::ast::TypeSpecifier::Long;
+    use crate::parser::translation_unit;
     assert_eq!(
         translation_unit("__extension__ union { long l; };", &mut Env::with_gnu()),
         Ok(TranslationUnit(vec![Declaration {
@@ -2046,11 +2046,11 @@ fn test_gnu_extension() {
 
 #[test]
 fn test_declaration7() {
-    use ast::DeclaratorKind::Abstract;
-    use ast::DerivedDeclarator::Pointer;
-    use ast::TypeQualifier::Nullable;
-    use ast::TypeSpecifier::{Int, Void};
-    use parser::declaration;
+    use crate::ast::DeclaratorKind::Abstract;
+    use crate::ast::DerivedDeclarator::Pointer;
+    use crate::ast::TypeQualifier::Nullable;
+    use crate::ast::TypeSpecifier::{Int, Void};
+    use crate::parser::declaration;
 
     let env = &mut Env::with_clang();
 
@@ -2098,11 +2098,11 @@ fn test_declaration7() {
 
 #[test]
 fn test_kr_definition1() {
-    use ast::DerivedDeclarator::{KRFunction, Pointer};
-    use ast::Statement::Compound;
-    use ast::TranslationUnit;
-    use ast::TypeSpecifier::{Char, Int};
-    use parser::translation_unit;
+    use crate::ast::DerivedDeclarator::{KRFunction, Pointer};
+    use crate::ast::Statement::Compound;
+    use crate::ast::TranslationUnit;
+    use crate::ast::TypeSpecifier::{Char, Int};
+    use crate::parser::translation_unit;
 
     let env = &mut Env::new();
 
@@ -2154,9 +2154,9 @@ fn test_kr_definition1() {
 
 #[test]
 fn test_clang_availability_attr() {
-    use ast::AvailabilityClause::*;
-    use ast::TypeSpecifier::Int;
-    use parser::declaration;
+    use crate::ast::AvailabilityClause::*;
+    use crate::ast::TypeSpecifier::Int;
+    use crate::parser::declaration;
 
     let env = &mut Env::with_clang();
 
@@ -2205,8 +2205,8 @@ fn test_clang_availability_attr() {
 
 #[test]
 fn test_struct_decl() {
-    use ast::Declaration;
-    use parser::declaration;
+    use crate::ast::Declaration;
+    use crate::parser::declaration;
 
     let env = &mut Env::new();
 
@@ -2238,8 +2238,8 @@ fn test_struct_decl() {
 
 #[test]
 fn test_struct_empty_decl() {
-    use ast::Declaration;
-    use parser::declaration;
+    use crate::ast::Declaration;
+    use crate::parser::declaration;
 
     let env = &mut Env::with_core();
     assert!(declaration("struct foo { } S;", env).is_err());
