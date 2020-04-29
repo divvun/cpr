@@ -1,8 +1,21 @@
-use std::collections::HashSet;
+use std::{
+    cell::{RefCell, RefMut},
+    collections::HashSet,
+};
 
 use crate::ast::*;
 use crate::span::Node;
 use crate::strings;
+
+pub struct ParserEnv<'a> {
+    inner: RefCell<&'a mut Env>,
+}
+
+impl<'a> ParserEnv<'a> {
+    pub fn get(&self) -> RefMut<&'a mut Env> {
+        self.inner.borrow_mut()
+    }
+}
 
 pub struct Env {
     pub builtin_typenames: HashSet<String>,
@@ -193,6 +206,12 @@ impl Env {
             }
         }
         declaration_node
+    }
+
+    pub fn for_parser<'a>(&'a mut self) -> ParserEnv<'a> {
+        ParserEnv {
+            inner: RefCell::new(self),
+        }
     }
 }
 

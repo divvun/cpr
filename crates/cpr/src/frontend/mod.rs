@@ -682,7 +682,10 @@ impl Parser {
                             }
                         }
 
-                        match lang_c::parser::translation_unit(&block_str, &mut self.env) {
+                        match lang_c::c_parser::translation_unit(
+                            &block_str,
+                            &mut self.env.for_parser(),
+                        ) {
                             Ok(mut node) => {
                                 unit.declarations
                                     .extend(node.0.drain(..).map(|node| node.node.into()));
@@ -702,6 +705,7 @@ impl Parser {
 
         if !block.is_empty() {
             log::error!("In {}:", file_info.path);
+            log::trace!("Full tokens: {:?}", block.tokens().collect::<Vec<_>>());
             let input = block.as_string();
             let err = lang_c::parser::translation_unit(&input, &mut self.env)
                 .err()

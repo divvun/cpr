@@ -11,10 +11,10 @@
 
 pub mod ast;
 pub mod driver;
+pub mod env;
+pub mod parser;
 pub mod span;
 pub mod visit;
-pub mod parser;
-pub mod env;
 
 mod astutil;
 mod strings;
@@ -22,7 +22,7 @@ mod strings;
 #[cfg(test)]
 mod tests;
 
-peg::parser!{ pub(crate) grammar c_parser(env: &mut env::Env) for str {
+peg::parser! { pub grammar c_parser(env: &env::ParserEnv<'_>) for str {
 
 use ast::*;
 use astutil::*;
@@ -41,20 +41,12 @@ rule list0<T>(ex: rule<T>) -> Vec<T> = e:(ex() ** _) { e }
 rule list1<T>(ex: rule<T>) -> Vec<T> = e:(ex() ++ _) { e }
 rule cs0<T>(ex: rule<T>) -> Vec<T> = e:(ex() ** (_ "," _)) { e }
 rule cs1<T>(ex: rule<T>) -> Vec<T> = e:(ex() ++ (_ "," _)) { e }
-    
+
 ////
 // Whitespace
 ////
 
-rule _() = quiet!{
-    e:$(['\n' | '\t' | ' '])* 
-    {?
-        if env.is_single_line_mode && e.contains('\n') {
-            return RuleResult::Failed;
-        }
-        Ok(())
-    }
-}
+rule _() = quiet!{ ['\n' | '\t' | ' '] }
 
 rule directive() -> Directive = "#" d:$(!['\n'][_]*) {
     Directive { value: d.into() }
@@ -76,7 +68,7 @@ pub rule identifier() -> Node<Identifier> = node(<identifier0()>)
 
 rule identifier0() -> Identifier =
     n:$(['_' | 'a'..='z' | 'A'..='Z'] ['_' | 'a'..='z' | 'A'..='Z' | '0'..='9']*) {?
-        if env.is_ignoring_reserved || !env.reserved.contains(n) {
+        if env.get().is_ignoring_reserved || !env.get().reserved.contains(n) {
             Ok(Identifier {
                 name: n.into(),
             })
@@ -213,7 +205,7 @@ rule primary_expression0() -> Expression =
     a:string_literal() { Expression::StringLiteral(Box::new(a)) } /
     "(" _ a:expression0() _ ")" { a } /
     a:node(<generic_selection()>) { Expression::GenericSelection(Box::new(a)) } /
-    gnu(<gnu_primary_expression()>) 
+    gnu(<gnu_primary_expression()>)
 
 rule generic_selection() -> GenericSelection =
     K(<"_Generic">) _ "(" _ e:assignment_expression() _ "," _ a:cs1(<node(<generic_association()>)>) _ ")" {
@@ -361,6 +353,10 @@ rule cast_expression_inner() -> CastExpression =
 
 rule binary_expression() -> Box<Node<Expression>> = box(<binary_expression0()>)
 
+rule binary_expression0() -> Node<Expression> = precedence!{
+    x:(@) n:node(<"||">) y:@ { infix(n, BinaryOperator::LogicalOr, x, y) }
+}
+
 // TODO: refactor
 
 // rule binary_expression0() -> Node<Expression> = #infix(binary_operand) {
@@ -475,7 +471,7 @@ rule constant_expression0() -> Expression = conditional_expression0()
 ////
 
 pub rule declaration() -> Node<Declaration> = d:node(<declaration0()>) {
-    env.postprocess_declaration(d)
+    env.get().postprocess_declaration(d)
 }
 
 rule declaration0() -> Declaration =
@@ -588,7 +584,7 @@ rule struct_declaration() -> StructDeclaration =
 
 rule struct_field() -> StructField =
     e:msvc(<list0(<sal_field_annotation()>) >)?
-    _ s:list1(<specifier_qualifier()>) 
+    _ s:list1(<specifier_qualifier()>)
     _ d:cs0(<node(<struct_declarator()>)>) _ ";" {
         StructField {
             specifiers: s,
@@ -764,7 +760,7 @@ rule parameter_declaration() -> Node<ParameterDeclaration> = node(<parameter_dec
 
 rule parameter_declaration0() -> ParameterDeclaration =
     b:msvc(<sal_param_annotation()>) ?
-    _ s:list1(<declaration_specifier()>) 
+    _ s:list1(<declaration_specifier()>)
     _ d:parameter_declarator()     _ a:gnu(<attribute_specifier_list()>) ? {
         ParameterDeclaration {
             specifiers: s,
@@ -880,7 +876,7 @@ rule abstract_function_declarator() -> FunctionDeclarator =
 rule typedef_name() -> Node<Identifier> = quiet!{ typedef_name0() / expected!("<typedef_name>") }
 
 rule typedef_name0() -> Node<Identifier> = i:identifier() {?
-    if env.is_typename(&i.node.name) {
+    if env.get().is_typename(&i.node.name) {
         Ok(i)
     } else {
         Err("<unused>")
@@ -957,8 +953,8 @@ rule statement0() -> Statement =
     expression_statement() /
     selection_statement() /
     iteration_statement() /
-    jump_statement() /
-    gnu(<asm_statement()>) 
+    jump_statement() // /
+    // gnu(<asm_statement()>)
 
 ////
 // 6.8.1 Labeled statements
@@ -1078,7 +1074,7 @@ rule jump_statement() -> Statement =
 // 6.9 External definitions
 ////
 
-rule scoped<T>(e: rule<T>) -> T = ({ env.enter_scope(); }) e:e()? {? env.leave_scope(); e.ok_or("") }
+rule scoped<T>(e: rule<T>) -> T = ({ env.get().enter_scope(); }) e:e()? {? env.get().leave_scope(); e.ok_or("") }
 
 pub rule translation_unit() -> TranslationUnit =
     d:list0(<node(<external_declaration()>)>) _ { TranslationUnit(d) }
@@ -1091,8 +1087,8 @@ rule external_declaration() -> ExternalDeclaration =
 
 rule function_definition() -> FunctionDefinition =
     gnu(<K(<"__extension__">)>)?
-    _ a:list1(<declaration_specifier()>) 
-    _ b:declarator()     _ c:list0(<declaration()>) 
+    _ a:list1(<declaration_specifier()>)
+    _ b:declarator()     _ c:list0(<declaration()>)
     _ d:node(<compound_statement()>) {
         FunctionDefinition {
             specifiers: a,
@@ -1108,7 +1104,7 @@ rule function_definition() -> FunctionDefinition =
 
 rule gnu<E>(e: rule<E>) -> E = &gnu_guard() e:e() { e }
 
-rule gnu_guard() = {? if env.extensions_gnu { Ok(()) } else { Err("gnu extensions disabled") } }
+rule gnu_guard() = {? if env.get().extensions_gnu { Ok(()) } else { Err("gnu extensions disabled") } }
 
 rule msvc_declspec_specifier() -> Vec<Node<Extension>> =
     K(<"__declspec">) _ "(" _ a:cs0(<node(<msvc_attribute()>)>) _ ")" { a }
@@ -1187,45 +1183,45 @@ rule asm_label_keyword() =
 // GNU assembler statements
 ////
 
-rule asm_statement() -> Statement =
-    s:node(<asm_statement0()>) { Statement::Asm(s) }
+// rule asm_statement() -> Statement =
+//     s:node(<asm_statement0()>) { Statement::Asm(s) }
 
-rule asm_statement0() -> AsmStatement =
-    K(<"asm" / "__asm" "__"?>) _ q:type_qualifier()? _ "(" _
-        a:string_literal() _
-        o:asm_ext(<asm_operand_list()>,
-            <asm_ext(<asm_operand_list()>,
-                <asm_ext(
-                    <cs0(<string_literal()>)>,
-                    <()>
-                )>
-            )>)? _
-    ")" _ ";" {
-        if let Some((o, (i, (c, ())))) = o {
-            AsmStatement::GnuExtended(GnuExtendedAsmStatement {
-                qualifier: q,
-                template: a,
-                outputs: o,
-                inputs: i,
-                clobbers: c,
-            })
-        } else {
-            AsmStatement::GnuBasic(a)
-        }
-    }
+// rule asm_statement0() -> AsmStatement =
+//     K(<"asm" / "__asm" "__"?>) _ q:type_qualifier()? _ "(" _
+//         a:string_literal() _
+//         o:asm_ext(<asm_operand_list()>,
+//             <asm_ext(<asm_operand_list()>,
+//                 <asm_ext(
+//                     <cs0(<string_literal()>)>,
+//                     <()>
+//                 )>
+//             )>)? _
+//     ")" _ ";" {
+//         if let Some((o, (i, (c, ())))) = o {
+//             AsmStatement::GnuExtended(GnuExtendedAsmStatement {
+//                 qualifier: q,
+//                 template: a,
+//                 outputs: o,
+//                 inputs: i,
+//                 clobbers: c,
+//             })
+//         } else {
+//             AsmStatement::GnuBasic(a)
+//         }
+//     }
 
-rule asm_ext<E, T>(e: rule<E>, t: rule<T>) -> (E, T) = ":" _ e:e() _ t:t()? { (e, t.unwrap_or_default()) }
+// rule asm_ext<E, T>(e: rule<E>, t: rule<T>) -> (E, T) = ":" _ e:e() _ t:t()? { (e, t.unwrap_or_default()) }
 
-rule asm_operand_list() -> Vec<Node<GnuAsmOperand>> = cs0(<node(<asm_operand()>)>)
+// rule asm_operand_list() -> Vec<Node<GnuAsmOperand>> = cs0(<node(<asm_operand()>)>)
 
-rule asm_operand() -> GnuAsmOperand =
-    i:("[" _ i:identifier() _ "]" _ {i})? s:string_literal() _ "(" _ e:node(<expression0()>) _ ")" {
-        GnuAsmOperand {
-            symbolic_name: i,
-            constraints: s,
-            variable_name: e,
-        }
-    }
+// rule asm_operand() -> GnuAsmOperand =
+//     i:("[" _ i:identifier() _ "]" _ {i})? s:string_literal() _ "(" _ e:node(<expression0()>) _ ")" {
+//         GnuAsmOperand {
+//             symbolic_name: i,
+//             constraints: s,
+//             variable_name: e,
+//         }
+//     }
 
 ////
 // GNU expression extensions
@@ -1345,7 +1341,7 @@ rule ts18661_float_suffix() -> TS18661FloatType =
 
 rule clang<E>(e: rule<E>) -> E = &clang_guard() e:e() { e }
 
-rule clang_guard() = {? if env.extensions_clang { Ok(()) } else { Err("clang extensions disabled") } }
+rule clang_guard() = {? if env.get().extensions_clang { Ok(()) } else { Err("clang extensions disabled") } }
 
 ////
 // MSVC extensions
@@ -1353,7 +1349,7 @@ rule clang_guard() = {? if env.extensions_clang { Ok(()) } else { Err("clang ext
 
 rule msvc<E>(e: rule<E>) -> E = &msvc_guard() e:e() { e }
 
-rule msvc_guard() = {? if env.extensions_msvc { Ok(()) } else { Err("msvc extensions disabled") } }
+rule msvc_guard() = {? if env.get().extensions_msvc { Ok(()) } else { Err("msvc extensions disabled") } }
 
 ////
 // MSVC source-code annotation language (SAL) extensions
@@ -1461,7 +1457,7 @@ rule calling_convention() -> CallingConvention =
     K(<"__cdecl">) { CallingConvention::Cdecl } /
     K(<"__stdcall">) { CallingConvention::Stdcall }
 
-rule sal_ignore_reserved<T>(e: rule<T>) -> T = ({ env.ignore_reserved(true); }) e:e() {? env.ignore_reserved(false); Ok(e) }
+rule sal_ignore_reserved<T>(e: rule<T>) -> T = ({ env.get().ignore_reserved(true); }) e:e() {? env.get().ignore_reserved(false); Ok(e) }
 rule sal_expression() -> Node<Expression> = e:sal_ignore_reserved(<expression()>) { *e }
 rule sal_primary_expression() -> Node<Expression> = e:sal_ignore_reserved(<primary_expression()>) { *e }
 
