@@ -707,17 +707,17 @@ impl Parser {
             log::error!("In {}:", file_info.path);
             log::trace!("Full tokens: {:?}", block.tokens().collect::<Vec<_>>());
             let input = block.as_string();
-            let err = lang_c::parser::translation_unit(&input, &mut self.env)
+            let err = lang_c::c_parser::translation_unit(&input, &mut self.env.for_parser())
                 .err()
                 .unwrap();
 
             let padding = 8 + 3;
             for (logical_lineno, (lineno, s)) in block.lines.iter().enumerate() {
                 log::error!("{:>8} | {}", lineno.0, s);
-                if logical_lineno + 1 == err.line {
+                if logical_lineno + 1 == err.location.line {
                     log::error!(
                         "{}^ expected {:?}",
-                        " ".repeat(err.column - 1 + padding),
+                        " ".repeat(err.location.column - 1 + padding),
                         err.expected
                     );
                 }

@@ -1077,7 +1077,18 @@ rule jump_statement() -> Statement =
 rule scoped<T>(e: rule<T>) -> T = ({ env.get().enter_scope(); }) e:e()? {? env.get().leave_scope(); e.ok_or("") }
 
 pub rule translation_unit() -> TranslationUnit =
+    &tracing()
     d:list0(<node(<external_declaration()>)>) _ { TranslationUnit(d) }
+
+rule tracing() =
+    input:$([_]*) {
+        #[cfg(feature = "trace")]
+        {
+            println!("[PEG_INPUT_START]");
+            println!("{}", input);
+            println!("[PEG_TRACE_START]");
+        }
+    }
 
 rule external_declaration() -> ExternalDeclaration =
     d:declaration() { ExternalDeclaration::Declaration(d) } /
