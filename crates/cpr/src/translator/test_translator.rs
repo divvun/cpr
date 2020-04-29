@@ -621,6 +621,15 @@ fn simple_constant() {
 }
 
 #[test]
+fn binary_expression_constant() {
+    parse_unit(indoc!(
+        "
+        int a = 12 + 45;
+        "
+    ));
+}
+
+#[test]
 fn enum_constants() {
     let unit = parse_unit(indoc!(
         "
