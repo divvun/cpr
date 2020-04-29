@@ -518,10 +518,11 @@ fn typedef_integers() {
 fn typedef_bool() {
     let unit = parse_unit(indoc!(
         "
-        typedef _Bool BOOL;
+        typedef _Bool BOOL, *PBOOL;
         "
     ));
     unit.must_have_alias("BOOL", &|f| f.typ.must_be("bool"));
+    unit.must_have_alias("PBOOL", &|f| f.typ.must_be("bool".mut_pointer_name()));
 }
 
 #[test]
