@@ -46,7 +46,7 @@ rule cs1<T>(ex: rule<T>) -> Vec<T> = e:(ex() ++ (_ "," _)) { e }
 // Whitespace
 ////
 
-rule _() = quiet!{ ['\n' | '\t' | ' '] }
+rule _() = quiet!{ ['\n' | '\t' | ' ']* }
 
 rule directive() -> Directive = "#" d:$(!['\n'][_]*) {
     Directive { value: d.into() }
@@ -68,7 +68,8 @@ pub rule identifier() -> Node<Identifier> = node(<identifier0()>)
 
 rule identifier0() -> Identifier =
     n:$(['_' | 'a'..='z' | 'A'..='Z'] ['_' | 'a'..='z' | 'A'..='Z' | '0'..='9']*) {?
-        if env.get().is_ignoring_reserved || !env.get().reserved.contains(n) {
+        let env = env.get();
+        if env.is_ignoring_reserved || !env.reserved.contains(n) {
             Ok(Identifier {
                 name: n.into(),
             })
@@ -1076,19 +1077,21 @@ rule jump_statement() -> Statement =
 
 rule scoped<T>(e: rule<T>) -> T = ({ env.get().enter_scope(); }) e:e()? {? env.get().leave_scope(); e.ok_or("") }
 
-pub rule translation_unit() -> TranslationUnit =
-    &tracing()
-    d:list0(<node(<external_declaration()>)>) _ { TranslationUnit(d) }
-
-rule tracing() =
-    input:$([_]*) {
+rule traced<T>(e: rule<T>) -> T =
+    &(input:$([_]*) {
         #[cfg(feature = "trace")]
-        {
-            println!("[PEG_INPUT_START]");
-            println!("{}", input);
-            println!("[PEG_TRACE_START]");
-        }
+        println!("[PEG_INPUT_START]\n{}\n[PEG_TRACE_START]", input);
+    })
+    e:e()? {?
+        #[cfg(feature = "trace")]
+        println!("[PEG_TRACE_STOP]");
+        e.ok_or("")
     }
+
+pub rule translation_unit() -> TranslationUnit = traced(<translation_unit0()>)
+
+rule translation_unit0() -> TranslationUnit =
+    d:list0(<node(<external_declaration()>)>) _ { TranslationUnit(d) }
 
 rule external_declaration() -> ExternalDeclaration =
     d:declaration() { ExternalDeclaration::Declaration(d) } /
