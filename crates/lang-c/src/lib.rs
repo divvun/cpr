@@ -355,31 +355,47 @@ rule cast_expression_inner() -> CastExpression =
 rule binary_expression() -> Box<Node<Expression>> = box(<binary_expression0()>)
 
 rule binary_expression0() -> Node<Expression> = precedence!{
-    x:(@) n:node(<"||">) y:@ { infix(n, BinaryOperator::LogicalOr, x, y) }
+    // precedence 15 (lowest)
+    x:(@) n:node(<"||">)    y:@   { infix(n, BinaryOperator::LogicalOr, x, y) }
+    --
+    // precedence 14
+    x:(@) n:node(<"&&">)    y:@   { infix(n, BinaryOperator::LogicalAnd, x, y) }
+    --
+    // precedence 13
+    x:(@) n:node(<"|">)     y:@   { infix(n, BinaryOperator::BitwiseOr, x, y) }
+    --
+    // precedence 12
+    x:(@) n:node(<"^">)     y:@   { infix(n, BinaryOperator::BitwiseXor, x, y) }
+    --
+    // precedence 11
+    x:(@) n:node(<"&"!"&">) y:@   { infix(n, BinaryOperator::BitwiseAnd, x, y) }
+    --
+    // precedence 10
+    x:(@) n:node(<"==">)    y:@   { infix(n, BinaryOperator::Equals, x, y) }
+    x:(@) n:node(<"!=">)    y:@   { infix(n, BinaryOperator::NotEquals, x, y) }
+    --
+    // precedence 9
+    x:(@) n:node(<"<">)     y:@   { infix(n, BinaryOperator::Less, x, y) }
+    x:(@) n:node(<">">)     y:@   { infix(n, BinaryOperator::Greater, x, y) }
+    x:(@) n:node(<"<=">)    y:@   { infix(n, BinaryOperator::LessOrEqual, x, y) }
+    x:(@) n:node(<">=">)    y:@   { infix(n, BinaryOperator::GreaterOrEqual, x, y) }
+    --
+    // precedence 7
+    x:(@) n:node(<"<<">)    y:@   { infix(n, BinaryOperator::ShiftLeft, x, y) }
+    x:(@) n:node(<">>">)    y:@   { infix(n, BinaryOperator::ShiftRight, x, y) }
+    --
+    // precedence 6
+    x:@   n:node(<"+">)     y:(@)   { infix(n, BinaryOperator::Plus, x, y) }
+    x:@   n:node(<"-">)     y:(@) { infix(n, BinaryOperator::Minus, x, y) }
+    --
+    // precedence 5
+    x:(@) n:node(<"*">)     y:@   { infix(n, BinaryOperator::Multiply, x, y) }
+    x:(@) n:node(<"/">)     y:@   { infix(n, BinaryOperator::Divide, x, y) }
+    x:(@) n:node(<"%">)     y:@   { infix(n, BinaryOperator::Modulo, x, y) }
+    --
+    n:binary_operand() { n }
+    // highest precedence
 }
-
-// TODO: refactor
-
-// rule binary_expression0() -> Node<Expression> = #infix(binary_operand) {
-// #L  x o:infix("||") y { infix(o, BinaryOperator::LogicalOr, x, y) }
-// #L  x o:infix("&&") y { infix(o, BinaryOperator::LogicalAnd, x, y) }
-// #L  x o:infix("|") y { infix(o, BinaryOperator::BitwiseOr, x, y) }
-// #L  x o:infix("^") y { infix(o, BinaryOperator::BitwiseXor, x, y) }
-// #L  x o:infix("&"!"&") y { infix(o, BinaryOperator::BitwiseAnd, x, y) }
-// #L  x o:infix("==") y { infix(o, BinaryOperator::Equals, x, y) }
-//     x o:infix("!=") y { infix(o, BinaryOperator::NotEquals, x, y) }
-// #L  x o:infix("<") y { infix(o, BinaryOperator::Less, x, y) }
-//     x o:infix(")"> y { infix(o, BinaryOperator::Greater, x, y) }
-//     x o:infix("<=") y { infix(o, BinaryOperator::LessOrEqual, x, y) }
-//     x o:infix(")="> y { infix(o, BinaryOperator::GreaterOrEqual, x, y) }
-// #L  x o:infix("<<") y { infix(o, BinaryOperator::ShiftLeft, x, y) }
-//     x o:infix(")>"> y { infix(o, BinaryOperator::ShiftRight, x, y) }
-// #L  x o:infix("+") y { infix(o, BinaryOperator::Plus, x, y) }
-//     x o:infix("-") y { infix(o, BinaryOperator::Minus, x, y) }
-// #L  x o:infix("*") y { infix(o, BinaryOperator::Multiply, x, y) }
-//     x o:infix("/") y { infix(o, BinaryOperator::Divide, x, y) }
-//     x o:infix("%") y { infix(o, BinaryOperator::Modulo, x, y) }
-// }
 
 rule infix<T>(ex: rule<T>) -> Node<T> = _ n:node(<ex()>) _ { n }
 

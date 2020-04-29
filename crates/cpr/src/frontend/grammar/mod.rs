@@ -218,13 +218,13 @@ peg::parser! { pub(crate) grammar rules() for str {
         l:(@) _ ">>" _ r:@ { BinaryOperator::RightShift.build(l, r) }
         --
         // precedence 6
-        l:(@) _ "+"  _ r:@ { BinaryOperator::Add.build(l, r) }
-        l:(@) _ "-"  _ r:@ { BinaryOperator::Subtract.build(l, r) }
+        l:@ _ "+"  _ r:(@) { BinaryOperator::Add.build(l, r) }
+        l:@ _ "-"  _ r:(@) { BinaryOperator::Subtract.build(l, r) }
         --
         // precedence 5
         l:(@) _ "*"  _ r:@ { BinaryOperator::Multiply.build(l, r) }
         l:(@) _ "/"  _ r:@ { BinaryOperator::Divide.build(l, r) }
-        l:(@) _ "*"  _ r:@ { BinaryOperator::Modulo.build(l, r) }
+        l:(@) _ "%"  _ r:@ { BinaryOperator::Modulo.build(l, r) }
         --
         // precendence 3
         "!" _ x:@ { Expr::Not(Box::new(x)) }

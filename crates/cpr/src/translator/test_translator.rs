@@ -612,6 +612,15 @@ fn multiple_typedefs() {
 }
 
 #[test]
+fn simple_constant() {
+    parse_unit(indoc!(
+        "
+        int a = 123;
+        "
+    ));
+}
+
+#[test]
 fn enum_constants() {
     let unit = parse_unit(indoc!(
         "
