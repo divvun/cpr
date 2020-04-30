@@ -645,11 +645,11 @@ rule type_specifier_unique() -> TypeSpecifier
 
 rule type_specifier_nonunique() -> TypeSpecifier
     = K(<"char">) { TypeSpecifier::Char }
-    / K(<"short">) { TypeSpecifier::Char }
-    / K(<"int">) { TypeSpecifier::Char }
-    / K(<"long">) { TypeSpecifier::Char }
-    / K(<"float">) { TypeSpecifier::Char }
-    / K(<"double">) { TypeSpecifier::Char }
+    / K(<"short">) { TypeSpecifier::Short }
+    / K(<"int">) { TypeSpecifier::Int }
+    / K(<"long">) { TypeSpecifier::Long }
+    / K(<"float">) { TypeSpecifier::Float }
+    / K(<"double">) { TypeSpecifier::Double }
     / K(<"signed" / gnu(<"__signed" "__"?>)>) { TypeSpecifier::Signed }
     / K(<"unsigned">) { TypeSpecifier::Unsigned }
     / K(<"_Complex" / gnu(<"__complex" "__"?>)>) { TypeSpecifier::Complex }
