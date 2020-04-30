@@ -1,3 +1,5 @@
+use pretty_assertions::assert_eq;
+
 use crate::ast::*;
 use crate::env::Env;
 use crate::span::{Node, Span};
@@ -1922,6 +1924,8 @@ fn test_ts18661_float() {
     );
 }
 
+// TODO: flesh out those MSVC tests a little
+
 #[test]
 fn test_msvc_extension() {
     use crate::parser::translation_unit;
@@ -2026,277 +2030,289 @@ fn test_msvc_sal_function3() {
     translation_unit("_Success_(return >= 0) _Check_return_ int foo();", env).unwrap();
 }
 
-// #[test]
-// fn test_gnu_extension() {
-//     use crate::ast::TypeSpecifier::Long;
-//     use crate::parser::translation_unit;
-//     assert_eq!(
-//         translation_unit("__extension__ union { long l; };", &mut Env::with_gnu()),
-//         Ok(TranslationUnit(vec![Declaration {
-//             specifiers: vec![StructType {
-//                 kind: StructKind::Union.into(),
-//                 identifier: None,
-//                 declarations: Some(vec![StructField {
-//                     specifiers: vec![Long.into()],
-//                     declarators: vec![StructDeclarator {
-//                         declarator: Some(
-//                             Declarator {
-//                                 kind: ident("l"),
-//                                 derived: vec![],
-//                                 extensions: vec![],
-//                             }
-//                             .into(),
-//                         ),
-//                         bit_width: None,
-//                     }
-//                     .into()],
-//                     extensions: vec![],
-//                 }
-//                 .into()]),
-//                 extensions: vec![],
-//             }
-//             .into()],
-//             declarators: vec![],
-//         }
-//         .into()])
-//         .into())
-//     );
+#[test]
+fn test_gnu_extension() {
+    use crate::ast::TypeSpecifier::Long;
+    use crate::parser::translation_unit;
 
-//     assert_eq!(
-//         translation_unit(r#"__extension__ _Static_assert(1,"ERR");"#, &mut Env::new()),
-//         Ok(TranslationUnit(vec![StaticAssert {
-//             expression: int::dec("1"),
-//             message: cstr(&[r#""ERR""#]),
-//         }
-//         .into()])
-//         .into())
-//     );
-// }
+    let mut env = Env::with_gnu();
+    let env = &env.for_parser();
 
-// #[test]
-// fn test_declaration7() {
-//     use crate::ast::DeclaratorKind::Abstract;
-//     use crate::ast::DerivedDeclarator::Pointer;
-//     use crate::ast::TypeQualifier::Nullable;
-//     use crate::ast::TypeSpecifier::{Int, Void};
-//     use crate::parser::declaration;
+    assert_eq!(
+        translation_unit("__extension__ union { long l; };", env),
+        Ok(TranslationUnit(vec![Declaration {
+            specifiers: vec![StructType {
+                kind: StructKind::Union.into(),
+                identifier: None,
+                declarations: Some(vec![StructField {
+                    specifiers: vec![Long.into()],
+                    declarators: vec![StructDeclarator {
+                        declarator: Some(
+                            Declarator {
+                                kind: ident("l"),
+                                derived: vec![],
+                                extensions: vec![],
+                            }
+                            .into(),
+                        ),
+                        bit_width: None,
+                    }
+                    .into()],
+                    extensions: vec![],
+                }
+                .into()]),
+                extensions: vec![],
+            }
+            .into()],
+            declarators: vec![],
+        }
+        .into()])
+        .into())
+    );
 
-//     let env = &mut Env::with_clang();
+    let mut env = Env::with_gnu();
+    let env = &env.for_parser();
 
-//     assert_eq!(
-//         // This is the first Clang-specific declaration you'll encounter in macOS
-//         // if you #include <stdio.h>.
-//         declaration("int (* _Nullable _close)(void *);", env),
-//         Ok(Declaration {
-//             specifiers: vec![Int.into()],
-//             declarators: vec![InitDeclarator {
-//                 declarator: Declarator {
-//                     kind: Declarator {
-//                         kind: ident("_close"),
-//                         derived: vec![Pointer(vec![Nullable.into()]).into()],
-//                         extensions: vec![],
-//                     }
-//                     .into(),
-//                     derived: vec![FunctionDeclarator {
-//                         parameters: vec![ParameterDeclaration {
-//                             specifiers: vec![Void.into()],
-//                             declarator: Some(
-//                                 Declarator {
-//                                     kind: Abstract.into(),
-//                                     derived: vec![Pointer(vec![]).into()],
-//                                     extensions: vec![],
-//                                 }
-//                                 .into(),
-//                             ),
-//                             extensions: vec![],
-//                         }
-//                         .into()],
-//                         ellipsis: Ellipsis::None,
-//                     }
-//                     .into()],
-//                     extensions: vec![],
-//                 }
-//                 .into(),
-//                 initializer: None,
-//             }
-//             .into()],
-//         }
-//         .into())
-//     );
-// }
+    assert_eq!(
+        translation_unit(r#"__extension__ _Static_assert(1,"ERR");"#, env),
+        Ok(TranslationUnit(vec![StaticAssert {
+            expression: int::dec("1"),
+            message: cstr(&[r#""ERR""#]),
+        }
+        .into()])
+        .into())
+    );
+}
 
-// #[test]
-// fn test_kr_definition1() {
-//     use crate::ast::DerivedDeclarator::{KRFunction, Pointer};
-//     use crate::ast::Statement::Compound;
-//     use crate::ast::TranslationUnit;
-//     use crate::ast::TypeSpecifier::{Char, Int};
-//     use crate::parser::translation_unit;
+#[test]
+fn test_declaration7() {
+    use crate::ast::DeclaratorKind::Abstract;
+    use crate::ast::DerivedDeclarator::Pointer;
+    use crate::ast::TypeQualifier::Nullable;
+    use crate::ast::TypeSpecifier::{Int, Void};
+    use crate::parser::declaration;
 
-//     let env = &mut Env::new();
+    let mut env = Env::with_clang();
+    let env = &env.for_parser();
 
-//     assert_eq!(
-//         translation_unit("int main(argc, argv) int argc; char **argv; { }", env),
-//         Ok(TranslationUnit(vec![FunctionDefinition {
-//             specifiers: vec![Int.into()],
-//             declarator: Declarator {
-//                 kind: ident("main"),
-//                 derived: vec![KRFunction(vec![ident("argc"), ident("argv")]).into()],
-//                 extensions: vec![],
-//             }
-//             .into(),
-//             declarations: vec![
-//                 Declaration {
-//                     specifiers: vec![Int.into()],
-//                     declarators: vec![InitDeclarator {
-//                         declarator: Declarator {
-//                             kind: ident("argc"),
-//                             derived: vec![],
-//                             extensions: vec![],
-//                         }
-//                         .into(),
-//                         initializer: None
-//                     }
-//                     .into()],
-//                 }
-//                 .into(),
-//                 Declaration {
-//                     specifiers: vec![Char.into()],
-//                     declarators: vec![InitDeclarator {
-//                         declarator: Declarator {
-//                             kind: ident("argv"),
-//                             derived: vec![Pointer(vec![]).into(), Pointer(vec![]).into()],
-//                             extensions: vec![],
-//                         }
-//                         .into(),
-//                         initializer: None
-//                     }
-//                     .into()],
-//                 }
-//                 .into(),
-//             ],
-//             statement: Compound(vec![]).into(),
-//         }
-//         .into()]))
-//     );
-// }
+    assert_eq!(
+        // This is the first Clang-specific declaration you'll encounter in macOS
+        // if you #include <stdio.h>.
+        declaration("int (* _Nullable _close)(void *);", env),
+        Ok(Declaration {
+            specifiers: vec![Int.into()],
+            declarators: vec![InitDeclarator {
+                declarator: Declarator {
+                    kind: Declarator {
+                        kind: ident("_close"),
+                        derived: vec![Pointer(vec![Nullable.into()]).into()],
+                        extensions: vec![],
+                    }
+                    .into(),
+                    derived: vec![FunctionDeclarator {
+                        parameters: vec![ParameterDeclaration {
+                            specifiers: vec![Void.into()],
+                            declarator: Some(
+                                Declarator {
+                                    kind: Abstract.into(),
+                                    derived: vec![Pointer(vec![]).into()],
+                                    extensions: vec![],
+                                }
+                                .into(),
+                            ),
+                            extensions: vec![],
+                        }
+                        .into()],
+                        ellipsis: Ellipsis::None,
+                    }
+                    .into()],
+                    extensions: vec![],
+                }
+                .into(),
+                initializer: None,
+            }
+            .into()],
+        }
+        .into())
+    );
+}
 
-// #[test]
-// fn test_clang_availability_attr() {
-//     use crate::ast::AvailabilityClause::*;
-//     use crate::ast::TypeSpecifier::Int;
-//     use crate::parser::declaration;
+#[test]
+fn test_kr_definition1() {
+    use crate::ast::DerivedDeclarator::{KRFunction, Pointer};
+    use crate::ast::Statement::Compound;
+    use crate::ast::TranslationUnit;
+    use crate::ast::TypeSpecifier::{Char, Int};
+    use crate::parser::translation_unit;
 
-//     let env = &mut Env::with_clang();
+    let mut env = Env::new();
+    let env = &env.for_parser();
 
-//     let src = r#"int f __attribute__((availability(p1,introduced=1.2.3))) __attribute__((availability(p2,unavailable,replacement="f2")));"#;
+    assert_eq!(
+        translation_unit("int main(argc, argv) int argc; char **argv; { }", env),
+        Ok(TranslationUnit(vec![FunctionDefinition {
+            specifiers: vec![Int.into()],
+            declarator: Declarator {
+                kind: ident("main"),
+                derived: vec![KRFunction(vec![ident("argc"), ident("argv")]).into()],
+                extensions: vec![],
+            }
+            .into(),
+            declarations: vec![
+                Declaration {
+                    specifiers: vec![Int.into()],
+                    declarators: vec![InitDeclarator {
+                        declarator: Declarator {
+                            kind: ident("argc"),
+                            derived: vec![],
+                            extensions: vec![],
+                        }
+                        .into(),
+                        initializer: None
+                    }
+                    .into()],
+                }
+                .into(),
+                Declaration {
+                    specifiers: vec![Char.into()],
+                    declarators: vec![InitDeclarator {
+                        declarator: Declarator {
+                            kind: ident("argv"),
+                            derived: vec![Pointer(vec![]).into(), Pointer(vec![]).into()],
+                            extensions: vec![],
+                        }
+                        .into(),
+                        initializer: None
+                    }
+                    .into()],
+                }
+                .into(),
+            ],
+            statement: Compound(vec![]).into(),
+        }
+        .into()]))
+    );
+}
 
-//     assert_eq!(
-//         declaration(src, env),
-//         Ok(Declaration {
-//             specifiers: vec![Int.into(),],
-//             declarators: vec![InitDeclarator {
-//                 declarator: Declarator {
-//                     kind: ident("f"),
-//                     derived: vec![],
-//                     extensions: vec![
-//                         AvailabilityAttribute {
-//                             platform: ident("p1"),
-//                             clauses: vec![Introduced(
-//                                 AvailabilityVersion {
-//                                     major: "1".into(),
-//                                     minor: Some("2".into()),
-//                                     subminor: Some("3".into()),
-//                                 }
-//                                 .into()
-//                             )
-//                             .into()],
-//                         }
-//                         .into(),
-//                         AvailabilityAttribute {
-//                             platform: ident("p2"),
-//                             clauses: vec![
-//                                 Unavailable.into(),
-//                                 Replacement(cstr(&["\"f2\""])).into(),
-//                             ],
-//                         }
-//                         .into(),
-//                     ],
-//                 }
-//                 .into(),
-//                 initializer: None,
-//             }
-//             .into(),],
-//         }
-//         .into())
-//     );
-// }
+#[test]
+fn test_clang_availability_attr() {
+    use crate::ast::AvailabilityClause::*;
+    use crate::ast::TypeSpecifier::Int;
+    use crate::parser::declaration;
 
-// #[test]
-// fn test_struct_decl() {
-//     use crate::ast::Declaration;
-//     use crate::parser::declaration;
+    let mut env = Env::with_clang();
+    let env = &env.for_parser();
 
-//     let env = &mut Env::new();
+    let src = r#"int f __attribute__((availability(p1,introduced=1.2.3))) __attribute__((availability(p2,unavailable,replacement="f2")));"#;
 
-//     assert_eq!(
-//         declaration("struct foo S;", env).unwrap(),
-//         Declaration {
-//             specifiers: vec![StructType {
-//                 kind: StructKind::Struct.into(),
-//                 identifier: Some(ident("foo")),
-//                 declarations: None,
-//                 extensions: vec![],
-//             }
-//             .into()],
+    assert_eq!(
+        declaration(src, env),
+        Ok(Declaration {
+            specifiers: vec![Int.into(),],
+            declarators: vec![InitDeclarator {
+                declarator: Declarator {
+                    kind: ident("f"),
+                    derived: vec![],
+                    extensions: vec![
+                        AvailabilityAttribute {
+                            platform: ident("p1"),
+                            clauses: vec![Introduced(
+                                AvailabilityVersion {
+                                    major: "1".into(),
+                                    minor: Some("2".into()),
+                                    subminor: Some("3".into()),
+                                }
+                                .into()
+                            )
+                            .into()],
+                        }
+                        .into(),
+                        AvailabilityAttribute {
+                            platform: ident("p2"),
+                            clauses: vec![
+                                Unavailable.into(),
+                                Replacement(cstr(&["\"f2\""])).into(),
+                            ],
+                        }
+                        .into(),
+                    ],
+                }
+                .into(),
+                initializer: None,
+            }
+            .into(),],
+        }
+        .into())
+    );
+}
 
-//             declarators: vec![InitDeclarator {
-//                 declarator: Declarator {
-//                     kind: ident("S"),
-//                     derived: vec![],
-//                     extensions: vec![],
-//                 }
-//                 .into(),
-//                 initializer: None,
-//             }
-//             .into()],
-//         }
-//         .into()
-//     );
-// }
+#[test]
+fn test_struct_decl() {
+    use crate::ast::Declaration;
+    use crate::parser::declaration;
 
-// #[test]
-// fn test_struct_empty_decl() {
-//     use crate::ast::Declaration;
-//     use crate::parser::declaration;
+    let mut env = Env::new();
+    let env = &env.for_parser();
 
-//     let env = &mut Env::with_core();
-//     assert!(declaration("struct foo { } S;", env).is_err());
+    assert_eq!(
+        declaration("struct foo S;", env).unwrap(),
+        Declaration {
+            specifiers: vec![StructType {
+                kind: StructKind::Struct.into(),
+                identifier: Some(ident("foo")),
+                declarations: None,
+                extensions: vec![],
+            }
+            .into()],
 
-//     let env = &mut Env::with_gnu();
+            declarators: vec![InitDeclarator {
+                declarator: Declarator {
+                    kind: ident("S"),
+                    derived: vec![],
+                    extensions: vec![],
+                }
+                .into(),
+                initializer: None,
+            }
+            .into()],
+        }
+        .into()
+    );
+}
 
-//     assert_eq!(
-//         declaration("struct foo { } S;", env).unwrap(),
-//         Declaration {
-//             specifiers: vec![StructType {
-//                 kind: StructKind::Struct.into(),
-//                 identifier: Some(ident("foo")),
-//                 declarations: Some(Vec::new()),
-//                 extensions: vec![],
-//             }
-//             .into()],
+#[test]
+fn test_struct_empty_decl() {
+    use crate::ast::Declaration;
+    use crate::parser::declaration;
 
-//             declarators: vec![InitDeclarator {
-//                 declarator: Declarator {
-//                     kind: ident("S"),
-//                     derived: vec![],
-//                     extensions: vec![],
-//                 }
-//                 .into(),
-//                 initializer: None,
-//             }
-//             .into()],
-//         }
-//         .into()
-//     );
-// }
+    let core_env = &mut Env::with_core();
+    let core_env = &core_env.for_parser();
+    assert!(declaration("struct foo { } S;", core_env).is_err());
+
+    let mut gnu_env = Env::with_gnu();
+    let gnu_env = &gnu_env.for_parser();
+    assert_eq!(
+        declaration("struct foo { } S;", gnu_env).unwrap(),
+        Declaration {
+            specifiers: vec![StructType {
+                kind: StructKind::Struct.into(),
+                identifier: Some(ident("foo")),
+                declarations: Some(Vec::new()),
+                extensions: vec![],
+            }
+            .into()],
+
+            declarators: vec![InitDeclarator {
+                declarator: Declarator {
+                    kind: ident("S"),
+                    derived: vec![],
+                    extensions: vec![],
+                }
+                .into(),
+                initializer: None,
+            }
+            .into()],
+        }
+        .into()
+    );
+}

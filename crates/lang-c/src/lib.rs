@@ -1291,7 +1291,7 @@ rule attr_availability_clause() -> AvailabilityClause =
     K(<"replacement">) _ "=" _ s:string_literal() { AvailabilityClause::Replacement(s) }
 
 rule attr_availability_version() -> AvailabilityVersion =
-    a:$(dec()+) b:$("." $(dec()+) )? c:$("." $(dec()+) )? {
+    a:$(dec()+) b:("." b:$(dec()+) { b })? c:("." c:$(dec()+) { c })? {
         AvailabilityVersion {
             major: a.into(),
             minor: b.map(str::to_owned),
