@@ -488,7 +488,7 @@ impl Parser {
                                     );
 
                                     let s = value.expand(&self.ctx)?.to_string();
-                                    match lang_c::c_parser::constant_expression(
+                                    match lang_c::parser::constant_expression(
                                         &s,
                                         &self.env.for_parser(),
                                     ) {
@@ -668,7 +668,7 @@ impl Parser {
                             }
                         }
 
-                        match lang_c::c_parser::translation_unit(
+                        match lang_c::parser::translation_unit(
                             &block_str,
                             &mut self.env.for_parser(),
                         ) {
@@ -693,7 +693,7 @@ impl Parser {
             log::error!("In {}:", file_info.path);
             log::trace!("Full tokens: {:?}", block.tokens().collect::<Vec<_>>());
             let input = block.as_string();
-            let err = lang_c::c_parser::translation_unit(&input, &mut self.env.for_parser())
+            let err = lang_c::parser::translation_unit(&input, &mut self.env.for_parser())
                 .err()
                 .unwrap();
 

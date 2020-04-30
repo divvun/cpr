@@ -241,71 +241,72 @@ fn test_integer() {
     assert!(constant("2lL", env).is_err());
 }
 
-// #[test]
-// fn test_floating() {
-//     use self::float::*;
-//     use crate::ast::FloatBase::*;
-//     use crate::parser::constant;
+#[test]
+fn test_floating() {
+    use self::float::*;
+    use crate::ast::FloatBase::*;
+    use crate::parser::constant;
 
-//     let env = &mut Env::new();
+    let mut env = Env::new();
+    let env = &env.for_parser();
 
-//     const F: FloatSuffix = FloatSuffix {
-//         format: FloatFormat::Float,
-//         imaginary: false,
-//     };
+    const F: FloatSuffix = FloatSuffix {
+        format: FloatFormat::Float,
+        imaginary: false,
+    };
 
-//     const L: FloatSuffix = FloatSuffix {
-//         format: FloatFormat::LongDouble,
-//         imaginary: false,
-//     };
+    const L: FloatSuffix = FloatSuffix {
+        format: FloatFormat::LongDouble,
+        imaginary: false,
+    };
 
-//     assert_eq!(constant("2.", env), Ok(num(Decimal, "2.", NONE.clone())));
-//     assert_eq!(
-//         constant("2.e2", env),
-//         Ok(num(Decimal, "2.e2", NONE.clone()))
-//     );
-//     assert_eq!(constant(".2", env), Ok(num(Decimal, ".2", NONE.clone())));
-//     assert_eq!(
-//         constant(".2e2", env),
-//         Ok(num(Decimal, ".2e2", NONE.clone()))
-//     );
-//     assert_eq!(constant("2.0", env), Ok(num(Decimal, "2.0", NONE.clone())));
-//     assert_eq!(constant("2.0f", env), Ok(num(Decimal, "2.0", F.clone())));
+    assert_eq!(constant("2.", env), Ok(num(Decimal, "2.", NONE.clone())));
+    assert_eq!(
+        constant("2.e2", env),
+        Ok(num(Decimal, "2.e2", NONE.clone()))
+    );
+    assert_eq!(constant(".2", env), Ok(num(Decimal, ".2", NONE.clone())));
+    assert_eq!(
+        constant(".2e2", env),
+        Ok(num(Decimal, ".2e2", NONE.clone()))
+    );
+    assert_eq!(constant("2.0", env), Ok(num(Decimal, "2.0", NONE.clone())));
+    assert_eq!(constant("2.0f", env), Ok(num(Decimal, "2.0", F.clone())));
 
-//     assert_eq!(
-//         constant("24.01e100", env),
-//         Ok(num(Decimal, "24.01e100", NONE.clone()))
-//     );
-//     assert_eq!(
-//         constant("24.01e+100", env),
-//         Ok(num(Decimal, "24.01e+100", NONE.clone()))
-//     );
-//     assert_eq!(
-//         constant("24.01e-100", env),
-//         Ok(num(Decimal, "24.01e-100", NONE.clone()))
-//     );
-//     assert_eq!(
-//         constant("24.01e100f", env),
-//         Ok(num(Decimal, "24.01e100", F.clone()))
-//     );
+    assert_eq!(
+        constant("24.01e100", env),
+        Ok(num(Decimal, "24.01e100", NONE.clone()))
+    );
+    assert_eq!(
+        constant("24.01e+100", env),
+        Ok(num(Decimal, "24.01e+100", NONE.clone()))
+    );
+    assert_eq!(
+        constant("24.01e-100", env),
+        Ok(num(Decimal, "24.01e-100", NONE.clone()))
+    );
+    assert_eq!(
+        constant("24.01e100f", env),
+        Ok(num(Decimal, "24.01e100", F.clone()))
+    );
 
-//     assert_eq!(
-//         constant("0x2Ap19L", env),
-//         Ok(num(Hexadecimal, "2Ap19", L.clone()))
-//     );
-//     assert_eq!(
-//         constant("0x2A.p19L", env),
-//         Ok(num(Hexadecimal, "2A.p19", L.clone()))
-//     );
-//     assert_eq!(
-//         constant("0x.DEp19L", env),
-//         Ok(num(Hexadecimal, ".DEp19", L.clone()))
-//     );
-//     assert_eq!(
-//         constant("0x2A.DEp19L", env),
-//         Ok(num(Hexadecimal, "2A.DEp19", L.clone()))
-//     );
-// }
+    assert_eq!(
+        constant("0x2Ap19L", env),
+        Ok(num(Hexadecimal, "2Ap19", L.clone()))
+    );
+    assert_eq!(
+        constant("0x2A.p19L", env),
+        Ok(num(Hexadecimal, "2A.p19", L.clone()))
+    );
+    assert_eq!(
+        constant("0x.DEp19L", env),
+        Ok(num(Hexadecimal, ".DEp19", L.clone()))
+    );
+    assert_eq!(
+        constant("0x2A.DEp19L", env),
+        Ok(num(Hexadecimal, "2A.DEp19", L.clone()))
+    );
+}
 
 // #[test]
 // fn ts18661_literal() {
