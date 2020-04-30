@@ -494,801 +494,824 @@ fn test_chained_shl() {
     );
 }
 
-// #[test]
-// fn test_chained_shr() {
-//     use self::expr::*;
-//     use crate::ast::BinaryOperator::ShiftRight;
-//     use crate::parser::expression;
-//     let env = &mut Env::new();
-//     assert_eq!(
-//         expression("a >> b >> c", env),
-//         Ok(binop(
-//             ShiftRight,
-//             binop(ShiftRight, ident("a"), ident("b")),
-//             ident("c"),
-//         ))
-//     );
-// }
+#[test]
+fn test_chained_shr() {
+    use self::expr::*;
+    use crate::ast::BinaryOperator::ShiftRight;
+    use crate::parser::expression;
+    let mut env = Env::new();
+    let env = &env.for_parser();
+    assert_eq!(
+        expression("a >> b >> c", env),
+        Ok(binop(
+            ShiftRight,
+            binop(ShiftRight, ident("a"), ident("b")),
+            ident("c"),
+        ))
+    );
+}
 
-// #[test]
-// fn test_comma() {
-//     use crate::ast::Expression::Comma;
-//     use crate::parser::expression;
+#[test]
+fn test_comma() {
+    use crate::ast::Expression::Comma;
+    use crate::parser::expression;
 
-//     let env = &mut Env::new();
+    let mut env = Env::new();
+    let env = &env.for_parser();
 
-//     assert_eq!(expression("a", env), Ok(ident("a")));
-//     assert_eq!(
-//         expression("a, a, a,a\n,a", env),
-//         Ok(Comma(Box::new(vec![ident("a"); 5].into())).into())
-//     );
-// }
+    assert_eq!(expression("a", env), Ok(ident("a")));
+    assert_eq!(
+        expression("a, a, a,a\n,a", env),
+        Ok(Comma(Box::new(vec![ident("a"); 5].into())).into())
+    );
+}
 
-// #[test]
-// fn test_cast() {
-//     use crate::ast::TypeName;
-//     use crate::ast::TypeSpecifier::Int;
-//     use crate::env::Env;
-//     use crate::parser::expression;
+#[test]
+fn test_cast() {
+    use crate::ast::TypeName;
+    use crate::ast::TypeSpecifier::Int;
+    use crate::env::Env;
+    use crate::parser::expression;
 
-//     let env = &mut Env::new();
+    let mut env = Env::new();
+    let env = &env.for_parser();
 
-//     assert_eq!(
-//         expression("(int) 1", env),
-//         Ok(CastExpression {
-//             type_name: TypeName {
-//                 specifiers: vec![Int.into()],
-//                 declarator: None,
-//             }
-//             .into(),
-//             expression: int::dec("1"),
-//         }
-//         .into())
-//     );
+    assert_eq!(
+        expression("(int) 1", env),
+        Ok(CastExpression {
+            type_name: TypeName {
+                specifiers: vec![Int.into()],
+                declarator: None,
+            }
+            .into(),
+            expression: int::dec("1"),
+        }
+        .into())
+    );
 
-//     assert!(expression("(foo) 1", env).is_err());
-// }
+    assert!(expression("(foo) 1", env).is_err());
+}
 
-// #[test]
-// fn test_declaration1() {
-//     use self::expr::*;
-//     use crate::ast::ArraySize::{StaticExpression, VariableUnknown};
-//     use crate::ast::DerivedDeclarator::Pointer;
-//     use crate::ast::StorageClassSpecifier::Typedef;
-//     use crate::ast::TypeQualifier::Const;
-//     use crate::ast::TypeSpecifier::Int;
-//     use crate::ast::UnaryOperator::Address;
-//     use crate::parser::declaration;
+#[test]
+fn test_declaration1() {
+    use crate::ast::ArraySize::{StaticExpression, VariableUnknown};
+    use crate::ast::DerivedDeclarator::Pointer;
+    use crate::ast::StorageClassSpecifier::Typedef;
+    use crate::ast::TypeQualifier::Const;
+    use crate::ast::TypeSpecifier::Int;
+    use crate::parser::declaration;
 
-//     let env = &mut Env::new();
+    let mut env = Env::new();
+    let env = &env.for_parser();
 
-//     assert_eq!(
-//         declaration("int typedef * foo = &bar, baz[static 10][const *];", env),
-//         Ok(Declaration {
-//             specifiers: vec![Int.into(), Typedef.into()],
-//             declarators: vec![
-//                 InitDeclarator {
-//                     declarator: Declarator {
-//                         kind: ident("foo"),
-//                         derived: vec![Pointer(vec![]).into()],
-//                         extensions: vec![],
-//                     }
-//                     .into(),
-//                     initializer: Some(unop(Address, ident("bar"))),
-//                 }
-//                 .into(),
-//                 InitDeclarator {
-//                     declarator: Declarator {
-//                         kind: ident("baz"),
-//                         derived: vec![
-//                             ArrayDeclarator {
-//                                 qualifiers: vec![],
-//                                 size: StaticExpression(int::dec("10")),
-//                             }
-//                             .into(),
-//                             ArrayDeclarator {
-//                                 qualifiers: vec![Const.into()],
-//                                 size: VariableUnknown,
-//                             }
-//                             .into(),
-//                         ],
-//                         extensions: vec![],
-//                     }
-//                     .into(),
-//                     initializer: None,
-//                 }
-//                 .into(),
-//             ],
-//         }
-//         .into())
-//     );
+    assert_eq!(
+        declaration("int typedef * foo, baz[static 10][const *];", env),
+        Ok(Declaration {
+            specifiers: vec![Int.into(), Typedef.into()],
+            declarators: vec![
+                InitDeclarator {
+                    declarator: Declarator {
+                        kind: ident("foo"),
+                        derived: vec![Pointer(vec![]).into()],
+                        extensions: vec![],
+                    }
+                    .into(),
+                    initializer: None,
+                }
+                .into(),
+                InitDeclarator {
+                    declarator: Declarator {
+                        kind: ident("baz"),
+                        derived: vec![
+                            ArrayDeclarator {
+                                qualifiers: vec![],
+                                size: StaticExpression(int::dec("10")),
+                            }
+                            .into(),
+                            ArrayDeclarator {
+                                qualifiers: vec![Const.into()],
+                                size: VariableUnknown,
+                            }
+                            .into(),
+                        ],
+                        extensions: vec![],
+                    }
+                    .into(),
+                    initializer: None,
+                }
+                .into(),
+            ],
+        }
+        .into())
+    );
 
-//     assert!(env.is_typename("foo"));
-//     assert!(env.is_typename("baz"));
-// }
+    assert!(env.get().is_typename("foo"));
+    assert!(env.get().is_typename("baz"));
+}
 
-// #[test]
-// fn test_declaration2() {
-//     use crate::ast::DerivedDeclarator::Pointer;
-//     use crate::ast::Enumerator;
-//     use crate::ast::StorageClassSpecifier::Typedef;
-//     use crate::ast::TypeQualifier::Const;
-//     use crate::parser::declaration;
+#[test]
+fn test_declaration2() {
+    use crate::ast::DerivedDeclarator::Pointer;
+    use crate::ast::Enumerator;
+    use crate::ast::StorageClassSpecifier::Typedef;
+    use crate::ast::TypeQualifier::Const;
+    use crate::parser::declaration;
 
-//     let env = &mut Env::new();
+    let mut env = Env::new();
+    let env = &env.for_parser();
 
-//     assert_eq!(
-//         declaration("typedef enum { FOO, BAR = 1 } * const foobar;", env),
-//         Ok(Declaration {
-//             specifiers: vec![
-//                 Typedef.into(),
-//                 EnumType {
-//                     identifier: None,
-//                     enumerators: vec![
-//                         Enumerator {
-//                             identifier: ident("FOO"),
-//                             expression: None,
-//                         }
-//                         .into(),
-//                         Enumerator {
-//                             identifier: ident("BAR"),
-//                             expression: Some(int::dec("1")),
-//                         }
-//                         .into(),
-//                     ],
-//                 }
-//                 .into(),
-//             ],
-//             declarators: vec![InitDeclarator {
-//                 declarator: Declarator {
-//                     kind: ident("foobar"),
-//                     derived: vec![Pointer(vec![Const.into()]).into()],
-//                     extensions: vec![],
-//                 }
-//                 .into(),
-//                 initializer: None,
-//             }
-//             .into()],
-//         }
-//         .into())
-//     );
+    assert_eq!(
+        declaration("typedef enum { FOO, BAR = 1 } * const foobar;", env),
+        Ok(Declaration {
+            specifiers: vec![
+                Typedef.into(),
+                EnumType {
+                    identifier: None,
+                    enumerators: vec![
+                        Enumerator {
+                            identifier: ident("FOO"),
+                            expression: None,
+                        }
+                        .into(),
+                        Enumerator {
+                            identifier: ident("BAR"),
+                            expression: Some(int::dec("1")),
+                        }
+                        .into(),
+                    ],
+                }
+                .into(),
+            ],
+            declarators: vec![InitDeclarator {
+                declarator: Declarator {
+                    kind: ident("foobar"),
+                    derived: vec![Pointer(vec![Const.into()]).into()],
+                    extensions: vec![],
+                }
+                .into(),
+                initializer: None,
+            }
+            .into()],
+        }
+        .into())
+    );
 
-//     assert!(env.is_typename("foobar"));
-// }
+    assert!(env.get().is_typename("foobar"));
+}
 
-// #[test]
-// fn test_declaration3() {
-//     use crate::ast::TypeSpecifier::{Float, Int};
-//     use crate::parser::declaration;
+#[test]
+fn test_declaration3() {
+    use crate::ast::TypeSpecifier::{Float, Int};
+    use crate::parser::declaration;
 
-//     let env = &mut Env::new();
+    let mut env = Env::new();
+    let env = &env.for_parser();
 
-//     assert_eq!(
-//         declaration("struct { int a, b; float c; } S;", env).unwrap(),
-//         Declaration {
-//             specifiers: vec![StructType {
-//                 kind: StructKind::Struct.into(),
-//                 identifier: None,
-//                 declarations: Some(vec![
-//                     StructField {
-//                         specifiers: vec![Int.into()],
-//                         declarators: vec![
-//                             StructDeclarator {
-//                                 declarator: Some(
-//                                     Declarator {
-//                                         kind: ident("a"),
-//                                         derived: vec![],
-//                                         extensions: vec![],
-//                                     }
-//                                     .into(),
-//                                 ),
-//                                 bit_width: None,
-//                             }
-//                             .into(),
-//                             StructDeclarator {
-//                                 declarator: Some(
-//                                     Declarator {
-//                                         kind: ident("b"),
-//                                         derived: vec![],
-//                                         extensions: vec![],
-//                                     }
-//                                     .into(),
-//                                 ),
-//                                 bit_width: None,
-//                             }
-//                             .into(),
-//                         ],
-//                         extensions: vec![],
-//                     }
-//                     .into(),
-//                     StructField {
-//                         specifiers: vec![Float.into()],
-//                         declarators: vec![StructDeclarator {
-//                             declarator: Some(
-//                                 Declarator {
-//                                     kind: ident("c"),
-//                                     derived: vec![],
-//                                     extensions: vec![],
-//                                 }
-//                                 .into(),
-//                             ),
-//                             bit_width: None,
-//                         }
-//                         .into()],
-//                         extensions: vec![],
-//                     }
-//                     .into(),
-//                 ]),
-//                 extensions: vec![],
-//             }
-//             .into()],
-//             declarators: vec![InitDeclarator {
-//                 declarator: Declarator {
-//                     kind: ident("S"),
-//                     derived: vec![],
-//                     extensions: vec![],
-//                 }
-//                 .into(),
-//                 initializer: None,
-//             }
-//             .into()],
-//         }
-//         .into()
-//     );
-// }
+    assert_eq!(
+        declaration("struct { int a, b; float c; } S;", env).unwrap(),
+        Declaration {
+            specifiers: vec![StructType {
+                kind: StructKind::Struct.into(),
+                identifier: None,
+                declarations: Some(vec![
+                    StructField {
+                        specifiers: vec![Int.into()],
+                        declarators: vec![
+                            StructDeclarator {
+                                declarator: Some(
+                                    Declarator {
+                                        kind: ident("a"),
+                                        derived: vec![],
+                                        extensions: vec![],
+                                    }
+                                    .into(),
+                                ),
+                                bit_width: None,
+                            }
+                            .into(),
+                            StructDeclarator {
+                                declarator: Some(
+                                    Declarator {
+                                        kind: ident("b"),
+                                        derived: vec![],
+                                        extensions: vec![],
+                                    }
+                                    .into(),
+                                ),
+                                bit_width: None,
+                            }
+                            .into(),
+                        ],
+                        extensions: vec![],
+                    }
+                    .into(),
+                    StructField {
+                        specifiers: vec![Float.into()],
+                        declarators: vec![StructDeclarator {
+                            declarator: Some(
+                                Declarator {
+                                    kind: ident("c"),
+                                    derived: vec![],
+                                    extensions: vec![],
+                                }
+                                .into(),
+                            ),
+                            bit_width: None,
+                        }
+                        .into()],
+                        extensions: vec![],
+                    }
+                    .into(),
+                ]),
+                extensions: vec![],
+            }
+            .into()],
+            declarators: vec![InitDeclarator {
+                declarator: Declarator {
+                    kind: ident("S"),
+                    derived: vec![],
+                    extensions: vec![],
+                }
+                .into(),
+                initializer: None,
+            }
+            .into()],
+        }
+        .into()
+    );
+}
 
-// #[test]
-// fn test_declaration4() {
-//     use crate::ast::TypeQualifier::Restrict;
-//     use crate::ast::TypeSpecifier::Int;
-//     use crate::parser::declaration;
+#[test]
+fn test_declaration4() {
+    use crate::ast::TypeQualifier::Restrict;
+    use crate::ast::TypeSpecifier::Int;
+    use crate::parser::declaration;
 
-//     assert_eq!(
-//         declaration("int __restrict__;", &mut Env::with_core()),
-//         Ok(Declaration {
-//             specifiers: vec![Int.into()],
-//             declarators: vec![InitDeclarator {
-//                 declarator: Declarator {
-//                     kind: ident("__restrict__"),
-//                     derived: vec![],
-//                     extensions: vec![],
-//                 }
-//                 .into(),
-//                 initializer: None,
-//             }
-//             .into()],
-//         }
-//         .into())
-//     );
+    let mut core_env = Env::with_core();
+    let mut gnu_env = Env::with_gnu();
 
-//     assert_eq!(
-//         declaration("int __restrict__;", &mut Env::with_gnu()),
-//         Ok(Declaration {
-//             specifiers: vec![Int.into(), Restrict.into()],
-//             declarators: vec![],
-//         }
-//         .into())
-//     );
-// }
+    assert_eq!(
+        declaration("int __restrict__;", &core_env.for_parser()),
+        Ok(Declaration {
+            specifiers: vec![Int.into()],
+            declarators: vec![InitDeclarator {
+                declarator: Declarator {
+                    kind: ident("__restrict__"),
+                    derived: vec![],
+                    extensions: vec![],
+                }
+                .into(),
+                initializer: None,
+            }
+            .into()],
+        }
+        .into())
+    );
 
-// #[test]
-// fn test_declaration5() {
-//     use self::int::dec;
-//     use crate::ast::ArraySize::VariableExpression;
-//     use crate::ast::DeclaratorKind::Abstract;
-//     use crate::ast::DerivedDeclarator::Pointer;
-//     use crate::ast::TypeQualifier::Const;
-//     use crate::ast::TypeSpecifier::{Char, Int, TypedefName};
-//     use crate::parser::declaration;
+    assert_eq!(
+        declaration("int __restrict__;", &gnu_env.for_parser()),
+        Ok(Declaration {
+            specifiers: vec![Int.into(), Restrict.into()],
+            declarators: vec![],
+        }
+        .into())
+    );
+}
 
-//     let env = &mut Env::new();
+#[test]
+fn test_declaration5() {
+    use self::int::dec;
+    use crate::ast::ArraySize::VariableExpression;
+    use crate::ast::DeclaratorKind::Abstract;
+    use crate::ast::DerivedDeclarator::Pointer;
+    use crate::ast::TypeQualifier::Const;
+    use crate::ast::TypeSpecifier::{Char, Int, TypedefName};
+    use crate::parser::declaration;
 
-//     env.add_typename("FILE");
-//     env.add_typename("size_t");
+    let mut env = Env::new();
+    env.add_typename("FILE");
+    env.add_typename("size_t");
+    let env = &env.for_parser();
 
-//     assert_eq!(
-//         declaration(
-//             "char *fparseln(FILE *, size_t *, size_t *, const char[3], int);",
-//             env
-//         ),
-//         Ok(Declaration {
-//             specifiers: vec![Char.into()],
-//             declarators: vec![InitDeclarator {
-//                 declarator: Declarator {
-//                     kind: ident("fparseln"),
-//                     derived: vec![
-//                         Pointer(vec![]).into(),
-//                         FunctionDeclarator {
-//                             parameters: vec![
-//                                 ParameterDeclaration {
-//                                     specifiers: vec![TypedefName(ident("FILE")).into()],
-//                                     declarator: Some(
-//                                         Declarator {
-//                                             kind: Abstract.into(),
-//                                             derived: vec![Pointer(vec![]).into()],
-//                                             extensions: vec![],
-//                                         }
-//                                         .into(),
-//                                     ),
-//                                     extensions: vec![],
-//                                 }
-//                                 .into(),
-//                                 ParameterDeclaration {
-//                                     specifiers: vec![TypedefName(ident("size_t")).into()],
-//                                     declarator: Some(
-//                                         Declarator {
-//                                             kind: Abstract.into(),
-//                                             derived: vec![Pointer(vec![]).into()],
-//                                             extensions: vec![],
-//                                         }
-//                                         .into(),
-//                                     ),
-//                                     extensions: vec![],
-//                                 }
-//                                 .into(),
-//                                 ParameterDeclaration {
-//                                     specifiers: vec![TypedefName(ident("size_t")).into()],
-//                                     declarator: Some(
-//                                         Declarator {
-//                                             kind: Abstract.into(),
-//                                             derived: vec![Pointer(vec![]).into()],
-//                                             extensions: vec![],
-//                                         }
-//                                         .into(),
-//                                     ),
-//                                     extensions: vec![],
-//                                 }
-//                                 .into(),
-//                                 ParameterDeclaration {
-//                                     specifiers: vec![Const.into(), Char.into()],
-//                                     declarator: Some(
-//                                         Declarator {
-//                                             kind: Abstract.into(),
-//                                             derived: vec![ArrayDeclarator {
-//                                                 qualifiers: vec![],
-//                                                 size: VariableExpression(dec("3")),
-//                                             }
-//                                             .into()],
-//                                             extensions: vec![],
-//                                         }
-//                                         .into(),
-//                                     ),
-//                                     extensions: vec![],
-//                                 }
-//                                 .into(),
-//                                 ParameterDeclaration {
-//                                     specifiers: vec![Int.into()],
-//                                     declarator: None,
-//                                     extensions: vec![],
-//                                 }
-//                                 .into(),
-//                             ],
-//                             ellipsis: Ellipsis::None,
-//                         }
-//                         .into(),
-//                     ],
-//                     extensions: vec![],
-//                 }
-//                 .into(),
-//                 initializer: None,
-//             }
-//             .into()],
-//         }
-//         .into())
-//     );
-// }
+    assert_eq!(
+        declaration(
+            "char *fparseln(FILE *, size_t *, size_t *, const char[3], int);",
+            env
+        ),
+        Ok(Declaration {
+            specifiers: vec![Char.into()],
+            declarators: vec![InitDeclarator {
+                declarator: Declarator {
+                    kind: ident("fparseln"),
+                    derived: vec![
+                        Pointer(vec![]).into(),
+                        FunctionDeclarator {
+                            parameters: vec![
+                                ParameterDeclaration {
+                                    specifiers: vec![TypedefName(ident("FILE")).into()],
+                                    declarator: Some(
+                                        Declarator {
+                                            kind: Abstract.into(),
+                                            derived: vec![Pointer(vec![]).into()],
+                                            extensions: vec![],
+                                        }
+                                        .into(),
+                                    ),
+                                    extensions: vec![],
+                                }
+                                .into(),
+                                ParameterDeclaration {
+                                    specifiers: vec![TypedefName(ident("size_t")).into()],
+                                    declarator: Some(
+                                        Declarator {
+                                            kind: Abstract.into(),
+                                            derived: vec![Pointer(vec![]).into()],
+                                            extensions: vec![],
+                                        }
+                                        .into(),
+                                    ),
+                                    extensions: vec![],
+                                }
+                                .into(),
+                                ParameterDeclaration {
+                                    specifiers: vec![TypedefName(ident("size_t")).into()],
+                                    declarator: Some(
+                                        Declarator {
+                                            kind: Abstract.into(),
+                                            derived: vec![Pointer(vec![]).into()],
+                                            extensions: vec![],
+                                        }
+                                        .into(),
+                                    ),
+                                    extensions: vec![],
+                                }
+                                .into(),
+                                ParameterDeclaration {
+                                    specifiers: vec![Const.into(), Char.into()],
+                                    declarator: Some(
+                                        Declarator {
+                                            kind: Abstract.into(),
+                                            derived: vec![ArrayDeclarator {
+                                                qualifiers: vec![],
+                                                size: VariableExpression(dec("3")),
+                                            }
+                                            .into()],
+                                            extensions: vec![],
+                                        }
+                                        .into(),
+                                    ),
+                                    extensions: vec![],
+                                }
+                                .into(),
+                                ParameterDeclaration {
+                                    specifiers: vec![Int.into()],
+                                    declarator: None,
+                                    extensions: vec![],
+                                }
+                                .into(),
+                            ],
+                            ellipsis: Ellipsis::None,
+                        }
+                        .into(),
+                    ],
+                    extensions: vec![],
+                }
+                .into(),
+                initializer: None,
+            }
+            .into()],
+        }
+        .into())
+    );
+}
 
-// #[test]
-// fn test_attribute() {
-//     use crate::ast::DerivedDeclarator::Pointer;
-//     use crate::ast::Extension::AsmLabel;
-//     use crate::ast::StorageClassSpecifier::Extern;
-//     use crate::ast::TypeSpecifier::{Char, Int, TypedefName};
-//     use crate::parser::declaration;
+#[test]
+fn test_attribute() {
+    use crate::ast::DerivedDeclarator::Pointer;
+    use crate::ast::Extension::AsmLabel;
+    use crate::ast::StorageClassSpecifier::Extern;
+    use crate::ast::TypeSpecifier::{Char, Int, TypedefName};
+    use crate::parser::declaration;
 
-//     let env = &mut Env::new();
-//     env.add_typename("size_t");
+    let mut env = Env::new();
+    env.add_typename("size_t");
+    let env = &env.for_parser();
 
-//     assert_eq!(
-//         declaration(
-//             concat!(
-//                 "extern int strerror_r (int __errnum, char *__buf, size_t __buflen)\n",
-//                 "__asm__  (\"\" \"__xpg_strerror_r\") __attribute__ ((__nothrow__ , __leaf__))\n",
-//                 "__attribute__ ((__nonnull__ (2)));",
-//             ),
-//             env,
-//         ),
-//         Ok(Declaration {
-//             specifiers: vec![Extern.into(), Int.into()],
-//             declarators: vec![InitDeclarator {
-//                 declarator: Declarator {
-//                     kind: ident("strerror_r"),
-//                     derived: vec![FunctionDeclarator {
-//                         parameters: vec![
-//                             ParameterDeclaration {
-//                                 specifiers: vec![Int.into()],
-//                                 declarator: Some(
-//                                     Declarator {
-//                                         kind: ident("__errnum"),
-//                                         derived: vec![],
-//                                         extensions: vec![],
-//                                     }
-//                                     .into(),
-//                                 ),
-//                                 extensions: vec![],
-//                             }
-//                             .into(),
-//                             ParameterDeclaration {
-//                                 specifiers: vec![Char.into()],
-//                                 declarator: Some(
-//                                     Declarator {
-//                                         kind: ident("__buf"),
-//                                         derived: vec![Pointer(vec![]).into()],
-//                                         extensions: vec![],
-//                                     }
-//                                     .into(),
-//                                 ),
-//                                 extensions: vec![],
-//                             }
-//                             .into(),
-//                             ParameterDeclaration {
-//                                 specifiers: vec![TypedefName(ident("size_t")).into()],
-//                                 declarator: Some(
-//                                     Declarator {
-//                                         kind: ident("__buflen"),
-//                                         derived: vec![],
-//                                         extensions: vec![],
-//                                     }
-//                                     .into(),
-//                                 ),
-//                                 extensions: vec![],
-//                             }
-//                             .into(),
-//                         ],
-//                         ellipsis: Ellipsis::None,
-//                     }
-//                     .into()],
-//                     extensions: vec![
-//                         AsmLabel(cstr(&[r#""""#, r#""__xpg_strerror_r""#])).into(),
-//                         Attribute {
-//                             name: "__nothrow__".into(),
-//                             arguments: vec![],
-//                         }
-//                         .into(),
-//                         Attribute {
-//                             name: "__leaf__".into(),
-//                             arguments: vec![],
-//                         }
-//                         .into(),
-//                         Attribute {
-//                             name: "__nonnull__".into(),
-//                             arguments: vec![int::dec("2")],
-//                         }
-//                         .into(),
-//                     ],
-//                 }
-//                 .into(),
-//                 initializer: None,
-//             }
-//             .into()],
-//         }
-//         .into())
-//     );
-// }
+    assert_eq!(
+        declaration(
+            concat!(
+                "extern int strerror_r (int __errnum, char *__buf, size_t __buflen)\n",
+                "__asm__  (\"\" \"__xpg_strerror_r\") __attribute__ ((__nothrow__ , __leaf__))\n",
+                "__attribute__ ((__nonnull__ (2)));",
+            ),
+            env,
+        ),
+        Ok(Declaration {
+            specifiers: vec![Extern.into(), Int.into()],
+            declarators: vec![InitDeclarator {
+                declarator: Declarator {
+                    kind: ident("strerror_r"),
+                    derived: vec![FunctionDeclarator {
+                        parameters: vec![
+                            ParameterDeclaration {
+                                specifiers: vec![Int.into()],
+                                declarator: Some(
+                                    Declarator {
+                                        kind: ident("__errnum"),
+                                        derived: vec![],
+                                        extensions: vec![],
+                                    }
+                                    .into(),
+                                ),
+                                extensions: vec![],
+                            }
+                            .into(),
+                            ParameterDeclaration {
+                                specifiers: vec![Char.into()],
+                                declarator: Some(
+                                    Declarator {
+                                        kind: ident("__buf"),
+                                        derived: vec![Pointer(vec![]).into()],
+                                        extensions: vec![],
+                                    }
+                                    .into(),
+                                ),
+                                extensions: vec![],
+                            }
+                            .into(),
+                            ParameterDeclaration {
+                                specifiers: vec![TypedefName(ident("size_t")).into()],
+                                declarator: Some(
+                                    Declarator {
+                                        kind: ident("__buflen"),
+                                        derived: vec![],
+                                        extensions: vec![],
+                                    }
+                                    .into(),
+                                ),
+                                extensions: vec![],
+                            }
+                            .into(),
+                        ],
+                        ellipsis: Ellipsis::None,
+                    }
+                    .into()],
+                    extensions: vec![
+                        AsmLabel(cstr(&[r#""""#, r#""__xpg_strerror_r""#])).into(),
+                        Attribute {
+                            name: "__nothrow__".into(),
+                            arguments: vec![],
+                        }
+                        .into(),
+                        Attribute {
+                            name: "__leaf__".into(),
+                            arguments: vec![],
+                        }
+                        .into(),
+                        Attribute {
+                            name: "__nonnull__".into(),
+                            arguments: vec![int::dec("2")],
+                        }
+                        .into(),
+                    ],
+                }
+                .into(),
+                initializer: None,
+            }
+            .into()],
+        }
+        .into())
+    );
+}
 
-// #[test]
-// fn test_attribute2() {
-//     use self::int::dec;
-//     use crate::ast::DeclarationSpecifier::Extension;
-//     use crate::ast::DeclaratorKind::Abstract;
-//     use crate::ast::DerivedDeclarator::Pointer;
-//     use crate::ast::TypeQualifier::Const;
-//     use crate::ast::TypeSpecifier::{Char, Void};
-//     use crate::parser::declaration;
+#[test]
+fn test_attribute2() {
+    use self::int::dec;
+    use crate::ast::DeclarationSpecifier::Extension;
+    use crate::ast::DeclaratorKind::Abstract;
+    use crate::ast::DerivedDeclarator::Pointer;
+    use crate::ast::TypeQualifier::Const;
+    use crate::ast::TypeSpecifier::{Char, Void};
+    use crate::parser::declaration;
 
-//     assert_eq!(
-//         declaration(
-//             r#"__attribute__((noreturn)) void d0 (void),
-//                 __attribute__((format(printf, 1, 2))) d1 (const char *, ...),
-//                  d2 (void);"#,
-//             &mut Env::new()
-//         ),
-//         Ok(Declaration {
-//             specifiers: vec![
-//                 Extension(vec![Attribute {
-//                     name: "noreturn".into(),
-//                     arguments: vec![],
-//                 }
-//                 .into()])
-//                 .into(),
-//                 Void.into(),
-//             ],
-//             declarators: vec![
-//                 InitDeclarator {
-//                     declarator: Declarator {
-//                         kind: ident("d0"),
-//                         derived: vec![FunctionDeclarator {
-//                             parameters: vec![ParameterDeclaration {
-//                                 specifiers: vec![Void.into()],
-//                                 declarator: None,
-//                                 extensions: vec![],
-//                             }
-//                             .into()],
-//                             ellipsis: Ellipsis::None,
-//                         }
-//                         .into()],
-//                         extensions: vec![],
-//                     }
-//                     .into(),
-//                     initializer: None,
-//                 }
-//                 .into(),
-//                 InitDeclarator {
-//                     declarator: Declarator {
-//                         kind: ident("d1"),
-//                         derived: vec![FunctionDeclarator {
-//                             parameters: vec![ParameterDeclaration {
-//                                 specifiers: vec![Const.into(), Char.into()],
-//                                 declarator: Some(
-//                                     Declarator {
-//                                         kind: Abstract.into(),
-//                                         derived: vec![Pointer(vec![]).into()],
-//                                         extensions: vec![],
-//                                     }
-//                                     .into(),
-//                                 ),
-//                                 extensions: vec![],
-//                             }
-//                             .into()],
-//                             ellipsis: Ellipsis::Some,
-//                         }
-//                         .into()],
-//                         extensions: vec![Attribute {
-//                             name: "format".into(),
-//                             arguments: vec![ident("printf"), dec("1"), dec("2")],
-//                         }
-//                         .into()],
-//                     }
-//                     .into(),
-//                     initializer: None,
-//                 }
-//                 .into(),
-//                 InitDeclarator {
-//                     declarator: Declarator {
-//                         kind: ident("d2"),
-//                         derived: vec![FunctionDeclarator {
-//                             parameters: vec![ParameterDeclaration {
-//                                 specifiers: vec![Void.into()],
-//                                 declarator: None,
-//                                 extensions: vec![],
-//                             }
-//                             .into()],
-//                             ellipsis: Ellipsis::None,
-//                         }
-//                         .into()],
-//                         extensions: vec![],
-//                     }
-//                     .into(),
-//                     initializer: None,
-//                 }
-//                 .into(),
-//             ],
-//         }
-//         .into())
-//     );
-// }
+    let mut env = Env::new();
+    let env = &env.for_parser();
 
-// #[test]
-// fn test_attribute3() {
-//     use crate::ast::DeclarationSpecifier::Extension;
-//     use crate::ast::DerivedDeclarator::Pointer;
-//     use crate::ast::FunctionSpecifier::Inline;
-//     use crate::ast::Statement::Compound;
-//     use crate::ast::StorageClassSpecifier::Extern;
-//     use crate::ast::TypeQualifier::{Const, Restrict};
-//     use crate::ast::TypeSpecifier::Char;
-//     use crate::parser::translation_unit;
+    assert_eq!(
+        declaration(
+            r#"__attribute__((noreturn)) void d0 (void),
+                __attribute__((format(printf, 1, 2))) d1 (const char *, ...),
+                 d2 (void);"#,
+            env
+        ),
+        Ok(Declaration {
+            specifiers: vec![
+                Extension(vec![Attribute {
+                    name: "noreturn".into(),
+                    arguments: vec![],
+                }
+                .into()])
+                .into(),
+                Void.into(),
+            ],
+            declarators: vec![
+                InitDeclarator {
+                    declarator: Declarator {
+                        kind: ident("d0"),
+                        derived: vec![FunctionDeclarator {
+                            parameters: vec![ParameterDeclaration {
+                                specifiers: vec![Void.into()],
+                                declarator: None,
+                                extensions: vec![],
+                            }
+                            .into()],
+                            ellipsis: Ellipsis::None,
+                        }
+                        .into()],
+                        extensions: vec![],
+                    }
+                    .into(),
+                    initializer: None,
+                }
+                .into(),
+                InitDeclarator {
+                    declarator: Declarator {
+                        kind: ident("d1"),
+                        derived: vec![FunctionDeclarator {
+                            parameters: vec![ParameterDeclaration {
+                                specifiers: vec![Const.into(), Char.into()],
+                                declarator: Some(
+                                    Declarator {
+                                        kind: Abstract.into(),
+                                        derived: vec![Pointer(vec![]).into()],
+                                        extensions: vec![],
+                                    }
+                                    .into(),
+                                ),
+                                extensions: vec![],
+                            }
+                            .into()],
+                            ellipsis: Ellipsis::Some,
+                        }
+                        .into()],
+                        extensions: vec![Attribute {
+                            name: "format".into(),
+                            arguments: vec![ident("printf"), dec("1"), dec("2")],
+                        }
+                        .into()],
+                    }
+                    .into(),
+                    initializer: None,
+                }
+                .into(),
+                InitDeclarator {
+                    declarator: Declarator {
+                        kind: ident("d2"),
+                        derived: vec![FunctionDeclarator {
+                            parameters: vec![ParameterDeclaration {
+                                specifiers: vec![Void.into()],
+                                declarator: None,
+                                extensions: vec![],
+                            }
+                            .into()],
+                            ellipsis: Ellipsis::None,
+                        }
+                        .into()],
+                        extensions: vec![],
+                    }
+                    .into(),
+                    initializer: None,
+                }
+                .into(),
+            ],
+        }
+        .into())
+    );
+}
 
-//     assert_eq!(
-//         translation_unit(
-//             concat!(
-//                 "extern __inline __attribute__ ((__always_inline__)) __attribute__ \n",
-//                 "((__artificial__)) __attribute__ ((__warn_unused_result__)) char *\n",
-//                 "__attribute__ ((__nothrow__ , __leaf__)) realpath (const char *__restrict\n",
-//                 "__name, char *__restrict __resolved) {}"
-//             ),
-//             &mut Env::new()
-//         ),
-//         Ok(TranslationUnit(vec![
-//             ExternalDeclaration::FunctionDefinition(
-//                 FunctionDefinition {
-//                     specifiers: vec![
-//                         Extern.into(),
-//                         Inline.into(),
-//                         Extension(vec![Attribute {
-//                             name: "__always_inline__".into(),
-//                             arguments: vec![],
-//                         }
-//                         .into()])
-//                         .into(),
-//                         Extension(vec![Attribute {
-//                             name: "__artificial__".into(),
-//                             arguments: vec![],
-//                         }
-//                         .into()])
-//                         .into(),
-//                         Extension(vec![Attribute {
-//                             name: "__warn_unused_result__".into(),
-//                             arguments: vec![],
-//                         }
-//                         .into()])
-//                         .into(),
-//                         Char.into(),
-//                     ],
-//                     declarator: Declarator {
-//                         kind: ident("realpath"),
-//                         derived: vec![
-//                             Pointer(vec![PointerQualifier::Extension(vec![
-//                                 Attribute {
-//                                     name: "__nothrow__".into(),
-//                                     arguments: vec![],
-//                                 }
-//                                 .into(),
-//                                 Attribute {
-//                                     name: "__leaf__".into(),
-//                                     arguments: vec![],
-//                                 }
-//                                 .into(),
-//                             ])
-//                             .into()])
-//                             .into(),
-//                             FunctionDeclarator {
-//                                 parameters: vec![
-//                                     ParameterDeclaration {
-//                                         specifiers: vec![Const.into(), Char.into()],
-//                                         declarator:
-//                                             Some(
-//                                                 Declarator {
-//                                                     kind: ident("__name"),
-//                                                     derived: vec![
-//                                                         Pointer(vec![Restrict.into()]).into()
-//                                                     ],
-//                                                     extensions: vec![],
-//                                                 }
-//                                                 .into(),
-//                                             ),
-//                                         extensions: vec![],
-//                                     }
-//                                     .into(),
-//                                     ParameterDeclaration {
-//                                         specifiers: vec![Char.into()],
-//                                         declarator:
-//                                             Some(
-//                                                 Declarator {
-//                                                     kind: ident("__resolved"),
-//                                                     derived: vec![
-//                                                         Pointer(vec![Restrict.into()]).into()
-//                                                     ],
-//                                                     extensions: vec![],
-//                                                 }
-//                                                 .into(),
-//                                             ),
-//                                         extensions: vec![],
-//                                     }
-//                                     .into(),
-//                                 ],
-//                                 ellipsis: Ellipsis::None,
-//                             }
-//                             .into(),
-//                         ],
-//                         extensions: vec![],
-//                     }
-//                     .into(),
-//                     declarations: vec![],
-//                     statement: Compound(vec![]).into(),
-//                 }
-//                 .into(),
-//             )
-//             .into()
-//         ]))
-//         .into()
-//     );
-// }
+#[test]
+fn test_attribute3() {
+    use crate::ast::DeclarationSpecifier::Extension;
+    use crate::ast::DerivedDeclarator::Pointer;
+    use crate::ast::FunctionSpecifier::Inline;
+    use crate::ast::Statement::Compound;
+    use crate::ast::StorageClassSpecifier::Extern;
+    use crate::ast::TypeQualifier::{Const, Restrict};
+    use crate::ast::TypeSpecifier::Char;
+    use crate::parser::translation_unit;
 
-// #[test]
-// fn test_alignof() {
-//     use crate::ast::Expression::AlignOf;
-//     use crate::ast::TypeSpecifier::Long;
-//     use crate::parser::expression;
+    let mut env = Env::new();
+    let env = &env.for_parser();
 
-//     assert_eq!(
-//         expression("_Alignof(long long)", &mut Env::new()),
-//         Ok(AlignOf(
-//             TypeName {
-//                 specifiers: vec![Long.into(), Long.into()],
-//                 declarator: None,
-//             }
-//             .into(),
-//         )
-//         .into())
-//     );
+    assert_eq!(
+        translation_unit(
+            concat!(
+                "extern __inline __attribute__ ((__always_inline__)) __attribute__ \n",
+                "((__artificial__)) __attribute__ ((__warn_unused_result__)) char *\n",
+                "__attribute__ ((__nothrow__ , __leaf__)) realpath (const char *__restrict\n",
+                "__name, char *__restrict __resolved) {}"
+            ),
+            env
+        ),
+        Ok(TranslationUnit(vec![
+            ExternalDeclaration::FunctionDefinition(
+                FunctionDefinition {
+                    specifiers: vec![
+                        Extern.into(),
+                        Inline.into(),
+                        Extension(vec![Attribute {
+                            name: "__always_inline__".into(),
+                            arguments: vec![],
+                        }
+                        .into()])
+                        .into(),
+                        Extension(vec![Attribute {
+                            name: "__artificial__".into(),
+                            arguments: vec![],
+                        }
+                        .into()])
+                        .into(),
+                        Extension(vec![Attribute {
+                            name: "__warn_unused_result__".into(),
+                            arguments: vec![],
+                        }
+                        .into()])
+                        .into(),
+                        Char.into(),
+                    ],
+                    declarator: Declarator {
+                        kind: ident("realpath"),
+                        derived: vec![
+                            Pointer(vec![PointerQualifier::Extension(vec![
+                                Attribute {
+                                    name: "__nothrow__".into(),
+                                    arguments: vec![],
+                                }
+                                .into(),
+                                Attribute {
+                                    name: "__leaf__".into(),
+                                    arguments: vec![],
+                                }
+                                .into(),
+                            ])
+                            .into()])
+                            .into(),
+                            FunctionDeclarator {
+                                parameters: vec![
+                                    ParameterDeclaration {
+                                        specifiers: vec![Const.into(), Char.into()],
+                                        declarator:
+                                            Some(
+                                                Declarator {
+                                                    kind: ident("__name"),
+                                                    derived: vec![
+                                                        Pointer(vec![Restrict.into()]).into()
+                                                    ],
+                                                    extensions: vec![],
+                                                }
+                                                .into(),
+                                            ),
+                                        extensions: vec![],
+                                    }
+                                    .into(),
+                                    ParameterDeclaration {
+                                        specifiers: vec![Char.into()],
+                                        declarator:
+                                            Some(
+                                                Declarator {
+                                                    kind: ident("__resolved"),
+                                                    derived: vec![
+                                                        Pointer(vec![Restrict.into()]).into()
+                                                    ],
+                                                    extensions: vec![],
+                                                }
+                                                .into(),
+                                            ),
+                                        extensions: vec![],
+                                    }
+                                    .into(),
+                                ],
+                                ellipsis: Ellipsis::None,
+                            }
+                            .into(),
+                        ],
+                        extensions: vec![],
+                    }
+                    .into(),
+                    declarations: vec![],
+                    statement: Compound(vec![]).into(),
+                }
+                .into(),
+            )
+            .into()
+        ]))
+        .into()
+    );
+}
 
-//     assert_eq!(
-//         expression("__alignof(long long)", &mut Env::new()),
-//         Ok(AlignOf(
-//             TypeName {
-//                 specifiers: vec![Long.into(), Long.into()],
-//                 declarator: None,
-//             }
-//             .into(),
-//         )
-//         .into())
-//     );
+#[test]
+fn test_alignof() {
+    use crate::ast::Expression::AlignOf;
+    use crate::ast::TypeSpecifier::Long;
+    use crate::parser::expression;
 
-//     assert_eq!(
-//         expression("__alignof__(long long)", &mut Env::new()),
-//         Ok(AlignOf(
-//             TypeName {
-//                 specifiers: vec![Long.into(), Long.into()],
-//                 declarator: None,
-//             }
-//             .into(),
-//         )
-//         .into())
-//     );
-// }
+    let mut env = Env::new();
+    let env = &env.for_parser();
 
-// #[test]
-// fn test_stmt_expr() {
-//     use crate::ast::Statement::{Compound, Expression};
-//     use crate::ast::TypeSpecifier::Int;
-//     use crate::parser::expression;
+    assert_eq!(
+        expression("_Alignof(long long)", env),
+        Ok(AlignOf(
+            TypeName {
+                specifiers: vec![Long.into(), Long.into()],
+                declarator: None,
+            }
+            .into(),
+        )
+        .into())
+    );
 
-//     assert_eq!(
-//         expression("({ int p = 0; p; })", &mut Env::new()),
-//         Ok(Compound(vec![
-//             Declaration {
-//                 specifiers: vec![Int.into()],
-//                 declarators: vec![InitDeclarator {
-//                     declarator: Declarator {
-//                         kind: ident("p"),
-//                         derived: vec![],
-//                         extensions: vec![],
-//                     }
-//                     .into(),
-//                     initializer: Some(int::zero()),
-//                 }
-//                 .into()],
-//             }
-//             .into(),
-//             Expression(Some(ident("p"))).into(),
-//         ])
-//         .into())
-//     );
-// }
+    assert_eq!(
+        expression("__alignof(long long)", env),
+        Ok(AlignOf(
+            TypeName {
+                specifiers: vec![Long.into(), Long.into()],
+                declarator: None,
+            }
+            .into(),
+        )
+        .into())
+    );
 
-// #[test]
-// fn test_expr_cast() {
-//     use crate::ast::TypeName;
-//     use crate::ast::TypeSpecifier::TypedefName;
-//     use crate::parser::expression;
+    assert_eq!(
+        expression("__alignof__(long long)", env),
+        Ok(AlignOf(
+            TypeName {
+                specifiers: vec![Long.into(), Long.into()],
+                declarator: None,
+            }
+            .into(),
+        )
+        .into())
+    );
+}
 
-//     let env = &mut Env::new();
-//     env.add_typename("U64");
+#[test]
+fn test_stmt_expr() {
+    use crate::ast::Statement::{Compound, Expression};
+    use crate::ast::TypeSpecifier::Int;
+    use crate::parser::expression;
 
-//     assert_eq!(
-//         expression("(U64)foo", env),
-//         Ok(CastExpression {
-//             type_name: TypeName {
-//                 specifiers: vec![TypedefName(ident("U64")).into()],
-//                 declarator: None,
-//             }
-//             .into(),
-//             expression: ident("foo"),
-//         }
-//         .into())
-//     );
-// }
+    let mut env = Env::new();
+    let env = &env.for_parser();
+
+    assert_eq!(
+        expression("({ int p = 0; p; })", env),
+        Ok(Compound(vec![
+            Declaration {
+                specifiers: vec![Int.into()],
+                declarators: vec![InitDeclarator {
+                    declarator: Declarator {
+                        kind: ident("p"),
+                        derived: vec![],
+                        extensions: vec![],
+                    }
+                    .into(),
+                    initializer: Some(int::zero()),
+                }
+                .into()],
+            }
+            .into(),
+            Expression(Some(ident("p"))).into(),
+        ])
+        .into())
+    );
+}
+
+#[test]
+fn test_expr_cast() {
+    use crate::ast::TypeName;
+    use crate::ast::TypeSpecifier::TypedefName;
+    use crate::parser::expression;
+
+    let env = &mut Env::new();
+    env.add_typename("U64");
+    let env = &env.for_parser();
+
+    assert_eq!(
+        expression("(U64)foo", env),
+        Ok(CastExpression {
+            type_name: TypeName {
+                specifiers: vec![TypedefName(ident("U64")).into()],
+                declarator: None,
+            }
+            .into(),
+            expression: ident("foo"),
+        }
+        .into())
+    );
+}
+
+// TODO: re-enable someday
 
 // #[test]
 // fn test_gnu_asm() {

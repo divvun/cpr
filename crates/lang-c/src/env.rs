@@ -138,6 +138,11 @@ impl Env {
         scope.insert(s.to_string(), symbol);
     }
 
+    #[cfg(test)]
+    pub fn add_typename(&mut self, s: &str) {
+        self.add_symbol(s, Symbol::Typename)
+    }
+
     pub fn for_parser<'a>(&'a mut self) -> ParserEnv<'a> {
         ParserEnv {
             inner: RefCell::new(self),
