@@ -894,3 +894,9 @@ fn mega_constant() {
     ));
     unit.must_have_constant("XSTATE_IPT", &|c| c.must_be("8"));
 }
+
+#[test]
+fn no_final_newline() {
+    let unit = parse_unit("struct S { int a; };");
+    unit.must_have_struct("S".struct_name(), &|_| {})
+}

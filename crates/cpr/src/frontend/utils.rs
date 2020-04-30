@@ -49,7 +49,7 @@ struct LineCounter<'a> {
 
 impl<'a> LineCounter<'a> {
     fn new(sink: &'a mut dyn MiddleSink) -> Self {
-        let lineno = LineNo(1);
+        let lineno = LineNo(0);
         sink.set_lineno(lineno);
         Self { lineno, sink }
     }
@@ -254,14 +254,16 @@ pub fn process_line_continuations_and_comments(input: &str) -> Vec<(LineNo, Stri
         state: LState::Normal,
         sink: &mut cproc,
     };
-    let mut lc = LineCounter {
-        lineno: LineNo(0),
-        sink: &mut lproc,
-    };
+    let mut lc = LineCounter::new(&mut lproc);
 
     for c in input.chars() {
         lc.push(c);
     }
+    // add final newline if the input didn't have one
+    if !input.ends_with("\n") {
+        lc.push('\n');
+    }
+
     ls.lines
 }
 
