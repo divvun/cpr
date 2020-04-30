@@ -8,9 +8,8 @@ pub mod visit;
 mod astutil;
 mod strings;
 
-// TODO: re-enable in some form
-// #[cfg(test)]
-// mod tests;
+#[cfg(test)]
+mod tests;
 
 pub mod parser_types {
     use crate::ast::*;
@@ -20,7 +19,7 @@ pub mod parser_types {
     pub type Id = Vec<Node<InitDeclarator>>;
 }
 
-peg::parser! { pub grammar c_parser(env: &env::ParserEnv<'_>) for str {
+peg::parser! { pub grammar parser(env: &env::ParserEnv<'_>) for str {
 
 use ast::*;
 use astutil::*;
@@ -130,7 +129,7 @@ rule integer_suffix() -> IntegerSuffix =
     quiet!{integer_suffix_inner()} / expected!("integer suffix")
 
 rule integer_suffix_inner() -> IntegerSuffix =
-    s:$(['u'|'U'|'l'|'L'] / gnu(<['i' | 'I' | 'j' | 'J']>) *) {? int_suffix(s) }
+    s:$((['u'|'U'|'l'|'L'] / gnu(<['i' | 'I' | 'j' | 'J']>))*) {? int_suffix(s) }
 
 rule float_constant() -> Float =
     n:float_number() suffix:float_suffix() {
