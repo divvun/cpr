@@ -515,7 +515,7 @@ rule declaration1() -> (Ds, Id)
 rule declaration2() -> (Ds, Id)
     = declaration_seq(<declaration_typedef()>, <declaration_typedef_tail()>)
     / declaration_seq(<declaration_unique_type()>, <declaration_tail(<declaration_specifiers_unique()>)>)
-    / declaration_seq(<declaration_typedef()>, <declaration_tail(<declaration_specifiers_nonunique()>)>)
+    / declaration_seq(<declaration_nonunique_type()>, <declaration_tail(<declaration_specifiers_nonunique()>)>)
 
 // What can follow a type specifier keyword or typename in a declaration
 rule declaration_tail(s: rule<Ds>) -> (Ds, Id)
