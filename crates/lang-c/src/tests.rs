@@ -402,90 +402,97 @@ fn test_postfix() {
     );
 }
 
-// #[test]
-// fn test_multiplicative() {
-//     use self::expr::*;
-//     use crate::ast::BinaryOperator::{Divide, Multiply};
-//     use crate::ast::UnaryOperator::{PostDecrement, PreIncrement};
-//     use crate::parser::expression;
+#[test]
+fn test_multiplicative() {
+    use self::expr::*;
+    use crate::ast::BinaryOperator::{Divide, Multiply};
+    use crate::ast::UnaryOperator::{PostDecrement, PreIncrement};
+    use crate::parser::expression;
 
-//     let env = &mut Env::new();
+    let mut env = Env::new();
+    let env = &env.for_parser();
 
-//     assert_eq!(
-//         expression("a-- * ++b / c", env),
-//         Ok(binop(
-//             Divide,
-//             binop(
-//                 Multiply,
-//                 unop(PostDecrement, ident("a")),
-//                 unop(PreIncrement, ident("b")),
-//             ),
-//             ident("c"),
-//         ))
-//     );
-// }
+    assert_eq!(
+        expression("a-- * ++b / c", env),
+        Ok(binop(
+            Divide,
+            binop(
+                Multiply,
+                unop(PostDecrement, ident("a")),
+                unop(PreIncrement, ident("b")),
+            ),
+            ident("c"),
+        ))
+    );
+}
 
-// #[test]
-// fn test_logical_and() {
-//     use self::expr::*;
-//     use crate::ast::BinaryOperator::LogicalAnd;
-//     use crate::parser::expression;
-//     let env = &mut Env::new();
+#[test]
+fn test_logical_and() {
+    use self::expr::*;
+    use crate::ast::BinaryOperator::LogicalAnd;
+    use crate::parser::expression;
 
-//     assert_eq!(
-//         expression("a && b", env),
-//         Ok(binop(LogicalAnd, ident("a"), ident("b")))
-//     );
-// }
+    let mut env = Env::new();
+    let env = &env.for_parser();
 
-// #[test]
-// fn test_chained_and() {
-//     use self::expr::*;
-//     use crate::ast::BinaryOperator::LogicalAnd;
-//     use crate::parser::expression;
-//     let env = &mut Env::new();
+    assert_eq!(
+        expression("a && b", env),
+        Ok(binop(LogicalAnd, ident("a"), ident("b")))
+    );
+}
 
-//     assert_eq!(
-//         expression("a && b && c", env),
-//         Ok(binop(
-//             LogicalAnd,
-//             binop(LogicalAnd, ident("a"), ident("b")),
-//             ident("c"),
-//         ))
-//     );
-// }
+#[test]
+fn test_chained_and() {
+    use self::expr::*;
+    use crate::ast::BinaryOperator::LogicalAnd;
+    use crate::parser::expression;
+    let mut env = Env::new();
+    let env = &env.for_parser();
 
-// #[test]
-// fn test_chained_or() {
-//     use self::expr::*;
-//     use crate::ast::BinaryOperator::LogicalOr;
-//     use crate::parser::expression;
-//     let env = &mut Env::new();
-//     assert_eq!(
-//         expression("a || b || c", env),
-//         Ok(binop(
-//             LogicalOr,
-//             binop(LogicalOr, ident("a"), ident("b")),
-//             ident("c"),
-//         ))
-//     );
-// }
+    assert_eq!(
+        expression("a && b && c", env),
+        Ok(binop(
+            LogicalAnd,
+            binop(LogicalAnd, ident("a"), ident("b")),
+            ident("c"),
+        ))
+    );
+}
 
-// #[test]
-// fn test_chained_shl() {
-//     use self::expr::*;
-//     use crate::ast::BinaryOperator::ShiftLeft;
-//     use crate::parser::expression;
-//     let env = &mut Env::new();
-//     assert_eq!(
-//         expression("a << b << c", env),
-//         Ok(binop(
-//             ShiftLeft,
-//             binop(ShiftLeft, ident("a"), ident("b")),
-//             ident("c"),
-//         ))
-//     );
-// }
+#[test]
+fn test_chained_or() {
+    use self::expr::*;
+    use crate::ast::BinaryOperator::LogicalOr;
+    use crate::parser::expression;
+    let mut env = Env::new();
+    let env = &env.for_parser();
+
+    assert_eq!(
+        expression("a || b || c", env),
+        Ok(binop(
+            LogicalOr,
+            binop(LogicalOr, ident("a"), ident("b")),
+            ident("c"),
+        ))
+    );
+}
+
+#[test]
+fn test_chained_shl() {
+    use self::expr::*;
+    use crate::ast::BinaryOperator::ShiftLeft;
+    use crate::parser::expression;
+    let mut env = Env::new();
+    let env = &env.for_parser();
+    assert_eq!(
+        expression("a << b << c", env),
+        Ok(binop(
+            ShiftLeft,
+            binop(ShiftLeft, ident("a"), ident("b")),
+            ident("c"),
+        ))
+    );
+}
 
 // #[test]
 // fn test_chained_shr() {

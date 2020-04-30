@@ -184,7 +184,7 @@ rule float_format() -> FloatFormat =
 rule character_constant() -> String =
     c:$(['L' | 'u' | 'U']? "'" character()+ "'") { String::from(c) }
 
-rule character() = !['\\' | '\'' | '\n'] / escape_sequence()
+rule character() = !['\\' | '\'' | '\n'] [_] / escape_sequence()
 
 rule escape_sequence() = "\\" (['\'' | '"' | '?' | '\\' | 'a'..='c' | 'f' | 'n' | 'r' | 't' | 'v'] / oct()*<1,3> / "x" hex()+)
 
@@ -364,42 +364,42 @@ rule binary_expression() -> Box<Node<Expression>> = box(<binary_expression0()>)
 
 rule binary_expression0() -> Node<Expression> = precedence!{
     // precedence 15 (lowest)
-    x:(@) n:node(<"||">)    _ y:@   { infix(n, BinaryOperator::LogicalOr, x, y) }
+    x:(@) _ n:node(<"||">)    _ y:@   { infix(n, BinaryOperator::LogicalOr, x, y) }
     --
     // precedence 14
-    x:(@) n:node(<"&&">)    _ y:@   { infix(n, BinaryOperator::LogicalAnd, x, y) }
+    x:(@) _ n:node(<"&&">)    _ y:@   { infix(n, BinaryOperator::LogicalAnd, x, y) }
     --
     // precedence 13
-    x:(@) n:node(<"|">)     _ y:@   { infix(n, BinaryOperator::BitwiseOr, x, y) }
+    x:(@) _ n:node(<"|">)     _ y:@   { infix(n, BinaryOperator::BitwiseOr, x, y) }
     --
     // precedence 12
-    x:(@) n:node(<"^">)     _ y:@   { infix(n, BinaryOperator::BitwiseXor, x, y) }
+    x:(@) _ n:node(<"^">)     _ y:@   { infix(n, BinaryOperator::BitwiseXor, x, y) }
     --
     // precedence 11
-    x:(@) n:node(<"&"!"&">) _ y:@   { infix(n, BinaryOperator::BitwiseAnd, x, y) }
+    x:(@) _ n:node(<"&"!"&">) _ y:@   { infix(n, BinaryOperator::BitwiseAnd, x, y) }
     --
     // precedence 10
-    x:(@) n:node(<"==">)    _ y:@   { infix(n, BinaryOperator::Equals, x, y) }
-    x:(@) n:node(<"!=">)    _ y:@   { infix(n, BinaryOperator::NotEquals, x, y) }
+    x:(@) _ n:node(<"==">)    _ y:@   { infix(n, BinaryOperator::Equals, x, y) }
+    x:(@) _ n:node(<"!=">)    _ y:@   { infix(n, BinaryOperator::NotEquals, x, y) }
     --
     // precedence 9
-    x:(@) n:node(<"<">)     _ y:@   { infix(n, BinaryOperator::Less, x, y) }
-    x:(@) n:node(<">">)     _ y:@   { infix(n, BinaryOperator::Greater, x, y) }
-    x:(@) n:node(<"<=">)    _ y:@   { infix(n, BinaryOperator::LessOrEqual, x, y) }
-    x:(@) n:node(<">=">)    _ y:@   { infix(n, BinaryOperator::GreaterOrEqual, x, y) }
+    x:(@) _ n:node(<"<">)     _ y:@   { infix(n, BinaryOperator::Less, x, y) }
+    x:(@) _ n:node(<">">)     _ y:@   { infix(n, BinaryOperator::Greater, x, y) }
+    x:(@) _ n:node(<"<=">)    _ y:@   { infix(n, BinaryOperator::LessOrEqual, x, y) }
+    x:(@) _ n:node(<">=">)    _ y:@   { infix(n, BinaryOperator::GreaterOrEqual, x, y) }
     --
     // precedence 7
-    x:(@) n:node(<"<<">)    _ y:@   { infix(n, BinaryOperator::ShiftLeft, x, y) }
-    x:(@) n:node(<">>">)    _ y:@   { infix(n, BinaryOperator::ShiftRight, x, y) }
+    x:(@) _ n:node(<"<<">)    _ y:@   { infix(n, BinaryOperator::ShiftLeft, x, y) }
+    x:(@) _ n:node(<">>">)    _ y:@   { infix(n, BinaryOperator::ShiftRight, x, y) }
     --
     // precedence 6
-    x:@   n:node(<"+">)     _ y:(@) { infix(n, BinaryOperator::Plus, x, y) }
-    x:@   n:node(<"-">)     _ y:(@) { infix(n, BinaryOperator::Minus, x, y) }
+    x:@   _ n:node(<"+">)     _ y:(@) { infix(n, BinaryOperator::Plus, x, y) }
+    x:@   _ n:node(<"-">)     _ y:(@) { infix(n, BinaryOperator::Minus, x, y) }
     --
     // precedence 5
-    x:(@) n:node(<"*">)     _ y:@   { infix(n, BinaryOperator::Multiply, x, y) }
-    x:(@) n:node(<"/">)     _ y:@   { infix(n, BinaryOperator::Divide, x, y) }
-    x:(@) n:node(<"%">)     _ y:@   { infix(n, BinaryOperator::Modulo, x, y) }
+    x:(@) _ n:node(<"*">)     _ y:@   { infix(n, BinaryOperator::Multiply, x, y) }
+    x:(@) _ n:node(<"/">)     _ y:@   { infix(n, BinaryOperator::Divide, x, y) }
+    x:(@) _ n:node(<"%">)     _ y:@   { infix(n, BinaryOperator::Modulo, x, y) }
     --
     n:binary_operand() { n }
     // highest precedence
