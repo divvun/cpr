@@ -308,95 +308,99 @@ fn test_floating() {
     );
 }
 
-// #[test]
-// fn ts18661_literal() {
-//     use self::float::*;
-//     use crate::ast::FloatBase::*;
-//     use crate::parser::constant;
+#[test]
+fn ts18661_literal() {
+    use self::float::*;
+    use crate::ast::FloatBase::*;
+    use crate::parser::constant;
 
-//     let env = &mut Env::new();
+    let mut env = Env::new();
+    let env = &env.for_parser();
 
-//     const F16: FloatSuffix = FloatSuffix {
-//         format: FloatFormat::TS18661Format(TS18661FloatType {
-//             format: TS18661FloatFormat::BinaryInterchange,
-//             width: 16,
-//         }),
-//         imaginary: false,
-//     };
+    const F16: FloatSuffix = FloatSuffix {
+        format: FloatFormat::TS18661Format(TS18661FloatType {
+            format: TS18661FloatFormat::BinaryInterchange,
+            width: 16,
+        }),
+        imaginary: false,
+    };
 
-//     const F64: FloatSuffix = FloatSuffix {
-//         format: FloatFormat::TS18661Format(TS18661FloatType {
-//             format: TS18661FloatFormat::BinaryInterchange,
-//             width: 64,
-//         }),
-//         imaginary: false,
-//     };
+    const F64: FloatSuffix = FloatSuffix {
+        format: FloatFormat::TS18661Format(TS18661FloatType {
+            format: TS18661FloatFormat::BinaryInterchange,
+            width: 64,
+        }),
+        imaginary: false,
+    };
 
-//     assert_eq!(
-//         constant("1.0f64", env),
-//         Ok(num(Decimal, "1.0", F64.clone()))
-//     );
-//     assert_eq!(
-//         constant("0xAp1f16", env),
-//         Ok(num(Hexadecimal, "Ap1", F16.clone()))
-//     );
-// }
+    assert_eq!(
+        constant("1.0f64", env),
+        Ok(num(Decimal, "1.0", F64.clone()))
+    );
+    assert_eq!(
+        constant("0xAp1f16", env),
+        Ok(num(Hexadecimal, "Ap1", F16.clone()))
+    );
+}
 
-// #[test]
-// fn test_character() {
-//     use crate::parser::constant;
+#[test]
+fn test_character() {
+    use crate::parser::constant;
 
-//     let env = &mut Env::new();
+    let mut env = Env::new();
+    let env = &env.for_parser();
 
-//     assert_eq!(constant("'a'", env), Ok(cchar("'a'")));
-//     assert_eq!(constant(r"'\n'", env), Ok(cchar(r"'\n'")));
-//     assert_eq!(constant(r"'\\'", env), Ok(cchar(r"'\\'")));
-//     assert_eq!(constant(r"'\''", env), Ok(cchar(r"'\''")));
-//     assert_eq!(constant(r"'\1'", env), Ok(cchar(r"'\1'")));
-//     assert_eq!(constant(r"'\02'", env), Ok(cchar(r"'\02'")));
-//     assert_eq!(constant(r"'\027'", env), Ok(cchar(r"'\027'")));
-//     assert_eq!(constant(r"'\xde'", env), Ok(cchar(r"'\xde'")));
-// }
+    assert_eq!(constant("'a'", env), Ok(cchar("'a'")));
+    assert_eq!(constant(r"'\n'", env), Ok(cchar(r"'\n'")));
+    assert_eq!(constant(r"'\\'", env), Ok(cchar(r"'\\'")));
+    assert_eq!(constant(r"'\''", env), Ok(cchar(r"'\''")));
+    assert_eq!(constant(r"'\1'", env), Ok(cchar(r"'\1'")));
+    assert_eq!(constant(r"'\02'", env), Ok(cchar(r"'\02'")));
+    assert_eq!(constant(r"'\027'", env), Ok(cchar(r"'\027'")));
+    assert_eq!(constant(r"'\xde'", env), Ok(cchar(r"'\xde'")));
+}
 
-// #[test]
-// fn test_string() {
-//     use self::expr::*;
-//     use crate::parser::expression;
+#[test]
+fn test_string() {
+    use self::expr::*;
+    use crate::parser::expression;
 
-//     let env = &mut Env::new();
+    let mut env = Env::new();
+    let env = &env.for_parser();
 
-//     assert_eq!(expression(r#""foo""#, env), Ok(string(r#""foo""#)));
-//     assert_eq!(expression(r#""foo\n""#, env), Ok(string(r#""foo\n""#)));
-//     assert_eq!(expression(r#""\'\"""#, env), Ok(string(r#""\'\"""#)));
-//     assert_eq!(expression(r#""\xaf""#, env), Ok(string(r#""\xaf""#)));
-// }
+    assert_eq!(expression(r#""foo""#, env), Ok(string(r#""foo""#)));
+    assert_eq!(expression(r#""foo\n""#, env), Ok(string(r#""foo\n""#)));
+    assert_eq!(expression(r#""\'\"""#, env), Ok(string(r#""\'\"""#)));
+    assert_eq!(expression(r#""\xaf""#, env), Ok(string(r#""\xaf""#)));
+}
 
-// #[test]
-// fn test_postfix() {
-//     use self::expr::*;
-//     use crate::ast::BinaryOperator::Index;
-//     use crate::ast::MemberOperator::{Direct, Indirect};
-//     use crate::ast::UnaryOperator::PostIncrement;
-//     use crate::parser::expression;
+#[test]
+fn test_postfix() {
+    use self::expr::*;
+    use crate::ast::BinaryOperator::Index;
+    use crate::ast::MemberOperator::{Direct, Indirect};
+    use crate::ast::UnaryOperator::PostIncrement;
+    use crate::parser::expression;
 
-//     let env = &mut Env::new();
+    let mut env = Env::new();
+    let env = &env.for_parser();
 
-//     assert_eq!(
-//         expression("a  ++", env),
-//         Ok(unop(PostIncrement, ident("a")))
-//     );
-//     assert_eq!(
-//         expression("a.b->c[ d[ e ] ] ++", env),
-//         Ok(unop(
-//             PostIncrement,
-//             binop(
-//                 Index,
-//                 member(Indirect, member(Direct, ident("a"), ident("b")), ident("c")),
-//                 binop(Index, ident("d"), ident("e")),
-//             ),
-//         ))
-//     );
-// }
+    assert_eq!(
+        expression("a  ++", env),
+        Ok(unop(PostIncrement, ident("a")))
+    );
+    assert_eq!(
+        expression("a.b->c[ d[ e ] ] ++", env),
+        Ok(unop(
+            PostIncrement,
+            binop(
+                Index,
+                member(Indirect, member(Direct, ident("a"), ident("b")), ident("c")),
+                binop(Index, ident("d"), ident("e")),
+            ),
+        ))
+    );
+}
 
 // #[test]
 // fn test_multiplicative() {

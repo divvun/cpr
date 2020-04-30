@@ -186,21 +186,21 @@ rule character_constant() -> String =
 
 rule character() = !['\\' | '\'' | '\n'] / escape_sequence()
 
-rule escape_sequence() = "\\" (['\'' | '?' | '\\' | 'a'..='c' | 'f' | 'n' | 'r' | 't' | 'v'] / oct()*<1,3> / "x" hex()+)
+rule escape_sequence() = "\\" (['\'' | '"' | '?' | '\\' | 'a'..='c' | 'f' | 'n' | 'r' | 't' | 'v'] / oct()*<1,3> / "x" hex()+)
 
 ////
 // 6.4.5 String literal
 ////
 
 pub rule string_literal() -> Node<Vec<String>>
-    = s:node(< list1(<string_literal0()>) >) { s }
+    = s:node(<list1(<string_literal0()>)>) { s }
 
 rule string_literal0() -> String =
-    s:$(encoding_prefix()? "\"" string_char()* "\"") { String::from(s) }
+    s:$(encoding_prefix()? ['"'] string_char()* ['"']) { String::from(s) }
 
 rule encoding_prefix() = "u8" / ['u' | 'U' | 'L']
 
-rule string_char() = ['"' | '\\' | '\n'] / escape_sequence()
+rule string_char() = !['"' | '\\' | '\n'] [_] / escape_sequence()
 
 ////
 // 6.5.1 Primary expression
