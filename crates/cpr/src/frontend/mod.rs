@@ -716,9 +716,9 @@ impl Parser {
                 log::error!("{:>8} | {}", lineno.0, s);
                 if logical_lineno + 1 == err.location.line {
                     log::error!(
-                        "{}^ expected {:?}",
+                        "{}^ expected {}",
                         " ".repeat(err.location.column - 1 + padding),
-                        err.expected
+                        err.expected.tokens().collect::<Vec<_>>().join(", ")
                     );
                 }
             }
