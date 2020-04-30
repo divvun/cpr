@@ -1,6 +1,7 @@
 [workspace]
 
+default-members = ["crates/cpr"]
 members = [
     "crates/cpr",
-    "crates/lang-c"
+    "crates/lang-c",
 ]
