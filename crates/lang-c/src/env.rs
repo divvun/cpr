@@ -1,11 +1,17 @@
 use std::{
     cell::{RefCell, RefMut},
-    collections::HashSet,
+    collections::{HashMap, HashSet},
 };
 
 use crate::ast::*;
 use crate::span::Node;
 use crate::strings;
+
+#[derive(Clone, Copy, Debug, PartialEq, Hash)]
+pub enum Symbol {
+    Typename,
+    Identifier,
+}
 
 pub struct ParserEnv<'a> {
     inner: RefCell<&'a mut Env>,
@@ -18,14 +24,13 @@ impl<'a> ParserEnv<'a> {
 }
 
 pub struct Env {
+    symbols: Vec<HashMap<String, Symbol>>,
     pub builtin_typenames: HashSet<String>,
-    pub typenames: Vec<HashSet<String>>,
     pub extensions_gnu: bool,
     pub extensions_clang: bool,
     pub extensions_msvc: bool,
     pub reserved: HashSet<&'static str>,
-    pub(crate) is_ignoring_reserved: bool,
-    pub(crate) is_single_line_mode: bool,
+    pub is_ignoring_reserved: bool,
 }
 
 impl Env {
@@ -38,190 +43,109 @@ impl Env {
         let mut reserved = HashSet::default();
         reserved.extend(strings::RESERVED_C11.iter());
         Env {
+            symbols: vec![HashMap::default()],
             extensions_gnu: false,
             extensions_clang: false,
             extensions_msvc: false,
             builtin_typenames: HashSet::new(),
-            typenames: vec![HashSet::new()],
             reserved,
             is_ignoring_reserved: false,
-            is_single_line_mode: false,
         }
     }
 
     pub fn with_gnu() -> Env {
-        let mut typenames = HashSet::default();
+        let mut builtin_typenames = HashSet::default();
+        builtin_typenames.insert("__builtin_va_list".to_owned());
         let mut reserved = HashSet::default();
-        typenames.insert("__builtin_va_list".to_owned());
         reserved.extend(strings::RESERVED_C11.iter());
         reserved.extend(strings::RESERVED_GNU.iter());
         Env {
+            symbols: vec![HashMap::default()],
             extensions_gnu: true,
             extensions_clang: false,
             extensions_msvc: false,
-            builtin_typenames: typenames,
-            typenames: vec![HashSet::new()],
+            builtin_typenames,
             reserved,
             is_ignoring_reserved: false,
-            is_single_line_mode: false,
         }
     }
 
     pub fn with_clang() -> Env {
-        let mut typenames = HashSet::default();
+        let mut builtin_typenames = HashSet::default();
+        builtin_typenames.insert("__builtin_va_list".to_owned());
         let mut reserved = HashSet::default();
-        typenames.insert("__builtin_va_list".to_owned());
         reserved.extend(strings::RESERVED_C11.iter());
         reserved.extend(strings::RESERVED_GNU.iter());
         reserved.extend(strings::RESERVED_CLANG.iter());
         Env {
+            symbols: vec![HashMap::default()],
             extensions_gnu: true,
             extensions_clang: true,
             extensions_msvc: false,
-            builtin_typenames: typenames,
-            typenames: vec![HashSet::new()],
+            builtin_typenames,
             reserved,
             is_ignoring_reserved: false,
-            is_single_line_mode: false,
         }
     }
 
     pub fn with_msvc() -> Env {
-        let mut typenames = HashSet::default();
+        let mut builtin_typenames = HashSet::default();
+        builtin_typenames.insert("__int8".to_owned());
+        builtin_typenames.insert("__int16".to_owned());
+        builtin_typenames.insert("__int32".to_owned());
+        builtin_typenames.insert("__int64".to_owned());
         let mut reserved = HashSet::default();
-        typenames.insert("__int8".to_owned());
-        typenames.insert("__int16".to_owned());
-        typenames.insert("__int32".to_owned());
-        typenames.insert("__int64".to_owned());
         reserved.extend(strings::RESERVED_C11.iter());
         Env {
+            symbols: vec![HashMap::default()],
             extensions_gnu: false,
             extensions_clang: false,
             extensions_msvc: true,
-            builtin_typenames: typenames,
-            typenames: vec![HashSet::new()],
+            builtin_typenames,
             reserved,
             is_ignoring_reserved: false,
-            is_single_line_mode: false,
         }
     }
 
     pub fn enter_scope(&mut self) {
-        self.typenames.push(HashSet::new());
+        self.symbols.push(HashMap::new());
     }
 
     pub fn leave_scope(&mut self) {
-        self.typenames.pop().expect("more scope pops than pushes");
+        self.symbols.pop().expect("more scope pops than pushes");
     }
 
     pub fn ignore_reserved(&mut self, ignore: bool) {
         self.is_ignoring_reserved = ignore;
     }
 
-    pub fn single_line_mode(&mut self, enable: bool) {
-        self.is_single_line_mode = enable;
+    pub fn is_typename(&self, s: &str) -> bool {
+        self.builtin_typenames.contains(s)
+            || self.symbols.iter().any(|sc| {
+                sc.get(s)
+                    .map(|s| matches!(s, Symbol::Typename))
+                    .unwrap_or(false)
+            })
     }
 
-    pub fn add_typename(&mut self, s: &str) {
+    pub fn handle_declarator(&mut self, d: &Node<Declarator>, sym: Symbol) {
+        if let Some(name) = find_declarator_name(&d.node.kind.node) {
+            self.add_symbol(name, sym);
+        }
+    }
+
+    pub fn add_symbol(&mut self, s: &str, symbol: Symbol) {
         let scope = self
-            .typenames
+            .symbols
             .last_mut()
             .expect("at least one scope should be always present");
-        scope.insert(s.to_string());
-    }
-
-    pub fn is_typename(&self, s: &str) -> bool {
-        self.builtin_typenames.contains(s) || self.typenames.iter().any(|sc| sc.contains(s))
-    }
-
-    pub fn postprocess_declaration(
-        &mut self,
-        mut declaration_node: Node<Declaration>,
-    ) -> Node<Declaration> {
-        let is_typedef = declaration_node.node.specifiers.iter().any(is_typedef);
-
-        if is_typedef {
-            let declaration = &declaration_node.node;
-            if declaration.declarators.is_empty() {
-                // we might be in a "typedef redefinition" case like:
-                //     typedef int INT;
-                //     typedef int INT; <- here
-                // the second typedef declaration will have *no* declarators,
-                // only type specifiers. If the last one is a TypedefName, we turn
-                // it into a Declarator instead
-
-                if declaration.specifiers.len() >= 2 {
-                    if let Some((index, ds)) =
-                        declaration
-                            .specifiers
-                            .iter()
-                            .enumerate()
-                            .find(|(_index, node)| match &node.node {
-                                DeclarationSpecifier::TypeSpecifier(ts) => match ts.node {
-                                    TypeSpecifier::TypedefName(_) => true,
-                                    _ => false,
-                                },
-                                _ => false,
-                            })
-                    {
-                        if let DeclarationSpecifier::TypeSpecifier(ts) = &ds.node {
-                            if let TypeSpecifier::TypedefName(tname) = &ts.node {
-                                let mut out_decl_node = declaration_node.clone();
-                                out_decl_node.node.specifiers.remove(index);
-                                let span = tname.span.clone();
-
-                                out_decl_node.node.declarators.push(Node {
-                                    span: span.clone(),
-                                    node: InitDeclarator {
-                                        declarator: Node {
-                                            span: span.clone(),
-                                            node: Declarator {
-                                                derived: vec![],
-                                                extensions: vec![],
-                                                kind: Node {
-                                                    span: span.clone(),
-                                                    node: DeclaratorKind::Identifier(Node {
-                                                        span: span.clone(),
-                                                        node: tname.node.clone(),
-                                                    }),
-                                                },
-                                            },
-                                        },
-                                        initializer: None,
-                                    },
-                                });
-                                declaration_node = out_decl_node;
-                            }
-                        }
-                    }
-                }
-            }
-
-            let declaration = &declaration_node.node;
-            for init_decl in &declaration.declarators {
-                if let Some(name) = find_declarator_name(&init_decl.node.declarator.node.kind.node)
-                {
-                    self.add_typename(name);
-                }
-            }
-        }
-        declaration_node
+        scope.insert(s.to_string(), symbol);
     }
 
     pub fn for_parser<'a>(&'a mut self) -> ParserEnv<'a> {
         ParserEnv {
             inner: RefCell::new(self),
         }
-    }
-}
-
-fn is_typedef(ds: &Node<DeclarationSpecifier>) -> bool {
-    match &ds.node {
-        &DeclarationSpecifier::StorageClass(Node {
-            node: StorageClassSpecifier::Typedef,
-            ..
-        }) => true,
-        _ => false,
     }
 }
 

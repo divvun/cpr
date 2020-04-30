@@ -450,8 +450,6 @@ pub trait Visit<'ast> {
         visit_function_definition(self, function_definition, span)
     }
 
-    fn visit_directive(&mut self, _directive: &'ast Directive, _span: &'ast Span) {}
-
     fn visit_extension(&mut self, extension: &'ast Extension, span: &'ast Span) {
         visit_extension(self, extension, span)
     }
@@ -1478,7 +1476,6 @@ pub fn visit_external_declaration<'ast, V: Visit<'ast> + ?Sized>(
         ExternalDeclaration::FunctionDefinition(ref f) => {
             visitor.visit_function_definition(&f.node, &f.span)
         }
-        ExternalDeclaration::Directive(ref d) => visitor.visit_directive(&d.node, &d.span),
     }
 }
 

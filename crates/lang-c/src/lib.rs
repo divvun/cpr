@@ -1,32 +1,32 @@
 //! C language parser and abstract syntax tree
-//!
-//! ```
-//! use lang_c::driver::{Config, parse};
-//!
-//! fn main() {
-//!     let config = Config::default();
-//!     println!("{:?}", parse(&config, "example.c"));
-//! }
-//! ```
 
 pub mod ast;
-pub mod driver;
 pub mod env;
-pub mod parser;
 pub mod span;
 pub mod visit;
 
 mod astutil;
 mod strings;
 
-#[cfg(test)]
-mod tests;
+// TODO: re-enable in some form
+// #[cfg(test)]
+// mod tests;
+
+pub mod parser_types {
+    use crate::ast::*;
+    use crate::span::Node;
+
+    pub type Ds = Vec<Node<DeclarationSpecifier>>;
+    pub type Id = Vec<Node<InitDeclarator>>;
+}
 
 peg::parser! { pub grammar c_parser(env: &env::ParserEnv<'_>) for str {
 
 use ast::*;
 use astutil::*;
 use span::{Node, Span};
+use env::Symbol;
+use super::parser_types::*;
 
 ////
 // Prologue
@@ -42,16 +42,26 @@ rule list1<T>(ex: rule<T>) -> Vec<T> = e:(ex() ++ _) { e }
 rule cs0<T>(ex: rule<T>) -> Vec<T> = e:(ex() ** (_ "," _)) { e }
 rule cs1<T>(ex: rule<T>) -> Vec<T> = e:(ex() ++ (_ "," _)) { e }
 
+// A list containing 0+ before's, 1 single, and 0+ after's
+rule list_010<T>(before: rule<T>, single: rule<T>, after: rule<T>) -> Vec<T>
+    = before:list0(<before()>) _ single:single() _ after:list0(<after()>) {
+        let mut before = before;
+        before.push(single);
+        before.extend(after);
+        before
+    }
+// A list containing *exactly* one element of a, and any of b.
+rule list_eq1_n<T>(a: rule<T>, b: rule<T>) -> Vec<T>
+    = list_010(<b()>, <a()>, <b()>)
+// A list containing *at least* one element of a, and any of b.
+rule list_ge1_n<T>(a: rule<T>, b: rule<T>) -> Vec<T>
+    = list_010(<b()>, <a()>, <a() / b()>)
+
 ////
 // Whitespace
 ////
 
 rule _() = quiet!{ ['\n' | '\t' | ' ']* }
-
-rule directive() -> Directive = "#" d:$(!['\n'][_]*) {
-    Directive { value: d.into() }
-}
-
 
 ////
 // 6.4.1 Keywords
@@ -68,8 +78,7 @@ pub rule identifier() -> Node<Identifier> = node(<identifier0()>)
 
 rule identifier0() -> Identifier =
     n:$(['_' | 'a'..='z' | 'A'..='Z'] ['_' | 'a'..='z' | 'A'..='Z' | '0'..='9']*) {?
-        let env = env.get();
-        if env.is_ignoring_reserved || !env.reserved.contains(n) {
+        if !env.get().reserved.contains(n) {
             Ok(Identifier {
                 name: n.into(),
             })
@@ -487,37 +496,102 @@ rule constant_expression0() -> Expression = conditional_expression0()
 // 6.7 Declarations
 ////
 
-pub rule declaration() -> Node<Declaration> = d:node(<declaration0()>) {
-    env.get().postprocess_declaration(d)
-}
+pub rule declaration() -> Node<Declaration> = node(<declaration0()>)
 
-rule declaration0() -> Declaration =
-    gnu(<K(<"__extension__">)>)? _ s:list1(<declaration_specifier()>)  _ d:cs0(<node(<init_declarator()>)>) _ ";" {
+rule declaration0() -> Declaration
+    = gnu(<K(<"__extension__">)>)? _ d:declaration1() _ ";" {
         Declaration {
-            specifiers: s,
-            declarators: d,
+            specifiers: d.0,
+            declarators: d.1,
         }
     }
 
-rule declaration_specifier() -> Node<DeclarationSpecifier> = node(<declaration_specifier0()>)
+rule declaration_seq<H, T>(h: rule<Vec<H>>, t: rule<(Vec<H>, Vec<T>)>) -> (Vec<H>, Vec<T>)
+    = h:h() _ t:t() { (concat(h, t.0), t.1) }
 
-rule declaration_specifier0() -> DeclarationSpecifier =
-    s:storage_class_specifier() { DeclarationSpecifier::StorageClass(s) } /
-    s:type_specifier() { DeclarationSpecifier::TypeSpecifier(s) } /
-    s:type_qualifier() { DeclarationSpecifier::TypeQualifier(s) } /
-    s:function_specifier() { DeclarationSpecifier::Function(s) } /
-    s:alignment_specifier() { DeclarationSpecifier::Alignment(s) } /
-    s:gnu(<attribute_specifier()>) { DeclarationSpecifier::Extension(s) } /
-    s:msvc(<msvc_declspec_specifier()>) { DeclarationSpecifier::Extension(s) } /
-    s:msvc(<sal_function_annotation()>) { DeclarationSpecifier::Extension(vec![s]) }
+rule declaration1() -> (Ds, Id)
+    = declaration_seq(<declaration_specifiers_unique()>, <declaration2()>)
+
+rule declaration2() -> (Ds, Id)
+    = declaration_seq(<declaration_typedef()>, <declaration_typedef_tail()>)
+    / declaration_seq(<declaration_unique_type()>, <declaration_tail(<declaration_specifiers_unique()>)>)
+    / declaration_seq(<declaration_typedef()>, <declaration_tail(<declaration_specifiers_nonunique()>)>)
+
+// What can follow a type specifier keyword or typename in a declaration
+rule declaration_tail(s: rule<Ds>) -> (Ds, Id)
+    = declaration_seq(<s()>, <declaration_tail1(<s()>)>)
+rule declaration_tail1(s: rule<(Ds)>) -> (Ds, Id)
+    = declaration_seq(<declaration_typedef()>, <declaration_typedef_tail1(<s()>)>)
+    / d:declaration_init_declarators() { (Vec::new(), d) }
+
+// What can follow a typedef keyword
+rule declaration_typedef_tail() -> (Ds, Id)
+    = declaration_seq(<declaration_unique_type()>, <declaration_typedef_tail1(<declaration_specifiers_unique()>)>)
+    / declaration_seq(<declaration_nonunique_type()>, <declaration_typedef_tail1(<declaration_specifiers_nonunique()>)>)
+
+// What can follow after typedef + type name
+rule declaration_typedef_tail1(s: rule<(Ds)>) -> (Ds, Id)
+    = s:s() _ d:declaration_type_declarators() { (s, d) }
+
+rule declaration_unique_type() -> Ds
+    = n:node(<declaration_specifier_unique_type0()>) { vec![n] }
+
+rule declaration_nonunique_type() -> Ds
+    = n:node(<declaration_specifier_nonunique_type0()>) { vec![n] }
+
+rule declaration_specifiers() -> Ds
+    = s:declaration_specifiers_unique() _ t:declaration_specifiers_tail() { concat(s, t) }
+
+rule declaration_specifiers_tail() -> Ds
+    = t:declaration_unique_type() _ s:declaration_specifiers_unique() { concat(t, s) }
+    / t:declaration_nonunique_type() _ s:declaration_specifiers_nonunique() { concat(t, s) }
+
+rule declaration_specifiers_unique() -> Ds
+    = list0(<node(<declaration_specifier_nontype()>)>)
+
+rule declaration_specifiers_nonunique() -> Ds
+    = list0(<node(<declaration_specifier_nontype() / declaration_specifier_nonunique_type0()>)>)
+
+rule declaration_specifier_nontype() -> DeclarationSpecifier
+    = s:storage_class_specifier() { DeclarationSpecifier::StorageClass(s) }
+    / s:type_qualifier() { DeclarationSpecifier::TypeQualifier(s) }
+    / s:function_specifier() { DeclarationSpecifier::Function(s) }
+    / s:alignment_specifier() { DeclarationSpecifier::Alignment(s) }
+    / s:gnu(<attribute_specifier()>) { DeclarationSpecifier::Extension(s) }
+    / s:msvc(<msvc_declspec_specifier()>) { DeclarationSpecifier::Extension(s) }
+    / s:msvc(<sal_function_annotation()>) { DeclarationSpecifier::Extension(vec![s]) }
+
+rule declaration_typedef() -> Ds
+    = s:node(<declaration_typedef0()>) { vec![s] }
+
+rule declaration_typedef0() -> DeclarationSpecifier
+    = s:storage_class_typedef() { DeclarationSpecifier::StorageClass(s) }
+
+rule declaration_specifier_unique_type0() -> DeclarationSpecifier
+    = s:node(<type_specifier_unique()>) { DeclarationSpecifier::TypeSpecifier(s) }
+
+rule declaration_specifier_nonunique_type0() -> DeclarationSpecifier
+    = s:node(<type_specifier_nonunique()>) { DeclarationSpecifier::TypeSpecifier(s) }
+
+rule declaration_init_declarators() -> Id
+    = cs0(<node(<init_declarator()>)>)
+
+rule declaration_type_declarators() -> Id
+    = cs0(<node(<type_declarator()>)>)
 
 rule init_declarator() -> InitDeclarator =
-    d:declarator() _ e:gnu(<init_declarator_gnu()>)? _ i:node(<init_declarator_init()>)?
+    d:init_declarator_declarator() _ e:gnu(<init_declarator_gnu()>)? _ i:node(<init_declarator_init()>)?
     {
         InitDeclarator {
             declarator: with_ext(d, e),
             initializer: i,
         }
+    }
+
+rule init_declarator_declarator() -> Node<Declarator>
+    = d:declarator() {
+        env.get().handle_declarator(&d, Symbol::Identifier);
+        d
     }
 
 rule init_declarator_init() -> Initializer =
@@ -526,44 +600,61 @@ rule init_declarator_init() -> Initializer =
 rule init_declarator_gnu() -> Vec<Node<Extension>> =
     l:asm_label()? _ a:attribute_specifier_list() { l.into_iter().chain(a).collect() }
 
+rule type_declarator() -> InitDeclarator
+    = d:declarator() _ e:gnu(<init_declarator_gnu()>)? {
+        env.get().handle_declarator(&d, Symbol::Typename);
+        InitDeclarator {
+            declarator: with_ext(d, e),
+            initializer: None,
+        }
+    }
+
 ////
 // 6.7.1 Storage-class specifiers
 ////
 
 rule storage_class_specifier() -> Node<StorageClassSpecifier> = node(<storage_class_specifier0()>)
 
-rule storage_class_specifier0() -> StorageClassSpecifier =
-    K(<"typedef">) { StorageClassSpecifier::Typedef } /
-    K(<"extern">) { StorageClassSpecifier::Extern } /
-    K(<"static">) { StorageClassSpecifier::Static } /
-    K(<"_Thread_local">) { StorageClassSpecifier::ThreadLocal } /
-    K(<"auto">) { StorageClassSpecifier::Auto } /
-    K(<"register">) { StorageClassSpecifier::Register }
+rule storage_class_specifier0() -> StorageClassSpecifier
+    = K(<"extern">) { StorageClassSpecifier::Extern }
+    / K(<"static">) { StorageClassSpecifier::Static }
+    / K(<"_Thread_local">) { StorageClassSpecifier::ThreadLocal }
+    / K(<"auto">) { StorageClassSpecifier::Auto }
+    / K(<"register">) { StorageClassSpecifier::Register }
+
+rule storage_class_typedef() -> Node<StorageClassSpecifier>
+    = node(<storage_class_typedef0()>)
+
+rule storage_class_typedef0() -> StorageClassSpecifier
+    = K(<"typedef">) { StorageClassSpecifier::Typedef }
 
 ////
 // 6.7.2 Type specifiers
 ////
 
-rule type_specifier() -> Node<TypeSpecifier> = node(<type_specifier0()>)
+// ISO 2011, 6.7.2, §2. Void, _Bool, _Atomic, typedef names, struct/unions, and enum
+// specifiers can only appear once in declaration specifiers or specifier-qualifiers.
+// This resolves the ambiguity with typedef names.
+rule type_specifier_unique() -> TypeSpecifier
+    = K(<"void">) { TypeSpecifier::Void }
+    / K(<"_Bool">) { TypeSpecifier::Bool }
+    / K(<"_Atomic">) _ "(" _ t:type_name() _ ")" { TypeSpecifier::Atomic(t) }
+    / s:node(<struct_or_union_specifier()>) { TypeSpecifier::Struct(s) }
+    / e:node(<enum_specifier()>) { TypeSpecifier::Enum(e) }
+    / t:typedef_name() { TypeSpecifier::TypedefName(t) }
 
-rule type_specifier0() -> TypeSpecifier =
-    K(<"void">) { TypeSpecifier::Void } /
-    K(<"char">) { TypeSpecifier::Char } /
-    K(<"short">) { TypeSpecifier::Short } /
-    K(<"int">) { TypeSpecifier::Int } /
-    K(<"long">) { TypeSpecifier::Long } /
-    K(<"float">) { TypeSpecifier::Float } /
-    K(<"double">) { TypeSpecifier::Double } /
-    K(<"signed" / gnu(<"__signed" "__"?>)>) { TypeSpecifier::Signed } /
-    K(<"unsigned">) { TypeSpecifier::Unsigned } /
-    K(<"_Bool">) { TypeSpecifier::Bool } /
-    K(<"_Complex" / gnu(<"__complex" "__"?>)>) { TypeSpecifier::Complex } /
-    K(<"_Atomic">) _ "(" _ t:type_name() _ ")" { TypeSpecifier::Atomic(t) } /
-    t:K(<ts18661_float_type_specifier()>) { TypeSpecifier::TS18661Float(t) } /
-    t:typedef_name() _ ![',' | ';'] { TypeSpecifier::TypedefName(t) } /
-    s:node(<struct_or_union_specifier()>) { TypeSpecifier::Struct(s) } /
-    e:node(<enum_specifier()>) { TypeSpecifier::Enum(e) } /
-    gnu(<typeof_specifier()>)
+rule type_specifier_nonunique() -> TypeSpecifier
+    = K(<"char">) { TypeSpecifier::Char }
+    / K(<"short">) { TypeSpecifier::Char }
+    / K(<"int">) { TypeSpecifier::Char }
+    / K(<"long">) { TypeSpecifier::Char }
+    / K(<"float">) { TypeSpecifier::Char }
+    / K(<"double">) { TypeSpecifier::Char }
+    / K(<"signed" / gnu(<"__signed" "__"?>)>) { TypeSpecifier::Signed }
+    / K(<"unsigned">) { TypeSpecifier::Unsigned }
+    / K(<"_Complex" / gnu(<"__complex" "__"?>)>) { TypeSpecifier::Complex }
+    / t:K(<ts18661_float_type_specifier()>) { TypeSpecifier::TS18661Float(t) }
+    / gnu(<typeof_specifier()>)
 
 rule struct_or_union_specifier() -> StructType =
     e:msvc(<list0(<sal_struct_annotation()>)>)?
@@ -601,7 +692,7 @@ rule struct_declaration() -> StructDeclaration =
 
 rule struct_field() -> StructField =
     e:msvc(<list0(<sal_field_annotation()>) >)?
-    _ s:list1(<specifier_qualifier()>)
+    _ s:specifier_qualifiers()
     _ d:cs0(<node(<struct_declarator()>)>) _ ";" {
         StructField {
             specifiers: s,
@@ -610,11 +701,18 @@ rule struct_field() -> StructField =
         }
     }
 
-rule specifier_qualifier() -> Node<SpecifierQualifier> = node(<specifier_qualifier0()>)
+rule specifier_qualifiers() -> Vec<Node<SpecifierQualifier>>
+    = list_eq1_n(<node(<specifier_qualifier_unique_type0()>)>, <node(<specifier_qualifier_qualifier0()>)>)
+    / list_ge1_n(<node(<specifier_qualifier_nonunique_type0()>)>, <node(<specifier_qualifier_qualifier0()>)>)
 
-rule specifier_qualifier0() -> SpecifierQualifier =
-    s:type_specifier() { SpecifierQualifier::TypeSpecifier(s) } /
-    q:type_qualifier() { SpecifierQualifier::TypeQualifier(q) }
+rule specifier_qualifier_unique_type0() -> SpecifierQualifier
+    = s:node(<type_specifier_unique()>) { SpecifierQualifier::TypeSpecifier(s) }
+
+rule specifier_qualifier_nonunique_type0() -> SpecifierQualifier
+    = s:node(<type_specifier_nonunique()>) { SpecifierQualifier::TypeSpecifier(s) }
+
+rule specifier_qualifier_qualifier0() -> SpecifierQualifier
+    = q:type_qualifier() { SpecifierQualifier::TypeQualifier(q) }
 
 rule struct_declarator() -> StructDeclarator =
     d:declarator()? _ ":" _ e:constant_expression() a:gnu(<attribute_specifier_list()>) ? {
@@ -646,6 +744,7 @@ rule enum_specifier() -> EnumType =
 
 rule enumerator() -> Enumerator =
     i:identifier() _ e:enumerator_constant()? {
+        env.get().add_symbol(&i.node.name, Symbol::Identifier);
         Enumerator {
             identifier: i,
             expression: e,
@@ -668,7 +767,8 @@ rule type_qualifier0() -> TypeQualifier =
     clang(<K(<"_Nonnull">)>) { TypeQualifier::Nonnull } /
     clang(<K(<"_Null_unspecified">)>) { TypeQualifier::NullUnspecified } /
     clang(<K(<"_Nullable">)>) { TypeQualifier::Nullable } /
-    K(<"_Atomic">) { TypeQualifier::Atomic } /
+    // 6.7.2.4: _Atomics followed by a "(" are interpreted as type specifiers.
+    K(<"_Atomic">) _ !"(" { TypeQualifier::Atomic } /
     c:msvc(<calling_convention()>)  { TypeQualifier::CallingConvention(c) }
 
 ////
@@ -777,7 +877,7 @@ rule parameter_declaration() -> Node<ParameterDeclaration> = node(<parameter_dec
 
 rule parameter_declaration0() -> ParameterDeclaration =
     b:msvc(<sal_param_annotation()>) ?
-    _ s:list1(<declaration_specifier()>)
+    _ s:declaration_specifiers()
     _ d:parameter_declarator()     _ a:gnu(<attribute_specifier_list()>) ? {
         ParameterDeclaration {
             specifiers: s,
@@ -798,7 +898,7 @@ rule parameter_declarator() -> Option<Node<Declarator>> =
 rule type_name() -> Node<TypeName> = node(<type_name0()>)
 
 rule type_name0() -> TypeName =
-    s:list1(<specifier_qualifier()>)  _ d:abstract_declarator()? {
+    s:specifier_qualifiers()  _ d:abstract_declarator()? {
         TypeName {
             specifiers: s,
             declarator: d,
@@ -1112,13 +1212,11 @@ rule translation_unit0() -> TranslationUnit =
 rule external_declaration() -> ExternalDeclaration =
     d:declaration() { ExternalDeclaration::Declaration(d) } /
     s:static_assert() { ExternalDeclaration::StaticAssert(s) } /
-    d:scoped(<node(<function_definition()>)>) { ExternalDeclaration::FunctionDefinition(d) } /
-    d:node(<directive()>) { ExternalDeclaration::Directive(d) }
+    d:scoped(<node(<function_definition()>)>) { ExternalDeclaration::FunctionDefinition(d) }
 
-rule function_definition() -> FunctionDefinition =
-    gnu(<K(<"__extension__">)>)?
-    _ a:list1(<declaration_specifier()>)
-    _ b:declarator()     _ c:list0(<declaration()>)
+rule function_definition() -> FunctionDefinition
+    = gnu(<K(<"__extension__">)>)?
+    _ a:declaration_specifiers() _ b:declarator() _ c:list0(<declaration()>)
     _ d:node(<compound_statement()>) {
         FunctionDefinition {
             specifiers: a,

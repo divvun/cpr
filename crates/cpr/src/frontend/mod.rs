@@ -12,7 +12,7 @@ use grammar::{Define, Directive, Expr, Include, IncludeDirective, Token, TokenSe
 use thiserror::Error;
 
 use indexmap::IndexSet;
-use lang_c::{ast as c_ast, driver, env::Env, span::Node};
+use lang_c::{ast as c_ast, env::Env, span::Node};
 use std::{collections::HashMap, fmt, io, path::PathBuf};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -117,27 +117,10 @@ pub enum Error {
     NotFound(Include),
     #[error("include could not be expanded: {0}")]
     IncludeNotExpandable(String),
-    #[error("C syntax error: {0}")]
-    Syntax(SyntaxError), // has custom From implementation
     #[error("C token expansion error: {0}")]
     Expand(#[from] ExpandError),
     #[error("unknown file ID (internal error)")]
     UnknownFileId,
-}
-
-#[derive(Debug)]
-pub struct SyntaxError(pub driver::SyntaxError);
-
-impl From<driver::SyntaxError> for Error {
-    fn from(e: driver::SyntaxError) -> Self {
-        Self::Syntax(SyntaxError(e))
-    }
-}
-
-impl fmt::Display for SyntaxError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
-        write!(f, "{}", self.0)
-    }
 }
 
 #[derive(PartialEq, Eq)]
@@ -505,7 +488,10 @@ impl Parser {
                                     );
 
                                     let s = value.expand(&self.ctx)?.to_string();
-                                    match lang_c::parser::constant_expression(&s, &mut self.env) {
+                                    match lang_c::c_parser::constant_expression(
+                                        &s,
+                                        &self.env.for_parser(),
+                                    ) {
                                         Ok(node) => {
                                             let expr = &node.node;
                                             if let c_ast::Expression::Constant(c) = expr {
