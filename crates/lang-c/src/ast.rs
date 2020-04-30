@@ -626,6 +626,14 @@ pub enum TypeSpecifier {
     ///
     /// [ISO/IEC TS 18661-3:2015](http://www.open-std.org/jtc1/sc22/wg14/www/docs/n1945.pdf)
     TS18661Float(TS18661FloatType),
+    /// MSVC __int8
+    Int8,
+    /// MSVC __int16
+    Int16,
+    /// MSVC __int32
+    Int32,
+    /// MSVC __int64
+    Int64,
 }
 
 /// Floating point type with guaranteed width and format

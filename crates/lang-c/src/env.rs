@@ -89,11 +89,7 @@ impl Env {
     }
 
     pub fn with_msvc() -> Env {
-        let mut builtin_typenames = HashSet::default();
-        builtin_typenames.insert("__int8".to_owned());
-        builtin_typenames.insert("__int16".to_owned());
-        builtin_typenames.insert("__int32".to_owned());
-        builtin_typenames.insert("__int64".to_owned());
+        let builtin_typenames = HashSet::default();
         let mut reserved = HashSet::default();
         reserved.extend(strings::RESERVED_C11.iter());
         Env {

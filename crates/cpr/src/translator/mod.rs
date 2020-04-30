@@ -362,13 +362,11 @@ impl<'a> Translator<'a> {
             },
             TS::Bool => builtin("bool"),
             TS::Void => builtin("::core::ffi::c_void"),
-            TS::TypedefName(Node { node: id, .. }) => match id.name.as_ref() {
-                "__int8" => pick_sign(signed, builtin("u8"), builtin("i8")),
-                "__int16" => pick_sign(signed, builtin("u16"), builtin("i16")),
-                "__int32" => pick_sign(signed, builtin("u32"), builtin("i32")),
-                "__int64" => pick_sign(signed, builtin("u64"), builtin("i64")),
-                name => builtin(name),
-            },
+            TS::Int8 => pick_sign(signed, builtin("u8"), builtin("i8")),
+            TS::Int16 => pick_sign(signed, builtin("u16"), builtin("i16")),
+            TS::Int32 => pick_sign(signed, builtin("u32"), builtin("i32")),
+            TS::Int64 => pick_sign(signed, builtin("u64"), builtin("i64")),
+            TS::TypedefName(Node { node: id, .. }) => builtin(&id.name),
             TS::Struct(Node { node: struty, .. }) => {
                 let id = &struty
                     .identifier

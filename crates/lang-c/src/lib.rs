@@ -646,6 +646,10 @@ rule type_specifier_unique() -> TypeSpecifier
 rule type_specifier_nonunique() -> TypeSpecifier
     = K(<"char">) { TypeSpecifier::Char }
     / K(<"short">) { TypeSpecifier::Short }
+    / msvc(<K(<"__int8">)>) { TypeSpecifier::Int8 }
+    / msvc(<K(<"__int16">)>) { TypeSpecifier::Int16 }
+    / msvc(<K(<"__int32">)>) { TypeSpecifier::Int32 }
+    / msvc(<K(<"__int64">)>) { TypeSpecifier::Int64 }
     / K(<"int">) { TypeSpecifier::Int }
     / K(<"long">) { TypeSpecifier::Long }
     / K(<"float">) { TypeSpecifier::Float }
