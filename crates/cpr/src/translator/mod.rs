@@ -335,7 +335,13 @@ impl<'a> Translator<'a> {
             }
         }
 
-        assert_eq!(specs.len(), 1, "must have only one typespec remaining");
+        assert_eq!(
+            specs.len(),
+            1,
+            "must have only one typespec remaining, but had: {:#?}\noriginal specs = {:#?}",
+            specs,
+            original_specs,
+        );
 
         let mut res = match &specs[0] {
             TS::Int => match longness {
