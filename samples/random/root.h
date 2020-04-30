@@ -3,5 +3,8 @@
 // #include <fileapi.h>
 // #include <projectedfslib.h>
 
-typedef unsigned long DWORD;
-typedef int (*proc)(const void *, const void *, DWORD, int);
+// works
+// typedef int *LPCWCH, *PCWCH;
+
+// does not work
+typedef const int *LPCWCH, *PCWCH;

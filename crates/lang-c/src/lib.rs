@@ -526,6 +526,9 @@ rule declaration_tail1(s: rule<(Ds)>) -> (Ds, Id)
 
 // What can follow a typedef keyword
 rule declaration_typedef_tail() -> (Ds, Id)
+    = declaration_seq(<declaration_specifiers_unique()>, <declaration_typedef_tail2()>)
+
+rule declaration_typedef_tail2() -> (Ds, Id)
     = declaration_seq(<declaration_unique_type()>, <declaration_typedef_tail1(<declaration_specifiers_unique()>)>)
     / declaration_seq(<declaration_nonunique_type()>, <declaration_typedef_tail1(<declaration_specifiers_nonunique()>)>)
 
