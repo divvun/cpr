@@ -115,13 +115,17 @@ impl Env {
         self.is_ignoring_reserved = ignore;
     }
 
-    pub fn is_typename(&self, s: &str) -> bool {
-        self.builtin_typenames.contains(s)
-            || self.symbols.iter().any(|sc| {
-                sc.get(s)
-                    .map(|s| matches!(s, Symbol::Typename))
-                    .unwrap_or(false)
-            })
+    pub fn is_typename(&self, ident: &str) -> bool {
+        if self.builtin_typenames.contains(ident) {
+            return true;
+        }
+
+        for scope in self.symbols.iter().rev() {
+            if let Some(symbol) = scope.get(ident) {
+                return matches!(symbol, Symbol::Typename);
+            }
+        }
+        false
     }
 
     pub fn handle_declarator(&mut self, d: &Node<Declarator>, sym: Symbol) {

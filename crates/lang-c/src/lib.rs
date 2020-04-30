@@ -822,7 +822,7 @@ rule direct_declarator() -> DeclaratorKind =
 
 rule derived_declarator() -> DerivedDeclarator =
     "[" _ a:node(<array_declarator()>) { DerivedDeclarator::Array(a) } /
-    "(" _ f:node(<function_declarator()>) _ ")" { DerivedDeclarator::Function(f) } /
+    "(" _ f:scoped(<node(<function_declarator()>)>) _ ")" { DerivedDeclarator::Function(f) } /
     "(" _ p:cs0(<identifier()>) _ ")" { DerivedDeclarator::KRFunction(p) }
 
 rule array_declarator() -> ArrayDeclarator =
@@ -890,10 +890,13 @@ rule parameter_declaration0() -> ParameterDeclaration =
         }
     }
 
-rule parameter_declarator() -> Option<Node<Declarator>> =
-    d:declarator() { Some(d) } /
-    d:abstract_declarator() { Some(d) } /
-    { None }
+rule parameter_declarator() -> Option<Node<Declarator>>
+    = d:declarator() {
+        env.get().handle_declarator(&d, Symbol::Identifier);
+        Some(d)
+    }
+    / d:abstract_declarator() { Some(d) }
+    / { None }
 
 ////
 // 6.7.7 Type names
@@ -1070,10 +1073,10 @@ pub rule statement() -> Box<Node<Statement>> = box(<node(<statement0()>)>)
 
 rule statement0() -> Statement =
     s:node(<labeled_statement()>) { Statement::Labeled(s) } /
-    compound_statement() /
+    scoped(<compound_statement()>) /
     expression_statement() /
-    selection_statement() /
-    iteration_statement() /
+    scoped(<selection_statement()>) /
+    scoped(<iteration_statement()>) /
     jump_statement() // /
     // gnu(<asm_statement()>)
 
