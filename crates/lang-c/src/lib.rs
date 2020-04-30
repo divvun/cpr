@@ -77,7 +77,8 @@ pub rule identifier() -> Node<Identifier> = node(<identifier0()>)
 
 rule identifier0() -> Identifier =
     n:$(['_' | 'a'..='z' | 'A'..='Z'] ['_' | 'a'..='z' | 'A'..='Z' | '0'..='9']*) {?
-        if !env.get().reserved.contains(n) {
+        let env = env.get();
+        if env.is_ignoring_reserved || !env.reserved.contains(n) {
             Ok(Identifier {
                 name: n.into(),
             })

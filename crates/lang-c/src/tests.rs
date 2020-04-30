@@ -1343,661 +1343,688 @@ fn test_expr_cast() {
 //     );
 // }
 
-// #[test]
-// fn test_single_line_expr() {
-//     use crate::parser::constant_expression;
+#[test]
+fn test_union() {
+    use self::int::dec;
+    use crate::ast::ArraySize::VariableExpression;
+    use crate::ast::Designator::Member;
+    use crate::ast::Initializer::{Expression, List};
+    use crate::ast::TypeSpecifier::{Double, Int, Long};
+    use crate::parser::declaration;
 
-//     let mut env = Env::with_core();
-//     env.single_line_mode(true);
+    let mut env = Env::new();
+    let env = &env.for_parser();
 
-//     assert!(constant_expression("42 == 43", &mut env).is_ok());
-//     assert!(constant_expression("42 ==\n43", &mut env).is_err());
-// }
+    assert_eq!(
+        declaration(
+            "union { long double __l; int __i[3]; } __u = { __l: __x };",
+            env
+        ),
+        Ok(Declaration {
+            specifiers: vec![StructType {
+                kind: StructKind::Union.into(),
+                identifier: None,
+                declarations: Some(vec![
+                    StructField {
+                        specifiers: vec![Long.into(), Double.into()],
+                        declarators: vec![StructDeclarator {
+                            declarator: Some(
+                                Declarator {
+                                    kind: ident("__l"),
+                                    derived: vec![],
+                                    extensions: vec![],
+                                }
+                                .into(),
+                            ),
+                            bit_width: None,
+                        }
+                        .into()],
+                        extensions: vec![],
+                    }
+                    .into(),
+                    StructField {
+                        specifiers: vec![Int.into()],
+                        declarators: vec![StructDeclarator {
+                            declarator: Some(
+                                Declarator {
+                                    kind: ident("__i"),
+                                    derived: vec![ArrayDeclarator {
+                                        qualifiers: vec![],
+                                        size: VariableExpression(dec("3")),
+                                    }
+                                    .into()],
+                                    extensions: vec![],
+                                }
+                                .into(),
+                            ),
+                            bit_width: None,
+                        }
+                        .into()],
+                        extensions: vec![],
+                    }
+                    .into(),
+                ]),
+                extensions: vec![],
+            }
+            .into()],
+            declarators: vec![InitDeclarator {
+                declarator: Declarator {
+                    kind: ident("__u"),
+                    derived: vec![],
+                    extensions: vec![],
+                }
+                .into(),
+                initializer: Some(
+                    List(vec![InitializerListItem {
+                        designation: vec![Member(ident("__l")).into()],
+                        initializer: Expression(ident("__x")).into(),
+                    }
+                    .into()])
+                    .into(),
+                ),
+            }
+            .into()],
+        }
+        .into())
+    );
+}
 
-// #[test]
-// fn test_union() {
-//     use self::int::dec;
-//     use crate::ast::ArraySize::VariableExpression;
-//     use crate::ast::Designator::Member;
-//     use crate::ast::Initializer::{Expression, List};
-//     use crate::ast::TypeSpecifier::{Double, Int, Long};
-//     use crate::parser::declaration;
+#[test]
+fn test_offsetof() {
+    use self::int::dec;
+    use crate::ast::ArraySize::VariableExpression;
+    use crate::ast::Expression::OffsetOf;
+    use crate::ast::OffsetMember::IndirectMember;
+    use crate::ast::TypeSpecifier::Int;
+    use crate::parser::expression;
 
-//     assert_eq!(
-//         declaration(
-//             "union { long double __l; int __i[3]; } __u = { __l: __x };",
-//             &mut Env::new()
-//         ),
-//         Ok(Declaration {
-//             specifiers: vec![StructType {
-//                 kind: StructKind::Union.into(),
-//                 identifier: None,
-//                 declarations: Some(vec![
-//                     StructField {
-//                         specifiers: vec![Long.into(), Double.into()],
-//                         declarators: vec![StructDeclarator {
-//                             declarator: Some(
-//                                 Declarator {
-//                                     kind: ident("__l"),
-//                                     derived: vec![],
-//                                     extensions: vec![],
-//                                 }
-//                                 .into(),
-//                             ),
-//                             bit_width: None,
-//                         }
-//                         .into()],
-//                         extensions: vec![],
-//                     }
-//                     .into(),
-//                     StructField {
-//                         specifiers: vec![Int.into()],
-//                         declarators: vec![StructDeclarator {
-//                             declarator: Some(
-//                                 Declarator {
-//                                     kind: ident("__i"),
-//                                     derived: vec![ArrayDeclarator {
-//                                         qualifiers: vec![],
-//                                         size: VariableExpression(dec("3")),
-//                                     }
-//                                     .into()],
-//                                     extensions: vec![],
-//                                 }
-//                                 .into(),
-//                             ),
-//                             bit_width: None,
-//                         }
-//                         .into()],
-//                         extensions: vec![],
-//                     }
-//                     .into(),
-//                 ]),
-//                 extensions: vec![],
-//             }
-//             .into()],
-//             declarators: vec![InitDeclarator {
-//                 declarator: Declarator {
-//                     kind: ident("__u"),
-//                     derived: vec![],
-//                     extensions: vec![],
-//                 }
-//                 .into(),
-//                 initializer: Some(
-//                     List(vec![InitializerListItem {
-//                         designation: vec![Member(ident("__l")).into()],
-//                         initializer: Expression(ident("__x")).into(),
-//                     }
-//                     .into()])
-//                     .into(),
-//                 ),
-//             }
-//             .into()],
-//         }
-//         .into())
-//     );
-// }
+    let mut env = Env::new();
+    let env = &env.for_parser();
 
-// #[test]
-// fn test_offsetof() {
-//     use self::int::dec;
-//     use crate::ast::ArraySize::VariableExpression;
-//     use crate::ast::Expression::OffsetOf;
-//     use crate::ast::OffsetMember::IndirectMember;
-//     use crate::ast::TypeSpecifier::Int;
-//     use crate::parser::expression;
+    assert_eq!(
+        expression(
+            "__builtin_offsetof(struct { struct { int b; } a[2]; }, a->b)",
+            env
+        ),
+        Ok(OffsetOf(
+            OffsetOfExpression {
+                type_name: TypeName {
+                    specifiers: vec![StructType {
+                        kind: StructKind::Struct.into(),
+                        identifier: None,
+                        declarations: Some(vec![StructField {
+                            specifiers: vec![StructType {
+                                kind: StructKind::Struct.into(),
+                                identifier: None,
+                                declarations: Some(vec![StructField {
+                                    specifiers: vec![Int.into()],
+                                    declarators: vec![StructDeclarator {
+                                        declarator: Some(
+                                            Declarator {
+                                                kind: ident("b"),
+                                                derived: vec![],
+                                                extensions: vec![],
+                                            }
+                                            .into(),
+                                        ),
+                                        bit_width: None,
+                                    }
+                                    .into()],
+                                    extensions: vec![],
+                                }
+                                .into()]),
+                                extensions: vec![],
+                            }
+                            .into()],
+                            extensions: vec![],
+                            declarators: vec![StructDeclarator {
+                                declarator: Some(
+                                    Declarator {
+                                        kind: ident("a"),
+                                        derived: vec![ArrayDeclarator {
+                                            qualifiers: vec![],
+                                            size: VariableExpression(dec("2")),
+                                        }
+                                        .into()],
+                                        extensions: vec![],
+                                    }
+                                    .into(),
+                                ),
+                                bit_width: None,
+                            }
+                            .into()],
+                        }
+                        .into()]),
+                        extensions: vec![],
+                    }
+                    .into()],
+                    declarator: None,
+                }
+                .into(),
+                designator: OffsetDesignator {
+                    base: ident("a"),
+                    members: vec![IndirectMember(ident("b")).into()],
+                }
+                .into(),
+            }
+            .into()
+        )
+        .into())
+    );
+}
 
-//     assert_eq!(
-//         expression(
-//             "__builtin_offsetof(struct { struct { int b; } a[2]; }, a->b)",
-//             &mut Env::new()
-//         ),
-//         Ok(OffsetOf(
-//             OffsetOfExpression {
-//                 type_name: TypeName {
-//                     specifiers: vec![StructType {
-//                         kind: StructKind::Struct.into(),
-//                         identifier: None,
-//                         declarations: Some(vec![StructField {
-//                             specifiers: vec![StructType {
-//                                 kind: StructKind::Struct.into(),
-//                                 identifier: None,
-//                                 declarations: Some(vec![StructField {
-//                                     specifiers: vec![Int.into()],
-//                                     declarators: vec![StructDeclarator {
-//                                         declarator: Some(
-//                                             Declarator {
-//                                                 kind: ident("b"),
-//                                                 derived: vec![],
-//                                                 extensions: vec![],
-//                                             }
-//                                             .into(),
-//                                         ),
-//                                         bit_width: None,
-//                                     }
-//                                     .into()],
-//                                     extensions: vec![],
-//                                 }
-//                                 .into()]),
-//                                 extensions: vec![],
-//                             }
-//                             .into()],
-//                             extensions: vec![],
-//                             declarators: vec![StructDeclarator {
-//                                 declarator: Some(
-//                                     Declarator {
-//                                         kind: ident("a"),
-//                                         derived: vec![ArrayDeclarator {
-//                                             qualifiers: vec![],
-//                                             size: VariableExpression(dec("2")),
-//                                         }
-//                                         .into()],
-//                                         extensions: vec![],
-//                                     }
-//                                     .into(),
-//                                 ),
-//                                 bit_width: None,
-//                             }
-//                             .into()],
-//                         }
-//                         .into()]),
-//                         extensions: vec![],
-//                     }
-//                     .into()],
-//                     declarator: None,
-//                 }
-//                 .into(),
-//                 designator: OffsetDesignator {
-//                     base: ident("a"),
-//                     members: vec![IndirectMember(ident("b")).into()],
-//                 }
-//                 .into(),
-//             }
-//             .into()
-//         )
-//         .into())
-//     );
-// }
+#[test]
+fn test_call() {
+    use crate::parser::expression;
 
-// #[test]
-// fn test_call() {
-//     use crate::parser::expression;
+    let mut env = Env::new();
+    let env = &env.for_parser();
 
-//     assert_eq!(
-//         expression("foo(bar, baz)", &mut Env::new()),
-//         Ok(CallExpression {
-//             callee: ident("foo"),
-//             arguments: vec![ident("bar"), ident("baz")],
-//         }
-//         .into())
-//     );
-// }
+    assert_eq!(
+        expression("foo(bar, baz)", env),
+        Ok(CallExpression {
+            callee: ident("foo"),
+            arguments: vec![ident("bar"), ident("baz")],
+        }
+        .into())
+    );
+}
 
-// #[test]
-// fn test_typeof() {
-//     use crate::ast::TypeSpecifier::TypeOf;
-//     use crate::parser::declaration;
+#[test]
+fn test_typeof() {
+    use crate::ast::TypeSpecifier::TypeOf;
+    use crate::parser::declaration;
 
-//     assert_eq!(
-//         declaration(
-//             "__typeof__(foo(bar, baz)) ook = foo(bar, baz);",
-//             &mut Env::new()
-//         ),
-//         Ok(Declaration {
-//             specifiers: vec![TypeOf(
-//                 CallExpression {
-//                     callee: ident("foo"),
-//                     arguments: vec![ident("bar"), ident("baz")],
-//                 }
-//                 .into(),
-//             )
-//             .into()],
-//             declarators: vec![InitDeclarator {
-//                 declarator: Declarator {
-//                     kind: ident("ook"),
-//                     derived: vec![],
-//                     extensions: vec![],
-//                 }
-//                 .into(),
-//                 initializer: Some(
-//                     CallExpression {
-//                         callee: ident("foo"),
-//                         arguments: vec![ident("bar"), ident("baz")],
-//                     }
-//                     .into(),
-//                 ),
-//             }
-//             .into()],
-//         }
-//         .into())
-//     );
-// }
+    let mut env = Env::new();
+    let env = &env.for_parser();
 
-// #[test]
-// fn test_if() {
-//     use crate::ast::Statement::Compound;
-//     use crate::parser::statement;
+    assert_eq!(
+        declaration("__typeof__(foo(bar, baz)) ook = foo(bar, baz);", env),
+        Ok(Declaration {
+            specifiers: vec![TypeOf(
+                CallExpression {
+                    callee: ident("foo"),
+                    arguments: vec![ident("bar"), ident("baz")],
+                }
+                .into(),
+            )
+            .into()],
+            declarators: vec![InitDeclarator {
+                declarator: Declarator {
+                    kind: ident("ook"),
+                    derived: vec![],
+                    extensions: vec![],
+                }
+                .into(),
+                initializer: Some(
+                    CallExpression {
+                        callee: ident("foo"),
+                        arguments: vec![ident("bar"), ident("baz")],
+                    }
+                    .into(),
+                ),
+            }
+            .into()],
+        }
+        .into())
+    );
+}
 
-//     assert_eq!(
-//         statement("if (x) do {} while(y); else z();", &mut Env::new()),
-//         Ok(IfStatement {
-//             condition: ident("x"),
-//             then_statement: DoWhileStatement {
-//                 statement: Compound(vec![]).into(),
-//                 expression: ident("y"),
-//             }
-//             .into(),
-//             else_statement: Some(
-//                 Statement::Expression(Some(
-//                     CallExpression {
-//                         callee: ident("z"),
-//                         arguments: vec![],
-//                     }
-//                     .into()
-//                 ))
-//                 .into()
-//             ),
-//         }
-//         .into())
-//     );
-// }
+#[test]
+fn test_if() {
+    use crate::ast::Statement::Compound;
+    use crate::parser::statement;
 
-// // Check that a typedef that can be mistaken for a K&R-style argument declaration is correctly
-// // parsed as an external declaration. What went wrong: until we encounter bar, the thing looks like
-// // a function definition, where the name is followed by a two declarations K&R-style, similar to:
-// //
-// // ```
-// // int foo(i)
-// // int i; // <-- __attribute__ and typedef occupy this slot, since both are valid declarations.
-// // { }
-// // ```:
-// #[test]
-// fn test_attribute4() {
-//     use crate::ast::Statement::Compound;
-//     use crate::ast::StorageClassSpecifier::Typedef;
-//     use crate::ast::TypeSpecifier::Int;
-//     use crate::parser::translation_unit;
+    let mut env = Env::new();
+    let env = &env.for_parser();
 
-//     let env = &mut Env::new();
+    assert_eq!(
+        statement("if (x) do {} while(y); else z();", env),
+        Ok(IfStatement {
+            condition: ident("x"),
+            then_statement: DoWhileStatement {
+                statement: Compound(vec![]).into(),
+                expression: ident("y"),
+            }
+            .into(),
+            else_statement: Some(
+                Statement::Expression(Some(
+                    CallExpression {
+                        callee: ident("z"),
+                        arguments: vec![],
+                    }
+                    .into()
+                ))
+                .into()
+            ),
+        }
+        .into())
+    );
+}
 
-//     assert_eq!(
-//         translation_unit(
-//             r#"
-//                 int foo (int) __attribute__ ((__nothrow__));
-//                 typedef int named;
-//                 int bar (int f) { }
-//             "#,
-//             env
-//         ),
-//         Ok(TranslationUnit(vec![
-//             Declaration {
-//                 specifiers: vec![Int.into()],
-//                 declarators: vec![InitDeclarator {
-//                     declarator: Declarator {
-//                         kind: ident("foo"),
-//                         derived: vec![FunctionDeclarator {
-//                             parameters: vec![ParameterDeclaration {
-//                                 specifiers: vec![Int.into()],
-//                                 declarator: None,
-//                                 extensions: vec![],
-//                             }
-//                             .into()],
-//                             ellipsis: Ellipsis::None,
-//                         }
-//                         .into()],
-//                         extensions: vec![Attribute {
-//                             name: "__nothrow__".into(),
-//                             arguments: vec![],
-//                         }
-//                         .into()],
-//                     }
-//                     .into(),
-//                     initializer: None,
-//                 }
-//                 .into()],
-//             }
-//             .into(),
-//             Declaration {
-//                 specifiers: vec![Typedef.into(), Int.into()],
-//                 declarators: vec![InitDeclarator {
-//                     declarator: Declarator {
-//                         kind: ident("named"),
-//                         derived: vec![],
-//                         extensions: vec![],
-//                     }
-//                     .into(),
-//                     initializer: None,
-//                 }
-//                 .into()],
-//             }
-//             .into(),
-//             FunctionDefinition {
-//                 specifiers: vec![Int.into()],
-//                 declarator: Declarator {
-//                     kind: ident("bar"),
-//                     derived: vec![FunctionDeclarator {
-//                         parameters: vec![ParameterDeclaration {
-//                             specifiers: vec![Int.into()],
-//                             declarator: Some(
-//                                 Declarator {
-//                                     kind: ident("f"),
-//                                     derived: vec![],
-//                                     extensions: vec![],
-//                                 }
-//                                 .into(),
-//                             ),
-//                             extensions: vec![],
-//                         }
-//                         .into()],
-//                         ellipsis: Ellipsis::None,
-//                     }
-//                     .into()],
-//                     extensions: vec![],
-//                 }
-//                 .into(),
-//                 declarations: vec![],
-//                 statement: Compound(vec![]).into(),
-//             }
-//             .into(),
-//         ]))
-//     );
-// }
+// Check that a typedef that can be mistaken for a K&R-style argument declaration is correctly
+// parsed as an external declaration. What went wrong: until we encounter bar, the thing looks like
+// a function definition, where the name is followed by a two declarations K&R-style, similar to:
+//
+// ```
+// int foo(i)
+// int i; // <-- __attribute__ and typedef occupy this slot, since both are valid declarations.
+// { }
+// ```:
+#[test]
+fn test_attribute4() {
+    use crate::ast::Statement::Compound;
+    use crate::ast::StorageClassSpecifier::Typedef;
+    use crate::ast::TypeSpecifier::Int;
+    use crate::parser::translation_unit;
 
-// #[test]
-// fn test_attribute5() {
-//     use crate::ast::Statement::Compound;
-//     use crate::ast::TypeSpecifier::Int;
-//     use crate::parser::translation_unit;
+    let mut env = Env::new();
+    let env = &env.for_parser();
 
-//     assert_eq!(
-//         translation_unit(
-//             "int foo(int a __attribute__((unused)), int b __attribute__((unused))) {}",
-//             &mut Env::new(),
-//         ),
-//         Ok(TranslationUnit(vec![FunctionDefinition {
-//             specifiers: vec![Int.into()],
-//             declarator: Declarator {
-//                 kind: ident("foo"),
-//                 derived: vec![FunctionDeclarator {
-//                     parameters: vec![
-//                         ParameterDeclaration {
-//                             specifiers: vec![Int.into()],
-//                             declarator: Some(
-//                                 Declarator {
-//                                     kind: ident("a"),
-//                                     derived: vec![],
-//                                     extensions: vec![],
-//                                 }
-//                                 .into(),
-//                             ),
-//                             extensions: vec![Attribute {
-//                                 name: "unused".into(),
-//                                 arguments: vec![],
-//                             }
-//                             .into()],
-//                         }
-//                         .into(),
-//                         ParameterDeclaration {
-//                             specifiers: vec![Int.into()],
-//                             declarator: Some(
-//                                 Declarator {
-//                                     kind: ident("b"),
-//                                     derived: vec![],
-//                                     extensions: vec![],
-//                                 }
-//                                 .into(),
-//                             ),
-//                             extensions: vec![Attribute {
-//                                 name: "unused".into(),
-//                                 arguments: vec![],
-//                             }
-//                             .into()],
-//                         }
-//                         .into(),
-//                     ],
-//                     ellipsis: Ellipsis::None,
-//                 }
-//                 .into()],
-//                 extensions: vec![],
-//             }
-//             .into(),
-//             declarations: vec![],
-//             statement: Compound(vec![]).into(),
-//         }
-//         .into()]))
-//     );
-// }
+    assert_eq!(
+        translation_unit(
+            r#"
+                int foo (int) __attribute__ ((__nothrow__));
+                typedef int named;
+                int bar (int f) { }
+            "#,
+            env
+        ),
+        Ok(TranslationUnit(vec![
+            Declaration {
+                specifiers: vec![Int.into()],
+                declarators: vec![InitDeclarator {
+                    declarator: Declarator {
+                        kind: ident("foo"),
+                        derived: vec![FunctionDeclarator {
+                            parameters: vec![ParameterDeclaration {
+                                specifiers: vec![Int.into()],
+                                declarator: None,
+                                extensions: vec![],
+                            }
+                            .into()],
+                            ellipsis: Ellipsis::None,
+                        }
+                        .into()],
+                        extensions: vec![Attribute {
+                            name: "__nothrow__".into(),
+                            arguments: vec![],
+                        }
+                        .into()],
+                    }
+                    .into(),
+                    initializer: None,
+                }
+                .into()],
+            }
+            .into(),
+            Declaration {
+                specifiers: vec![Typedef.into(), Int.into()],
+                declarators: vec![InitDeclarator {
+                    declarator: Declarator {
+                        kind: ident("named"),
+                        derived: vec![],
+                        extensions: vec![],
+                    }
+                    .into(),
+                    initializer: None,
+                }
+                .into()],
+            }
+            .into(),
+            FunctionDefinition {
+                specifiers: vec![Int.into()],
+                declarator: Declarator {
+                    kind: ident("bar"),
+                    derived: vec![FunctionDeclarator {
+                        parameters: vec![ParameterDeclaration {
+                            specifiers: vec![Int.into()],
+                            declarator: Some(
+                                Declarator {
+                                    kind: ident("f"),
+                                    derived: vec![],
+                                    extensions: vec![],
+                                }
+                                .into(),
+                            ),
+                            extensions: vec![],
+                        }
+                        .into()],
+                        ellipsis: Ellipsis::None,
+                    }
+                    .into()],
+                    extensions: vec![],
+                }
+                .into(),
+                declarations: vec![],
+                statement: Compound(vec![]).into(),
+            }
+            .into(),
+        ]))
+    );
+}
 
-// #[test]
-// fn test_declaration6() {
-//     use crate::ast::Expression::AlignOf;
-//     use crate::ast::StorageClassSpecifier::Typedef;
-//     use crate::ast::TypeSpecifier::{Double, Long};
-//     use crate::parser::declaration;
+#[test]
+fn test_attribute5() {
+    use crate::ast::Statement::Compound;
+    use crate::ast::TypeSpecifier::Int;
+    use crate::parser::translation_unit;
 
-//     assert_eq!(
-//         declaration(
-//             r"typedef struct {
-//               long long __max_align_ll __attribute__((__aligned__(__alignof__(long long))));
-//               long double __max_align_ld __attribute__((__aligned__(__alignof__(long double))));
-//             } max_align_t;",
-//             &mut Env::new()
-//         ),
-//         Ok(Declaration {
-//             specifiers: vec![
-//                 Typedef.into(),
-//                 StructType {
-//                     kind: StructKind::Struct.into(),
-//                     identifier: None,
-//                     declarations: Some(vec![
-//                         StructField {
-//                             specifiers: vec![Long.into(), Long.into()],
-//                             declarators: vec![StructDeclarator {
-//                                 declarator: Some(
-//                                     Declarator {
-//                                         kind: ident("__max_align_ll"),
-//                                         derived: vec![],
-//                                         extensions: vec![Attribute {
-//                                             name: "__aligned__".into(),
-//                                             arguments: vec![AlignOf(
-//                                                 TypeName {
-//                                                     specifiers: vec![Long.into(), Long.into()],
-//                                                     declarator: None,
-//                                                 }
-//                                                 .into(),
-//                                             )
-//                                             .into()],
-//                                         }
-//                                         .into()],
-//                                     }
-//                                     .into(),
-//                                 ),
-//                                 bit_width: None,
-//                             }
-//                             .into()],
-//                             extensions: vec![],
-//                         }
-//                         .into(),
-//                         StructField {
-//                             specifiers: vec![Long.into(), Double.into()],
-//                             declarators: vec![StructDeclarator {
-//                                 declarator: Some(
-//                                     Declarator {
-//                                         kind: ident("__max_align_ld"),
-//                                         derived: vec![],
-//                                         extensions: vec![Attribute {
-//                                             name: "__aligned__".into(),
-//                                             arguments: vec![AlignOf(
-//                                                 TypeName {
-//                                                     specifiers: vec![Long.into(), Double.into()],
-//                                                     declarator: None,
-//                                                 }
-//                                                 .into(),
-//                                             )
-//                                             .into()],
-//                                         }
-//                                         .into()],
-//                                     }
-//                                     .into(),
-//                                 ),
-//                                 bit_width: None,
-//                             }
-//                             .into()],
-//                             extensions: vec![],
-//                         }
-//                         .into(),
-//                     ]),
-//                     extensions: vec![],
-//                 }
-//                 .into(),
-//             ],
-//             declarators: vec![InitDeclarator {
-//                 declarator: Declarator {
-//                     kind: ident("max_align_t"),
-//                     derived: vec![],
-//                     extensions: vec![],
-//                 }
-//                 .into(),
-//                 initializer: None,
-//             }
-//             .into()],
-//         }
-//         .into())
-//     );
-// }
+    let mut env = Env::new();
+    let env = &env.for_parser();
 
-// #[test]
-// fn test_keyword_expr() {
-//     use crate::parser::expression;
+    assert_eq!(
+        translation_unit(
+            "int foo(int a __attribute__((unused)), int b __attribute__((unused))) {}",
+            env,
+        ),
+        Ok(TranslationUnit(vec![FunctionDefinition {
+            specifiers: vec![Int.into()],
+            declarator: Declarator {
+                kind: ident("foo"),
+                derived: vec![FunctionDeclarator {
+                    parameters: vec![
+                        ParameterDeclaration {
+                            specifiers: vec![Int.into()],
+                            declarator: Some(
+                                Declarator {
+                                    kind: ident("a"),
+                                    derived: vec![],
+                                    extensions: vec![],
+                                }
+                                .into(),
+                            ),
+                            extensions: vec![Attribute {
+                                name: "unused".into(),
+                                arguments: vec![],
+                            }
+                            .into()],
+                        }
+                        .into(),
+                        ParameterDeclaration {
+                            specifiers: vec![Int.into()],
+                            declarator: Some(
+                                Declarator {
+                                    kind: ident("b"),
+                                    derived: vec![],
+                                    extensions: vec![],
+                                }
+                                .into(),
+                            ),
+                            extensions: vec![Attribute {
+                                name: "unused".into(),
+                                arguments: vec![],
+                            }
+                            .into()],
+                        }
+                        .into(),
+                    ],
+                    ellipsis: Ellipsis::None,
+                }
+                .into()],
+                extensions: vec![],
+            }
+            .into(),
+            declarations: vec![],
+            statement: Compound(vec![]).into(),
+        }
+        .into()]))
+    );
+}
 
-//     assert_eq!(
-//         expression("__func__", &mut Env::new()),
-//         Ok(ident("__func__"))
-//     );
+#[test]
+fn test_declaration6() {
+    use crate::ast::Expression::AlignOf;
+    use crate::ast::StorageClassSpecifier::Typedef;
+    use crate::ast::TypeSpecifier::{Double, Long};
+    use crate::parser::declaration;
 
-//     assert_eq!(
-//         expression("__FUNCTION__", &mut Env::new()),
-//         Ok(ident("__FUNCTION__"))
-//     );
+    let mut env = Env::new();
+    let env = &env.for_parser();
 
-//     assert_eq!(
-//         expression("__PRETTY_FUNCTION__", &mut Env::new()),
-//         Ok(ident("__PRETTY_FUNCTION__"))
-//     );
-// }
+    assert_eq!(
+        declaration(
+            r"typedef struct {
+              long long __max_align_ll __attribute__((__aligned__(__alignof__(long long))));
+              long double __max_align_ld __attribute__((__aligned__(__alignof__(long double))));
+            } max_align_t;",
+            env
+        ),
+        Ok(Declaration {
+            specifiers: vec![
+                Typedef.into(),
+                StructType {
+                    kind: StructKind::Struct.into(),
+                    identifier: None,
+                    declarations: Some(vec![
+                        StructField {
+                            specifiers: vec![Long.into(), Long.into()],
+                            declarators: vec![StructDeclarator {
+                                declarator: Some(
+                                    Declarator {
+                                        kind: ident("__max_align_ll"),
+                                        derived: vec![],
+                                        extensions: vec![Attribute {
+                                            name: "__aligned__".into(),
+                                            arguments: vec![AlignOf(
+                                                TypeName {
+                                                    specifiers: vec![Long.into(), Long.into()],
+                                                    declarator: None,
+                                                }
+                                                .into(),
+                                            )
+                                            .into()],
+                                        }
+                                        .into()],
+                                    }
+                                    .into(),
+                                ),
+                                bit_width: None,
+                            }
+                            .into()],
+                            extensions: vec![],
+                        }
+                        .into(),
+                        StructField {
+                            specifiers: vec![Long.into(), Double.into()],
+                            declarators: vec![StructDeclarator {
+                                declarator: Some(
+                                    Declarator {
+                                        kind: ident("__max_align_ld"),
+                                        derived: vec![],
+                                        extensions: vec![Attribute {
+                                            name: "__aligned__".into(),
+                                            arguments: vec![AlignOf(
+                                                TypeName {
+                                                    specifiers: vec![Long.into(), Double.into()],
+                                                    declarator: None,
+                                                }
+                                                .into(),
+                                            )
+                                            .into()],
+                                        }
+                                        .into()],
+                                    }
+                                    .into(),
+                                ),
+                                bit_width: None,
+                            }
+                            .into()],
+                            extensions: vec![],
+                        }
+                        .into(),
+                    ]),
+                    extensions: vec![],
+                }
+                .into(),
+            ],
+            declarators: vec![InitDeclarator {
+                declarator: Declarator {
+                    kind: ident("max_align_t"),
+                    derived: vec![],
+                    extensions: vec![],
+                }
+                .into(),
+                initializer: None,
+            }
+            .into()],
+        }
+        .into())
+    );
+}
 
-// #[test]
-// fn test_ts18661_float() {
-//     use crate::parser::declaration;
-//     assert_eq!(
-//         declaration("_Float64 foo = 1.5;", &mut Env::new()),
-//         Ok(Declaration {
-//             specifiers: vec![TS18661FloatType {
-//                 format: TS18661FloatFormat::BinaryInterchange,
-//                 width: 64,
-//             }
-//             .into()],
-//             declarators: vec![InitDeclarator {
-//                 declarator: Declarator {
-//                     kind: ident("foo"),
-//                     derived: vec![],
-//                     extensions: vec![],
-//                 }
-//                 .into(),
-//                 initializer: Some(float::dec("1.5")),
-//             }
-//             .into()],
-//         }
-//         .into())
-//     );
-// }
+// TODO: test ambiguous declarations
 
-// #[test]
-// fn test_msvc_extension() {
-//     use crate::parser::translation_unit;
-//     translation_unit("__declspec(deprecated) int test();", &mut Env::with_msvc()).unwrap();
-// }
+#[test]
+fn test_keyword_expr() {
+    use crate::parser::expression;
 
-// #[test]
-// fn test_msvc_calling_convention() {
-//     use crate::parser::translation_unit;
-//     translation_unit("extern int __stdcall test();", &mut Env::with_msvc()).unwrap();
-// }
+    let mut env = Env::new();
+    let env = &env.for_parser();
 
-// #[test]
-// fn test_typedef_msvc() {
-//     use crate::parser::translation_unit;
-//     translation_unit(
-//         "typedef signed __int64 INT64, *PINT64;",
-//         &mut Env::with_msvc(),
-//     )
-//     .unwrap();
-// }
+    assert_eq!(expression("__func__", env), Ok(ident("__func__")));
 
-// #[test]
-// fn test_msvc_unaligned() {
-//     use crate::parser::translation_unit;
-//     translation_unit("typedef void __unaligned *LPUWSTR;", &mut Env::with_msvc()).unwrap();
-// }
+    assert_eq!(expression("__FUNCTION__", env), Ok(ident("__FUNCTION__")));
 
-// #[test]
-// fn test_msvc_inline() {
-//     use crate::parser::translation_unit;
-//     translation_unit("__inline void foo();", &mut Env::with_msvc()).unwrap();
-// }
+    assert_eq!(
+        expression("__PRETTY_FUNCTION__", env),
+        Ok(ident("__PRETTY_FUNCTION__"))
+    );
+}
 
-// #[test]
-// fn test_msvc_forceinline() {
-//     use crate::parser::translation_unit;
-//     translation_unit("__forceinline void foo();", &mut Env::with_msvc()).unwrap();
-// }
+#[test]
+fn test_ts18661_float() {
+    use crate::parser::declaration;
 
-// #[test]
-// fn test_msvc_sal_param() {
-//     use crate::parser::translation_unit;
-//     translation_unit("void foo(_In_ void *ptr);", &mut Env::with_msvc()).unwrap();
-// }
+    let mut env = Env::new();
+    let env = &env.for_parser();
 
-// #[test]
-// fn test_msvc_sal_param2() {
-//     use crate::parser::translation_unit;
-//     translation_unit(
-//         "int foo(_Out_writes_bytes_to_(meow, kmeow) void *ptr, _In_ int meow);",
-//         &mut Env::with_msvc(),
-//     )
-//     .unwrap();
-// }
+    assert_eq!(
+        declaration("_Float64 foo = 1.5;", env),
+        Ok(Declaration {
+            specifiers: vec![TS18661FloatType {
+                format: TS18661FloatFormat::BinaryInterchange,
+                width: 64,
+            }
+            .into()],
+            declarators: vec![InitDeclarator {
+                declarator: Declarator {
+                    kind: ident("foo"),
+                    derived: vec![],
+                    extensions: vec![],
+                }
+                .into(),
+                initializer: Some(float::dec("1.5")),
+            }
+            .into()],
+        }
+        .into())
+    );
+}
 
-// #[test]
-// fn test_msvc_sal_param3() {
-//     use crate::parser::translation_unit;
-//     translation_unit(
-//         "int foo(_Out_writes_bytes_to_(meow, return) void *ptr, _In_ int meow);",
-//         &mut Env::with_msvc(),
-//     )
-//     .unwrap();
-// }
+#[test]
+fn test_msvc_extension() {
+    use crate::parser::translation_unit;
+    let mut env = Env::with_msvc();
+    let env = &env.for_parser();
+    translation_unit("__declspec(deprecated) int test();", env).unwrap();
+}
 
-// #[test]
-// fn test_msvc_sal_function() {
-//     use crate::parser::translation_unit;
-//     translation_unit("_Check_return_ int foo();", &mut Env::with_msvc()).unwrap();
-// }
+#[test]
+fn test_msvc_calling_convention() {
+    use crate::parser::translation_unit;
+    let mut env = Env::with_msvc();
+    let env = &env.for_parser();
+    translation_unit("extern int __stdcall test();", env).unwrap();
+}
 
-// #[test]
-// fn test_msvc_sal_function2() {
-//     use crate::parser::translation_unit;
-//     translation_unit("_Success_(return >= 0) int foo();", &mut Env::with_msvc()).unwrap();
-// }
+#[test]
+fn test_typedef_msvc() {
+    use crate::parser::translation_unit;
+    let mut env = Env::with_msvc();
+    let env = &env.for_parser();
+    translation_unit("typedef signed __int64 INT64, *PINT64;", env).unwrap();
+}
 
-// #[test]
-// fn test_msvc_sal_function3() {
-//     use crate::parser::translation_unit;
-//     translation_unit(
-//         "_Success_(return >= 0) _Check_return_ int foo();",
-//         &mut Env::with_msvc(),
-//     )
-//     .unwrap();
-// }
+#[test]
+fn test_msvc_unaligned() {
+    use crate::parser::translation_unit;
+    let mut env = Env::with_msvc();
+    let env = &env.for_parser();
+    translation_unit("typedef void __unaligned *LPUWSTR;", env).unwrap();
+}
+
+#[test]
+fn test_msvc_inline() {
+    use crate::parser::translation_unit;
+    let mut env = Env::with_msvc();
+    let env = &env.for_parser();
+    translation_unit("__inline void foo();", env).unwrap();
+}
+
+#[test]
+fn test_msvc_forceinline() {
+    use crate::parser::translation_unit;
+    let mut env = Env::with_msvc();
+    let env = &env.for_parser();
+    translation_unit("__forceinline void foo();", env).unwrap();
+}
+
+#[test]
+fn test_msvc_sal_param() {
+    use crate::parser::translation_unit;
+    let mut env = Env::with_msvc();
+    let env = &env.for_parser();
+    translation_unit("void foo(_In_ void *ptr);", env).unwrap();
+}
+
+#[test]
+fn test_msvc_sal_param2() {
+    use crate::parser::translation_unit;
+    let mut env = Env::with_msvc();
+    let env = &env.for_parser();
+    translation_unit(
+        "int foo(_Out_writes_bytes_to_(meow, kmeow) void *ptr, _In_ int meow);",
+        env,
+    )
+    .unwrap();
+}
+
+#[test]
+fn test_msvc_sal_param3() {
+    use crate::parser::translation_unit;
+    let mut env = Env::with_msvc();
+    let env = &env.for_parser();
+    translation_unit(
+        "int foo(_Out_writes_bytes_to_(meow, return) void *ptr, _In_ int meow);",
+        env,
+    )
+    .unwrap();
+}
+
+#[test]
+fn test_msvc_sal_function() {
+    use crate::parser::translation_unit;
+    let mut env = Env::with_msvc();
+    let env = &env.for_parser();
+    translation_unit("_Check_return_ int foo();", env).unwrap();
+}
+
+#[test]
+fn test_msvc_sal_function2() {
+    use crate::parser::translation_unit;
+    let mut env = Env::with_msvc();
+    let env = &env.for_parser();
+    translation_unit("_Success_(return >= 0) int foo();", env).unwrap();
+}
+
+#[test]
+fn test_msvc_sal_function3() {
+    use crate::parser::translation_unit;
+    let mut env = Env::with_msvc();
+    let env = &env.for_parser();
+    translation_unit("_Success_(return >= 0) _Check_return_ int foo();", env).unwrap();
+}
 
 // #[test]
 // fn test_gnu_extension() {
