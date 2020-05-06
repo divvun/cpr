@@ -167,14 +167,12 @@ impl<'a> Sink for CProcessor<'a> {
                     self.sink.push(c);
                 }
             },
-            CState::StringBackslash => match c {
-                c => {
-                    // this state exists for `\"` pretty much
-                    self.sink.push('\\');
-                    self.sink.push(c);
-                    self.state = CState::String;
-                }
-            },
+            CState::StringBackslash => {
+                // this state exists for `\"` pretty much
+                self.sink.push('\\');
+                self.sink.push(c);
+                self.state = CState::String;
+            }
             CState::NormalSlash => match c {
                 '/' => {
                     // start of single-line comment
@@ -191,28 +189,26 @@ impl<'a> Sink for CProcessor<'a> {
                     self.state = CState::Normal;
                 }
             },
-            CState::Single => match c {
-                '\n' => {
+            CState::Single => {
+                if c == '\n' {
                     // end of single-line comment
                     // C spec says replace comments with single space
                     self.sink.push(' ');
                     // also, it's still a newline I guess
                     self.sink.push('\n');
                     self.state = CState::Normal;
-                }
-                _ => {
+                } else {
                     // ignore everything else until newline
                 }
-            },
-            CState::Multi => match c {
-                '*' => {
+            }
+            CState::Multi => {
+                if c == '*' {
                     // possible end of multi-line comment
                     self.state = CState::MultiStar;
-                }
-                _ => {
+                } else {
                     // ignore everything else until `*/`
                 }
-            },
+            }
             CState::MultiStar => match c {
                 '/' => {
                     // end of multi-line comment!
@@ -260,7 +256,7 @@ pub fn process_line_continuations_and_comments(input: &str) -> Vec<(LineNo, Stri
         lc.push(c);
     }
     // add final newline if the input didn't have one
-    if !input.ends_with("\n") {
+    if !input.ends_with('\n') {
         lc.push('\n');
     }
 

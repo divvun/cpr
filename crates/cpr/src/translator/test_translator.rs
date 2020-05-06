@@ -29,13 +29,10 @@ impl UnitExtension for rg::Unit {
             .toplevels
             .iter()
             .filter_map(|tl| {
-                match tl {
-                    rg::TopLevel::AliasDeclaration(d) => {
-                        if d.name.value == name {
-                            return Some(d);
-                        }
+                if let rg::TopLevel::AliasDeclaration(d) = tl {
+                    if d.name.value == name {
+                        return Some(d);
                     }
-                    _ => {}
                 };
                 None
             })
@@ -50,13 +47,10 @@ impl UnitExtension for rg::Unit {
             .toplevels
             .iter()
             .filter_map(|tl| {
-                match tl {
-                    rg::TopLevel::EnumDeclaration(d) => {
-                        if d.name.value == name {
-                            return Some(d);
-                        }
+                if let rg::TopLevel::EnumDeclaration(d) = tl {
+                    if d.name.value == name {
+                        return Some(d);
                     }
-                    _ => {}
                 };
                 None
             })
@@ -71,13 +65,10 @@ impl UnitExtension for rg::Unit {
             .toplevels
             .iter()
             .filter_map(|tl| {
-                match tl {
-                    rg::TopLevel::StructDeclaration(d) => {
-                        if d.name.value == name {
-                            return Some(d);
-                        }
+                if let rg::TopLevel::StructDeclaration(d) = tl {
+                    if d.name.value == name {
+                        return Some(d);
                     }
-                    _ => {}
                 };
                 None
             })
@@ -92,13 +83,10 @@ impl UnitExtension for rg::Unit {
             .toplevels
             .iter()
             .filter_map(|tl| {
-                match tl {
-                    rg::TopLevel::FunctionDeclaration(d) => {
-                        if d.name.value == name {
-                            return Some(d);
-                        }
+                if let rg::TopLevel::FunctionDeclaration(d) = tl {
+                    if d.name.value == name {
+                        return Some(d);
                     }
-                    _ => {}
                 };
                 None
             })
@@ -113,13 +101,10 @@ impl UnitExtension for rg::Unit {
             .toplevels
             .iter()
             .filter_map(|tl| {
-                match tl {
-                    rg::TopLevel::Constant(d) => {
-                        if d.name.value == name {
-                            return Some(d);
-                        }
+                if let rg::TopLevel::Constant(d) = tl {
+                    if d.name.value == name {
+                        return Some(d);
                     }
-                    _ => {}
                 };
                 None
             })

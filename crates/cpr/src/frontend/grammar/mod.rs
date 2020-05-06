@@ -88,7 +88,7 @@ peg::parser! { pub(crate) grammar rules() for str {
             Define::FunctionLike {
                 name,
                 params,
-                value: value.unwrap_or(vec![].into()),
+                value: value.unwrap_or_else(|| vec![].into()),
             }
         }
 
@@ -96,7 +96,7 @@ peg::parser! { pub(crate) grammar rules() for str {
         = name:identifier() value:spaced_token_stream()? {
             Define::ObjectLike {
                 name,
-                value: value.unwrap_or(vec![].into()),
+                value: value.unwrap_or_else(|| vec![].into()),
             }
         }
 
@@ -369,8 +369,7 @@ impl TokenSeq {
 
     pub fn parse_as_expr(&self) -> Expr {
         let source = self.to_string();
-        let res = rules::expr(&source).expect("all exprs should parse");
-        res
+        rules::expr(&source).expect("all exprs should parse")
     }
 }
 
@@ -384,7 +383,7 @@ impl MacroParams {
     pub fn new(names: &[&str], has_trailing: bool) -> Self {
         Self {
             names: names
-                .into_iter()
+                .iter()
                 .enumerate()
                 .map(|(k, v)| (v.to_string(), k))
                 .collect(),

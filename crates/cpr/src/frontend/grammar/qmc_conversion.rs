@@ -52,8 +52,8 @@ impl AsBool for Expr {
         match self {
             Integer(0) => Bool::False,
             Integer(_) => Bool::True,
-            And(c) => Bool::And(c.into_iter().map(|v| v.as_bool(terms)).collect()),
-            Or(c) => Bool::Or(c.into_iter().map(|v| v.as_bool(terms)).collect()),
+            And(c) => Bool::And(c.iter().map(|v| v.as_bool(terms)).collect()),
+            Or(c) => Bool::Or(c.iter().map(|v| v.as_bool(terms)).collect()),
             Not(v) => Bool::Not(Box::new(v.as_bool(terms))),
             Defined(_) | Symbol(_) | Call(_, _) | Binary(_, _, _) => terms.add(self),
         }

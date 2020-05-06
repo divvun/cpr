@@ -43,12 +43,12 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let kits = args
         .kits_path
-        .or(devenv::get_kits_path())
+        .or_else(devenv::get_kits_path)
         .expect("Windows 10 Kit include path should be autodetected or specified with --kits-path");
 
     let msvc_path = args
         .msvc_path
-        .or(devenv::get_msvc_path())
+        .or_else(devenv::get_msvc_path)
         .expect("MSVC include path should be autodetected or specified with --msvc-path");
 
     let system_dirs = vec![

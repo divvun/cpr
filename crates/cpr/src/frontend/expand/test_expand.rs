@@ -2,8 +2,8 @@ use super::*;
 use grammar::{Directive, MacroParams, TokenSeq};
 
 fn expands_to(ctx: &Context, src: &[Token], dst: &[Token], msg: &str) {
-    let input: TokenSeq = src.iter().cloned().collect::<Vec<_>>().into();
-    let output: TokenSeq = dst.iter().cloned().collect::<Vec<_>>().into();
+    let input: TokenSeq = src.to_vec().into();
+    let output: TokenSeq = dst.to_vec().into();
     assert_eq!(input.expand(ctx).unwrap(), output, "{}", msg);
 }
 

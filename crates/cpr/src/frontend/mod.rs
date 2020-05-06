@@ -11,9 +11,14 @@ use expand::{ExpandError, Expandable};
 use grammar::{Define, Directive, Expr, Include, IncludeDirective, Token, TokenSeq};
 use thiserror::Error;
 
+use c_ast::{Expression, UnaryOperator, UnaryOperatorExpression};
 use indexmap::IndexSet;
-use lang_c::{ast as c_ast, env::Env, span::Node};
-use std::{collections::HashMap, fmt, io, path::PathBuf};
+use lang_c::{ast as c_ast, env::Env};
+use std::{
+    collections::{hash_map::Entry, HashMap},
+    fmt, io,
+    path::PathBuf,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct LineNo(pub u64);
@@ -31,10 +36,10 @@ pub struct Location {
 
 impl Location {
     fn display<'a>(&'a self, provider: &'a dyn SourceProvider) -> LocationDisplay<'a> {
-        return LocationDisplay {
+        LocationDisplay {
             loc: self,
             provider,
-        };
+        }
     }
 }
 
@@ -63,10 +68,9 @@ pub enum SymbolState<'a> {
 
 impl Context {
     pub fn new() -> Self {
-        let res = Context {
+        Context {
             defines: HashMap::new(),
-        };
-        res
+        }
     }
 
     pub fn simple_define(&mut self, s: &str) {
@@ -85,7 +89,7 @@ impl Context {
     }
 
     pub fn extend(&mut self, other: &Context) {
-        for (_, def) in &other.defines {
+        for def in other.defines.values() {
             self.push(def.clone());
         }
     }
@@ -369,7 +373,7 @@ impl Parser {
             .info(file_id)
             .ok_or(Error::UnknownFileId)?
             .clone();
-        self.ordered_files.insert(file_id.clone());
+        self.ordered_files.insert(file_id);
         let path = &file_info.path;
 
         let source = self.provider.read(file_id)?;
@@ -387,7 +391,7 @@ impl Parser {
         let mut if_stack: Vec<Vec<bool>> = Vec::new();
 
         fn path_taken(stack: &[(bool, TokenSeq)]) -> bool {
-            stack.iter().all(|(b, _)| *b == true)
+            stack.iter().all(|(b, _)| *b)
         }
 
         fn parse_expr(ctx: &Context, tokens: &TokenSeq) -> Expr {
@@ -486,51 +490,8 @@ impl Parser {
                                         def.name(),
                                         value
                                     );
-
-                                    let s = value.expand(&self.ctx)?.to_string();
-                                    match lang_c::parser::constant_expression(
-                                        &s,
-                                        &self.env.for_parser(),
-                                    ) {
-                                        Ok(node) => {
-                                            let expr = &node.node;
-                                            if let c_ast::Expression::Constant(c) = expr {
-                                                unit.declarations.push(UnitDeclaration::Constant(
-                                                    UnitConstant {
-                                                        name: def.name().to_string(),
-                                                        value: c.node.clone(),
-                                                        negated: false,
-                                                    },
-                                                ));
-                                            } else if let c_ast::Expression::UnaryOperator(un) =
-                                                expr
-                                            {
-                                                if let c_ast::UnaryOperatorExpression {
-                                                    operator:
-                                                        Node {
-                                                            node: c_ast::UnaryOperator::Minus,
-                                                            ..
-                                                        },
-                                                    operand,
-                                                } = &un.node
-                                                {
-                                                    if let c_ast::Expression::Constant(c) =
-                                                        &operand.node
-                                                    {
-                                                        unit.declarations.push(
-                                                            UnitDeclaration::Constant(
-                                                                UnitConstant {
-                                                                    name: def.name().to_string(),
-                                                                    value: c.node.clone(),
-                                                                    negated: true,
-                                                                },
-                                                            ),
-                                                        )
-                                                    }
-                                                }
-                                            }
-                                        }
-                                        _ => {}
+                                    if let Some(unit_decl) = self.parse_constant(&def, value) {
+                                        unit.declarations.push(unit_decl);
                                     }
                                 }
                                 _ => {
@@ -567,7 +528,7 @@ impl Parser {
                     Directive::Else => {
                         stack.pop().expect("else without if");
                         let mut v = if_stack.pop().expect("else without if");
-                        let branch_taken = v.iter().copied().all(|x| x == false);
+                        let branch_taken = v.iter().copied().all(|x| !x);
                         v.push(branch_taken);
 
                         let tup = (branch_taken, vec![].into());
@@ -580,7 +541,7 @@ impl Parser {
                         let mut v = if_stack.pop().expect("elseif without if");
                         let expr = parse_expr(&self.ctx, &tokens);
                         let truthy = expr.truthy();
-                        let branch_taken = v.iter().copied().all(|x| x == false) && truthy;
+                        let branch_taken = v.iter().copied().all(|x| !x) && truthy;
                         v.push(truthy);
 
                         let tup = (branch_taken, tokens);
@@ -668,10 +629,7 @@ impl Parser {
                             }
                         }
 
-                        match lang_c::parser::translation_unit(
-                            &block_str,
-                            &mut self.env.for_parser(),
-                        ) {
+                        match lang_c::parser::translation_unit(&block_str, &self.env.for_parser()) {
                             Ok(mut node) => {
                                 unit.declarations
                                     .extend(node.0.drain(..).map(|node| node.node.into()));
@@ -693,7 +651,7 @@ impl Parser {
             log::error!("In {}:", file_info.path);
             log::trace!("Full tokens: {:?}", block.tokens().collect::<Vec<_>>());
             let input = block.as_string();
-            let err = lang_c::parser::translation_unit(&input, &mut self.env.for_parser())
+            let err = lang_c::parser::translation_unit(&input, &self.env.for_parser())
                 .err()
                 .unwrap();
 
@@ -714,12 +672,44 @@ impl Parser {
         log::debug!("=== {} (end) ===", file_info.path);
         // TODO: merge declarations if it was included several times?
         // this seems *really* unlikely but ohwell
-        if self.units.contains_key(&file_id) {
+
+        let entry = self.units.entry(file_id);
+        if let Entry::Occupied(_) = &entry {
             log::debug!("included several times: {:?}", file_info.path);
         } else {
             self.units.insert(file_id, unit);
         }
         Ok(())
+    }
+
+    fn parse_constant(&mut self, def: &Define, value: &TokenSeq) -> Option<UnitDeclaration> {
+        let s = value.expand(&self.ctx).ok()?.to_string();
+        let node = lang_c::parser::constant_expression(&s, &self.env.for_parser()).ok()?;
+
+        match &node.node {
+            Expression::Constant(c) => {
+                return Some(UnitDeclaration::Constant(UnitConstant {
+                    name: def.name().to_string(),
+                    value: c.node.clone(),
+                    negated: false,
+                }));
+            }
+            Expression::UnaryOperator(un) => {
+                let UnaryOperatorExpression { operator, operand } = &un.node;
+                if let UnaryOperator::Minus = &operator.node {
+                    if let c_ast::Expression::Constant(c) = &operand.node {
+                        return Some(UnitDeclaration::Constant(UnitConstant {
+                            name: def.name().to_string(),
+                            value: c.node.clone(),
+                            negated: true,
+                        }));
+                    }
+                }
+            }
+            _ => {}
+        }
+
+        None
     }
 }
 

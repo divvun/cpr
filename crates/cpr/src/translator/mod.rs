@@ -89,11 +89,8 @@ impl<'a> Translator<'a> {
                         let declaration = &declaration.node;
 
                         for spec in nodes(&declaration.specifiers) {
-                            match spec {
-                                ast::DeclarationSpecifier::TypeSpecifier(ts) => {
-                                    self.predeclare_types(&[], &ts.node);
-                                }
-                                _ => {}
+                            if let ast::DeclarationSpecifier::TypeSpecifier(ts) = spec {
+                                self.predeclare_types(&[], &ts.node);
                             }
                         }
 
@@ -105,12 +102,8 @@ impl<'a> Translator<'a> {
                         log::debug!("visit_unit: not a Declaration: {:#?}", extdecl);
                     }
                 }
-                UnitDeclaration::Constant(konst) => match &konst.value {
-                    ast::Constant::Integer(ast::Integer { number, .. }) => {
-                        // println!(
-                        //     "should translate constant {}: number {}, base {:?} suffix {:?}",
-                        //     konst.name, number, base, suffix
-                        // );
+                UnitDeclaration::Constant(konst) => {
+                    if let ast::Constant::Integer(ast::Integer { number, .. }) = &konst.value {
                         let typ = if konst.negated {
                             // use signed
                             let number = format!("-{}", number);
@@ -151,8 +144,7 @@ impl<'a> Translator<'a> {
                             })
                         }
                     }
-                    _ => {}
-                },
+                }
             }
         }
     }
@@ -170,19 +162,13 @@ impl<'a> Translator<'a> {
 
                 if let Some(dtions) = struty.declarations.as_ref() {
                     for dtion in nodes(&dtions) {
-                        match dtion {
-                            ast::StructDeclaration::Field(sf) => {
-                                let sf = &sf.node;
-                                for sq in nodes(&sf.specifiers) {
-                                    match sq {
-                                        ast::SpecifierQualifier::TypeSpecifier(ts) => {
-                                            self.predeclare_types(&stack[..], borrow_node(ts));
-                                        }
-                                        _ => {}
-                                    }
+                        if let ast::StructDeclaration::Field(sf) = dtion {
+                            let sf = &sf.node;
+                            for sq in nodes(&sf.specifiers) {
+                                if let ast::SpecifierQualifier::TypeSpecifier(ts) = sq {
+                                    self.predeclare_types(&stack[..], borrow_node(ts));
                                 }
                             }
-                            _ => {}
                         }
                     }
                 }
@@ -215,30 +201,27 @@ impl<'a> Translator<'a> {
 
         if let Some(declarations) = &struty.declarations {
             for dtion in nodes(&declarations[..]) {
-                match dtion {
-                    ast::StructDeclaration::Field(Node { node: field, .. }) => {
-                        let specifiers = &field.specifiers[..];
+                if let ast::StructDeclaration::Field(Node { node: field, .. }) = dtion {
+                    let specifiers = &field.specifiers[..];
 
-                        for dtor in nodes(&field.declarators[..]) {
-                            if let Some(Node { node: dtor, .. }) = dtor.declarator.as_ref() {
-                                let sftup = StructFieldTuple { field, dtor };
-                                log::debug!("{:?} {:?}", specifiers, dtor);
+                    for dtor in nodes(&field.declarators[..]) {
+                        if let Some(Node { node: dtor, .. }) = dtor.declarator.as_ref() {
+                            let sftup = StructFieldTuple { field, dtor };
+                            log::debug!("{:?} {:?}", specifiers, dtor);
 
-                                let id = match dtor.get_identifier() {
-                                    Some(x) => x,
-                                    None => panic!("anonymous struct fields aren't supported"),
-                                };
+                            let id = match dtor.get_identifier() {
+                                Some(x) => x,
+                                None => panic!("anonymous struct fields aren't supported"),
+                            };
 
-                                let typ = self.visit_type(stack, &sftup);
-                                let field = rg::StructField {
-                                    name: rg::Identifier::name(&id.name),
-                                    typ,
-                                };
-                                res.fields.push(field);
-                            }
+                            let typ = self.visit_type(stack, &sftup);
+                            let field = rg::StructField {
+                                name: rg::Identifier::name(&id.name),
+                                typ,
+                            };
+                            res.fields.push(field);
                         }
                     }
-                    _ => {}
                 }
             }
         }
@@ -251,7 +234,7 @@ impl<'a> Translator<'a> {
         match mode {
             StructVisitMode::Forward => {
                 if res.fields.is_empty() {
-                    self.forward_struct_names.insert(res.name.value.clone());
+                    self.forward_struct_names.insert(res.name.value);
                 } else {
                     self.declared_struct_names.insert(res.name.value.clone());
                     self.push(res);
@@ -320,7 +303,7 @@ impl<'a> Translator<'a> {
                         specs = &[TS::Int];
                         break 'process_prefixes;
                     } else {
-                        panic!("unrecognized typespecs: {:#?}");
+                        panic!("unrecognized typespecs: {:#?}", specs);
                     }
                 }
                 _ => break 'process_prefixes,
@@ -413,45 +396,41 @@ impl<'a> Translator<'a> {
 
         let id = match dtor.get_identifier() {
             None => {
-                match &dtor.kind.node {
-                    ast::DeclaratorKind::Declarator(nested) => {
-                        let nested = borrow_node(nested.as_ref());
-                        if let Some(ast::StorageClassSpecifier::Typedef) = dtion.get_storage_class()
-                        {
-                            if let Some(id) = nested.get_identifier() {
-                                if let Some(fdecl) = dtor.get_function() {
-                                    let mut ft = rg::FunctionType { params: vec![] };
-                                    for param in nodes(&fdecl.parameters[..]) {
-                                        ft.params.push(self.visit_type(stack, param));
-                                    }
+                if let ast::DeclaratorKind::Declarator(nested) = &dtor.kind.node {
+                    let nested = borrow_node(nested.as_ref());
+                    if let Some(ast::StorageClassSpecifier::Typedef) = dtion.get_storage_class() {
+                        if let Some(id) = nested.get_identifier() {
+                            if let Some(fdecl) = dtor.get_function() {
+                                let mut ft = rg::FunctionType { params: vec![] };
+                                for param in nodes(&fdecl.parameters[..]) {
+                                    ft.params.push(self.visit_type(stack, param));
+                                }
+                                let ad = rg::AliasDeclaration {
+                                    name: rg::Identifier::name(&id.name),
+                                    typ: rg::Type::Function(ft),
+                                };
+                                self.push(ad);
+                                return;
+                            } else {
+                                if nested.pointer_depth() == 1 {
+                                    // courtesy of this weird thing in <winnt.h>:
+                                    //
+                                    //     typedef int (A)(int);
+                                    //     typedef A (*B);
+                                    //     typedef B C;
                                     let ad = rg::AliasDeclaration {
                                         name: rg::Identifier::name(&id.name),
-                                        typ: rg::Type::Function(ft),
+                                        typ: self.visit_type(stack, &DeclTuple { dtion, dtor }),
                                     };
                                     self.push(ad);
                                     return;
-                                } else {
-                                    if nested.pointer_depth() == 1 {
-                                        // courtesy of this weird thing in <winnt.h>:
-                                        //
-                                        //     typedef int (A)(int);
-                                        //     typedef A (*B);
-                                        //     typedef B C;
-                                        let ad = rg::AliasDeclaration {
-                                            name: rg::Identifier::name(&id.name),
-                                            typ: self.visit_type(stack, &DeclTuple { dtion, dtor }),
-                                        };
-                                        self.push(ad);
-                                        return;
-                                    }
-                                    log::debug!("no fdecl, nested = {:#?}", nested);
                                 }
-                            } else {
-                                log::debug!("no id");
+                                log::debug!("no fdecl, nested = {:#?}", nested);
                             }
+                        } else {
+                            log::debug!("no id");
                         }
                     }
-                    _ => {}
                 }
 
                 log::debug!(

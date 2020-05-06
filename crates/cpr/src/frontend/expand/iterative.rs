@@ -79,6 +79,7 @@ pub fn expand<'a>(
         if let Token::Name(name) = &first.0 {
             if let SymbolState::Defined(def) = ctx.lookup(name) {
                 let mut saved = vec![];
+
                 let outcome =
                     expand_single_macro_invocation(is, os, name, &first, def, &mut saved, depth)?;
                 apply_outcome!(outcome, saved);
@@ -309,7 +310,7 @@ impl ParsedActuals {
 ///         starting    ending here
 ///         here
 ///
-fn parse_actuals<'a>(
+fn parse_actuals(
     is: &mut dyn Iterator<Item = THS>,
     saved: &mut Vec<THS>,
     name: &str,

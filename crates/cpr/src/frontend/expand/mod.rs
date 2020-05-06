@@ -4,7 +4,7 @@
 //! https://www.spinellis.gr/blog/20060626/cpp.algo.pdf
 
 use super::{grammar, Context, Define, SymbolState, Token};
-use std::{collections::HashSet, fmt};
+use std::{cmp::max, collections::HashSet, fmt};
 mod iterative;
 
 /// Hide set
@@ -87,6 +87,10 @@ pub enum ExpandError {
     InvalidStringizing(String),
     #[error("missing macro parameter: {0}")]
     MissingMacroParam(String),
+    #[error("expected name or '(' after defined, but found {0}")]
+    MissingOpeningParenDefined(String),
+    #[error("missing closing parenthesis after defined({0:?})")]
+    MissingClosingParenDefined(String),
 }
 
 impl ExpandError {
@@ -101,6 +105,8 @@ impl ExpandError {
             ExpandError::InvalidTokenPaste(..) => false,
             ExpandError::InvalidStringizing(..) => false,
             ExpandError::MissingMacroParam(..) => false,
+            ExpandError::MissingOpeningParenDefined(..) => false,
+            ExpandError::MissingClosingParenDefined(..) => false,
         }
     }
 }
@@ -161,136 +167,127 @@ fn expand_ths(ts: &[THS], ctx: &Context) -> Result<Vec<THS>, ExpandError> {
                 let mut hs = t.1.clone();
                 hs.insert(name.clone());
                 let sub = subst(value.as_ths().as_ref(), None, &[], &hs, Default::default());
-                return expand_ths(concat(sub.as_ref(), ts_p.as_ref()).as_ref(), ctx);
+                return expand_ths(concat(sub.as_ref(), ts_p).as_ref(), ctx);
             }
         }
     }
 
-    match ws_triml(ts_p) {
-        [THS(Token::Pun('('), _), rest @ ..] => {
-            if let Token::Name(name) = &t.0 {
-                if let SymbolState::Defined(def) = ctx.lookup(name) {
-                    if let Define::FunctionLike { value, params, .. } = def {
-                        log::trace!("expanding function-like macro {}", def.name());
+    if let [THS(Token::Pun('('), _), rest @ ..] = ws_triml(ts_p) {
+        if let Token::Name(name) = &t.0 {
+            if let SymbolState::Defined(def) = ctx.lookup(name) {
+                if let Define::FunctionLike { value, params, .. } = def {
+                    log::trace!("expanding function-like macro {}", def.name());
 
-                        let mut input = rest;
-                        let mut actuals: Vec<Vec<THS>> = vec![vec![]];
-                        let mut depth = 1;
-                        let mut closparen_hs = None;
+                    let mut input = rest;
+                    let mut actuals: Vec<Vec<THS>> = vec![vec![]];
+                    let mut depth = 1;
+                    let mut closparen_hs = None;
 
-                        fn push(actuals: &mut Vec<Vec<THS>>, tok: THS) {
-                            actuals.last_mut().unwrap().push(tok);
-                        }
-
-                        while depth > 0 {
-                            log::trace!("depth={}, input = {:?}", depth, input);
-
-                            match depth {
-                                1 => match input {
-                                    [THS(Token::Pun(','), _), rest @ ..] => {
-                                        actuals.push(vec![]);
-                                        input = rest;
-                                    }
-                                    [tok @ THS(Token::Pun('('), _), rest @ ..] => {
-                                        depth += 1;
-                                        push(&mut actuals, tok.clone());
-                                        input = rest;
-                                    }
-                                    [THS(Token::Pun(')'), hs), rest @ ..] => {
-                                        depth -= 1;
-                                        closparen_hs = Some(hs);
-                                        input = rest;
-                                    }
-                                    [tok, rest @ ..] => {
-                                        push(&mut actuals, tok.clone());
-                                        input = rest;
-                                    }
-                                    [] => {
-                                        return Err(ExpandError::UnclosedMacroInvocation {
-                                            name: t.0.to_string(),
-                                        })
-                                    }
-                                },
-                                _ => match input {
-                                    [tok @ THS(Token::Pun('('), _), rest @ ..] => {
-                                        depth += 1;
-                                        push(&mut actuals, tok.clone());
-                                        input = rest;
-                                    }
-                                    [tok @ THS(Token::Pun(')'), _), rest @ ..] => {
-                                        depth -= 1;
-                                        push(&mut actuals, tok.clone());
-                                        input = rest;
-                                    }
-                                    [tok, rest @ ..] => {
-                                        push(&mut actuals, tok.clone());
-                                        input = rest;
-                                    }
-                                    [] => {
-                                        return Err(ExpandError::UnclosedMacroInvocation {
-                                            name: t.0.to_string(),
-                                        });
-                                    }
-                                },
-                            }
-                        }
-
-                        actuals = actuals
-                            .iter()
-                            .map(|is| ws_trimboth(is).iter().cloned().collect::<Vec<_>>())
-                            .collect();
-
-                        let ts_pp = input;
-                        let closparen_hs = closparen_hs.unwrap(); // note: static analysis gave up
-
-                        let mut hs = HashSet::new();
-                        hs.insert(name.into());
-
-                        let sub_hs = hs_union(&hs_intersection(&t.1, closparen_hs), &hs);
-                        log::trace!("sub_hs = {:?}", sub_hs);
-                        let sub_res = subst(
-                            value.as_ths().as_ref(),
-                            Some(&params),
-                            &actuals[..],
-                            &sub_hs,
-                            vec![],
-                        );
-                        log::trace!("sub_res = {:?}", sub_res);
-                        log::trace!("ts'' = {:?}", ts_pp);
-
-                        return expand_ths(concat(sub_res.as_ref(), ts_pp).as_ref(), ctx);
+                    fn push(actuals: &mut Vec<Vec<THS>>, tok: THS) {
+                        actuals.last_mut().unwrap().push(tok);
                     }
+
+                    while depth > 0 {
+                        log::trace!("depth={}, input = {:?}", depth, input);
+
+                        match depth {
+                            1 => match input {
+                                [THS(Token::Pun(','), _), rest @ ..] => {
+                                    actuals.push(vec![]);
+                                    input = rest;
+                                }
+                                [tok @ THS(Token::Pun('('), _), rest @ ..] => {
+                                    depth += 1;
+                                    push(&mut actuals, tok.clone());
+                                    input = rest;
+                                }
+                                [THS(Token::Pun(')'), hs), rest @ ..] => {
+                                    depth -= 1;
+                                    closparen_hs = Some(hs);
+                                    input = rest;
+                                }
+                                [tok, rest @ ..] => {
+                                    push(&mut actuals, tok.clone());
+                                    input = rest;
+                                }
+                                [] => {
+                                    return Err(ExpandError::UnclosedMacroInvocation {
+                                        name: t.0.to_string(),
+                                    })
+                                }
+                            },
+                            _ => match input {
+                                [tok @ THS(Token::Pun('('), _), rest @ ..] => {
+                                    depth += 1;
+                                    push(&mut actuals, tok.clone());
+                                    input = rest;
+                                }
+                                [tok @ THS(Token::Pun(')'), _), rest @ ..] => {
+                                    depth -= 1;
+                                    push(&mut actuals, tok.clone());
+                                    input = rest;
+                                }
+                                [tok, rest @ ..] => {
+                                    push(&mut actuals, tok.clone());
+                                    input = rest;
+                                }
+                                [] => {
+                                    return Err(ExpandError::UnclosedMacroInvocation {
+                                        name: t.0.to_string(),
+                                    });
+                                }
+                            },
+                        }
+                    }
+
+                    actuals = actuals.iter().map(|is| ws_trimboth(is).to_vec()).collect();
+
+                    let ts_pp = input;
+                    let closparen_hs = closparen_hs.unwrap(); // note: static analysis gave up
+
+                    let mut hs = HashSet::new();
+                    hs.insert(name.into());
+
+                    let sub_hs = hs_union(&hs_intersection(&t.1, closparen_hs), &hs);
+                    log::trace!("sub_hs = {:?}", sub_hs);
+                    let sub_res = subst(
+                        value.as_ths().as_ref(),
+                        Some(&params),
+                        &actuals[..],
+                        &sub_hs,
+                        vec![],
+                    );
+                    log::trace!("sub_res = {:?}", sub_res);
+                    log::trace!("ts'' = {:?}", ts_pp);
+
+                    return expand_ths(concat(sub_res.as_ref(), ts_pp).as_ref(), ctx);
                 }
             }
         }
-        _ => {}
     }
 
     // Concatenate strings
-    match ts {
-        [THS(Token::Str(l), hs_l), rest @ ..] => {
-            let mut input = rest;
-            let mut hs = hs_l.clone();
-            let mut parts = vec![l.as_str()];
+    if let [THS(Token::Str(l), hs_l), rest @ ..] = ts {
+        let mut input = rest;
+        let mut hs = hs_l.clone();
+        let mut parts = vec![l.as_str()];
 
-            'concat_strings: loop {
-                match ws_triml(input) {
-                    [THS(Token::Str(r), hs_r), rest @ ..] => {
-                        parts.push(r.as_str());
-                        hs = hs_union(&hs, &hs_r);
-                        input = rest;
-                    }
-                    _ => break 'concat_strings,
+        'concat_strings: loop {
+            match ws_triml(input) {
+                [THS(Token::Str(r), hs_r), rest @ ..] => {
+                    parts.push(r.as_str());
+                    hs = hs_union(&hs, &hs_r);
+                    input = rest;
                 }
+                _ => break 'concat_strings,
             }
-            let rest = input;
-
-            return Ok(concat(
-                &[THS(Token::Str(parts.join("")), hs)],
-                &expand_ths(rest, ctx)?,
-            ));
         }
-        _ => {}
+        let rest = input;
+
+        return Ok(concat(
+            &[THS(Token::Str(parts.join("")), hs)],
+            &expand_ths(rest, ctx)?,
+        ));
     }
 
     // Defined
@@ -312,8 +309,8 @@ fn expand_ths(ts: &[THS], ctx: &Context) -> Result<Vec<THS>, ExpandError> {
         }
     }
 
-    match ts {
-        [THS(Token::Defined, hs), rest @ ..] => match ws_triml(rest) {
+    if let [THS(Token::Defined, hs), rest @ ..] = ts {
+        match ws_triml(rest) {
             [THS(Token::Name(name), _), rest @ ..] => {
                 return expand_defined(name, hs, rest, ctx);
             }
@@ -322,16 +319,17 @@ fn expand_ths(ts: &[THS], ctx: &Context) -> Result<Vec<THS>, ExpandError> {
                     [THS(Token::Pun(')'), _), rest @ ..] => {
                         return expand_defined(name, hs, rest, ctx);
                     }
-                    _ => panic!("missing closing paren for `define({:?})`", name),
+                    _ => return Err(ExpandError::MissingClosingParenDefined(name.clone())),
                 },
-                _ => panic!(
-                    "expected name or '(' after defined, but instead found {:?}",
-                    rest
-                ),
+                _ => {
+                    return Err(ExpandError::MissingOpeningParenDefined(format!(
+                        "{:?}",
+                        &rest[..max(rest.len(), 10)]
+                    )))
+                }
             },
             _ => {}
-        },
-        _ => {}
+        }
     }
 
     match ts {
@@ -401,20 +399,11 @@ fn subst(
 
                 let sel_i = ap[i].clone();
                 if sel_i.is_empty() {
-                    match ws_triml(rest) {
-                        [THS(Token::Name(name_j), _), rest @ ..] => {
-                            if let Some(&j) = fp.and_then(|fp| fp.names.get(name_j.as_str())) {
-                                let sel_j = ap[j].clone();
-                                return subst(
-                                    rest,
-                                    fp,
-                                    ap,
-                                    hs,
-                                    concat(os.as_ref(), sel_j.as_ref()),
-                                );
-                            }
+                    if let [THS(Token::Name(name_j), _), rest @ ..] = ws_triml(rest) {
+                        if let Some(&j) = fp.and_then(|fp| fp.names.get(name_j.as_str())) {
+                            let sel_j = ap[j].clone();
+                            return subst(rest, fp, ap, hs, concat(os.as_ref(), sel_j.as_ref()));
                         }
-                        _ => {}
                     }
 
                     return subst(rest, fp, ap, hs, os);

@@ -6,6 +6,7 @@ use std::{
     fmt::{self, Write},
 };
 
+/// All the Rust keywords (2018 edition)
 static RUST_KEYWORDS: Lazy<HashSet<String>> = Lazy::new(|| {
     let mut set = HashSet::new();
     let source = "as break const continue crate else enum extern false fn for 
@@ -13,7 +14,7 @@ static RUST_KEYWORDS: Lazy<HashSet<String>> = Lazy::new(|| {
     super trait true type unsafe use where while";
     for kw in source
         .replace("\n", " ")
-        .split(" ")
+        .split(' ')
         .map(|x| x.trim())
         .filter(|x| !x.is_empty())
     {
@@ -22,12 +23,13 @@ static RUST_KEYWORDS: Lazy<HashSet<String>> = Lazy::new(|| {
     set
 });
 
+/// Keywords that cannot be raw strings
 static RUST_COOKED_KEYWORDS: Lazy<HashSet<String>> = Lazy::new(|| {
     let mut set = HashSet::new();
     let source = "super self Self extern crate";
     for kw in source
         .replace("\n", " ")
-        .split(" ")
+        .split(' ')
         .map(|x| x.trim())
         .filter(|x| !x.is_empty())
     {
