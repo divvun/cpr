@@ -885,3 +885,13 @@ fn no_final_newline() {
     let unit = parse_unit("struct S { int a; };");
     unit.must_have_struct("S".struct_name(), &|_| {})
 }
+
+#[test]
+fn stdcall_in_function_pointer_typedef() {
+    let _unit = parse_unit(indoc!(
+        "
+        typedef int (*foobar)(int a);
+        typedef int (__stdcall *foobar)(int a);
+        "
+    ));
+}

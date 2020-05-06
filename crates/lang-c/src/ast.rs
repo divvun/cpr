@@ -1187,6 +1187,10 @@ pub enum Extension {
     ///
     /// [MSVC extension](https://docs.microsoft.com/en-us/cpp/code-quality/understanding-sal)
     SalStructAttribute(SalStructAttribute),
+    /// Calling convention
+    ///
+    /// [MSVC extension](https://docs.microsoft.com/en-us/cpp/cpp/calling-conventions)
+    CallingConvention(CallingConvention),
 }
 
 /// Calling convention

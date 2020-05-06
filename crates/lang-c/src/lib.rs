@@ -1,5 +1,7 @@
 //! C language parser and abstract syntax tree
 
+#![allow(clippy::all)] // TODO: how do we enable that *just* for the parser module?
+
 pub mod ast;
 pub mod env;
 pub mod span;
@@ -808,6 +810,7 @@ rule declarator() -> Node<Declarator> = node(<declarator0()>)
 
 rule declarator0() -> Declarator =
     attr:gnu(<attribute_specifier_list()>) ?
+    cc:msvc(<calling_convention_extension_list()>) ?
     pointer:list0(<pointer()>)  _
     kind:node(<direct_declarator()>) _
     derived:list0(<node(<derived_declarator()>)>)
@@ -815,7 +818,7 @@ rule declarator0() -> Declarator =
         Declarator {
             kind: kind,
             derived: concat(pointer, derived),
-            extensions: attr.unwrap_or_default(),
+            extensions: concat(attr.unwrap_or_default(), cc.unwrap_or_default()),
         }
     }
 
@@ -1594,6 +1597,9 @@ rule sal_struct_annotation() -> Node<Extension> = node(<sal_struct_annotation0()
 rule calling_convention() -> CallingConvention =
     K(<"__cdecl">) { CallingConvention::Cdecl } /
     K(<"__stdcall">) { CallingConvention::Stdcall }
+
+rule calling_convention_extension_list() -> Vec<Node<Extension>> =
+    l:list0(<node(<(cc:calling_convention() { Extension::CallingConvention(cc) })>)>) _ { l }
 
 rule sal_ignore_reserved<T>(e: rule<T>) -> T = ({ env.get().ignore_reserved(true); }) e:e() {? env.get().ignore_reserved(false); Ok(e) }
 rule sal_expression() -> Node<Expression> = e:sal_ignore_reserved(<expression()>) { *e }

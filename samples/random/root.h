@@ -1,4 +1,4 @@
-// #include <windows.h>
+#include <Windows.h>
 
 // #include <fileapi.h>
 // #include <projectedfslib.h>
@@ -7,4 +7,4 @@
 // typedef int *LPCWCH, *PCWCH;
 
 // does not work
-typedef const int *LPCWCH, *PCWCH;
+// typedef const int *LPCWCH, *PCWCH;

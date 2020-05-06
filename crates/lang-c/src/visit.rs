@@ -1517,6 +1517,7 @@ pub fn visit_extension<'ast, V: Visit<'ast> + ?Sized>(
         }
         Extension::SalFieldAttribute(ref a) => visitor.visit_msvc_sal_field_attribute(a, span),
         Extension::SalStructAttribute(ref a) => visitor.visit_msvc_sal_struct_attribute(a, span),
+        Extension::CallingConvention(ref c) => visitor.visit_msvc_calling_convention(c, span),
     }
 }
 
