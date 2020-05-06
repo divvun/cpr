@@ -208,7 +208,7 @@ fn expand_single_macro_invocation<'a>(
             let mut temp = Vec::new();
             subst(value.as_ths(), None, &hs, &mut temp, depth + 1)?;
             is = Box::new(temp.into_iter().chain(is));
-            return Ok(BranchOutcome::Advance(is));
+            Ok(BranchOutcome::Advance(is))
         }
         Define::FunctionLike {
             value,
@@ -220,7 +220,9 @@ fn expand_single_macro_invocation<'a>(
                     // looks like a function invocation, continue
                 }
                 mut val => {
-                    val.take().map(|tok| saved.push(tok));
+                    if let Some(tok) = val.take() {
+                        saved.push(tok)
+                    }
                     // rewind
                     return Ok(BranchOutcome::Rewind(is));
                 }
@@ -250,7 +252,7 @@ fn expand_single_macro_invocation<'a>(
                 depth + 1,
             )?;
 
-            return Ok(BranchOutcome::Advance(Box::new(temp.into_iter().chain(is))));
+            Ok(BranchOutcome::Advance(Box::new(temp.into_iter().chain(is))))
         }
     }
 }

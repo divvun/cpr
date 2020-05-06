@@ -329,7 +329,7 @@ impl Block {
             use std::fmt::Write;
             write!(&mut out, "{}", ts).unwrap();
             if i + 1 < self.lines.len() {
-                write!(&mut out, "\n").unwrap();
+                writeln!(&mut out).unwrap();
             }
         }
         out

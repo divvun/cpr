@@ -240,6 +240,7 @@ pub enum Expression {
     /// Comma operator
     ///
     /// (C11 6.5.17)
+    #[allow(clippy::box_vec)] // due to parser structure
     Comma(Box<Vec<Node<Expression>>>),
 
     /// Member offset expression

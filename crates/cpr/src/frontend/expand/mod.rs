@@ -36,16 +36,13 @@ impl THS {
     fn glue(self, rhs: Self) -> Self {
         let s = format!("{}{}", self.0, rhs.0);
         let parsed = grammar::token_stream(&s)
-            .expect(&format!("while pasting tokens {:?} and {:?}", self, rhs));
+            .unwrap_or_else(|_| panic!("while pasting tokens {:?} and {:?}", self, rhs));
         let mut parsed = &parsed.0[..];
-        loop {
-            match parsed {
-                [Token::WS, rest @ ..] | [rest @ .., Token::WS] => {
-                    parsed = rest;
-                }
-                _ => break,
-            }
+
+        while let [Token::WS, rest @ ..] | [rest @ .., Token::WS] = parsed {
+            parsed = rest;
         }
+
         assert_eq!(parsed.len(), 1, "{:?} should be a single token", parsed);
         let token = parsed[0].clone();
         Self(token, hs_union(&self.1, &rhs.1))
@@ -356,132 +353,108 @@ fn subst(
     log::trace!("is = {:?}", is);
     log::trace!("os = {:?}", os);
 
-    if is.is_empty() {
-        log::trace!("subst => empty");
-        return os;
-    }
-
     // Stringizing
-    match is {
-        [THS(Token::Stringize, _), rest @ ..] => match ws_triml(rest) {
-            [THS(Token::Name(name), _), rest @ ..] => {
-                if let Some(&i) = fp.and_then(|fp| fp.names.get(name.as_str())) {
-                    log::trace!("subst => stringizing");
-                    return subst(
-                        rest,
-                        fp,
-                        ap,
-                        hs,
-                        concat(os.as_ref(), &[stringize(ap[i].as_ref())]),
-                    );
-                }
+    if let [THS(Token::Stringize, _), rest @ ..] = is {
+        if let [THS(Token::Name(name), _), rest @ ..] = ws_triml(rest) {
+            if let Some(&i) = fp.and_then(|fp| fp.names.get(name.as_str())) {
+                log::trace!("subst => stringizing");
+                return subst(
+                    rest,
+                    fp,
+                    ap,
+                    hs,
+                    concat(os.as_ref(), &[stringize(ap[i].as_ref())]),
+                );
             }
-            _ => {}
-        },
-        _ => {}
+        }
     }
 
     // Token pasting (argument rhs)
-    match is {
-        [THS(Token::Paste, _), rest @ ..] => match ws_triml(rest) {
-            [THS(Token::Name(name), _), rest @ ..] => {
-                if let Some(&i) = fp.and_then(|fp| fp.names.get(name.as_str())) {
-                    log::trace!("subst => pasting (argument rhs)");
-                    let sel = &ap[i];
-                    if sel.is_empty() {
-                        // TODO: missing cond: "only if actuals can be empty"
-                        return subst(rest, fp, ap, hs, os);
-                    } else {
-                        return subst(rest, fp, ap, hs, glue(os.as_ref(), sel));
-                    }
+    if let [THS(Token::Paste, _), rest @ ..] = is {
+        if let [THS(Token::Name(name), _), rest @ ..] = ws_triml(rest) {
+            if let Some(&i) = fp.and_then(|fp| fp.names.get(name.as_str())) {
+                log::trace!("subst => pasting (argument rhs)");
+                let sel = &ap[i];
+                if sel.is_empty() {
+                    // TODO: missing cond: "only if actuals can be empty"
+                    return subst(rest, fp, ap, hs, os);
+                } else {
+                    return subst(rest, fp, ap, hs, glue(os.as_ref(), sel));
                 }
             }
-            _ => {}
-        },
-        _ => {}
+        }
     }
 
     // Token pasting (non-argument)
-    match is {
-        [THS(Token::Paste, _), rest @ ..] => match ws_triml(rest) {
-            [t @ THS { .. }, rest @ ..] => {
-                log::trace!("subst => pasting (non-argument)");
-                return subst(rest, fp, ap, hs, glue(os.as_ref(), &[t.clone()]));
-            }
-            _ => {}
-        },
-        _ => {}
+    if let [THS(Token::Paste, _), rest @ ..] = is {
+        if let [t @ THS { .. }, rest @ ..] = ws_triml(rest) {
+            log::trace!("subst => pasting (non-argument)");
+            return subst(rest, fp, ap, hs, glue(os.as_ref(), &[t.clone()]));
+        }
     }
 
     // Token pasting (argument lhs)
-    match is {
-        [THS(Token::Name(name_i), _), rest @ ..] => match ws_triml(rest) {
-            [pastetok @ THS(Token::Paste, _), rest @ ..] => {
-                if let Some(&i) = fp.and_then(|fp| fp.names.get(name_i.as_str())) {
-                    log::trace!("subst => pasting (argument lhs)");
+    if let [THS(Token::Name(name_i), _), rest @ ..] = is {
+        if let [pastetok @ THS(Token::Paste, _), rest @ ..] = ws_triml(rest) {
+            if let Some(&i) = fp.and_then(|fp| fp.names.get(name_i.as_str())) {
+                log::trace!("subst => pasting (argument lhs)");
 
-                    let sel_i = ap[i].clone();
-                    if sel_i.is_empty() {
-                        match ws_triml(rest) {
-                            [THS(Token::Name(name_j), _), rest @ ..] => {
-                                if let Some(&j) = fp.and_then(|fp| fp.names.get(name_j.as_str())) {
-                                    let sel_j = ap[j].clone();
-                                    return subst(
-                                        rest,
-                                        fp,
-                                        ap,
-                                        hs,
-                                        concat(os.as_ref(), sel_j.as_ref()),
-                                    );
-                                }
+                let sel_i = ap[i].clone();
+                if sel_i.is_empty() {
+                    match ws_triml(rest) {
+                        [THS(Token::Name(name_j), _), rest @ ..] => {
+                            if let Some(&j) = fp.and_then(|fp| fp.names.get(name_j.as_str())) {
+                                let sel_j = ap[j].clone();
+                                return subst(
+                                    rest,
+                                    fp,
+                                    ap,
+                                    hs,
+                                    concat(os.as_ref(), sel_j.as_ref()),
+                                );
                             }
-                            _ => {}
                         }
-
-                        return subst(rest, fp, ap, hs, os);
-                    } else {
-                        return subst(
-                            concat(&[pastetok.clone()], rest).as_ref(),
-                            fp,
-                            ap,
-                            hs,
-                            concat(os.as_ref(), sel_i.as_ref()),
-                        );
+                        _ => {}
                     }
+
+                    return subst(rest, fp, ap, hs, os);
+                } else {
+                    return subst(
+                        concat(&[pastetok.clone()], rest).as_ref(),
+                        fp,
+                        ap,
+                        hs,
+                        concat(os.as_ref(), sel_i.as_ref()),
+                    );
                 }
             }
-            _ => {}
-        },
-        _ => {}
+        }
     }
 
     // Regular argument replacement
-    match is {
-        [THS(Token::Name(name), _), rest @ ..] => {
-            if let Some(&i) = fp.and_then(|fp| fp.names.get(name.as_str())) {
-                let sel = ap[i].clone();
-                log::trace!("subst => argument replacement, sel = {:?}", sel);
-                return subst(rest, fp, ap, hs, concat(os.as_ref(), sel.as_ref()));
-            }
+    if let [THS(Token::Name(name), _), rest @ ..] = is {
+        if let Some(&i) = fp.and_then(|fp| fp.names.get(name.as_str())) {
+            let sel = ap[i].clone();
+            log::trace!("subst => argument replacement, sel = {:?}", sel);
+            return subst(rest, fp, ap, hs, concat(os.as_ref(), sel.as_ref()));
         }
-        _ => {}
     }
 
     // Verbatim token
-    match is {
-        [tok, rest @ ..] => {
-            log::trace!("subst => verbatim token {:?}, marking with {:?}", tok, hs);
-            let mut tok = tok.clone();
-            tok.1.extend(hs.iter().cloned());
-            return subst(rest, fp, ap, hs, concat(os.as_ref(), &[tok]));
-        }
-        _ => unreachable!(),
+    if let [tok, rest @ ..] = is {
+        log::trace!("subst => verbatim token {:?}, marking with {:?}", tok, hs);
+        let mut tok = tok.clone();
+        tok.1.extend(hs.iter().cloned());
+        subst(rest, fp, ap, hs, concat(os.as_ref(), &[tok]))
+    } else {
+        log::trace!("subst => empty");
+        os
     }
 }
 
 fn glue(ls: &[THS], rs: &[THS]) -> Vec<THS> {
     match ls {
-        [] => rs.iter().cloned().collect(),
+        [] => rs.to_vec(),
         _ => {
             let (ls, l) = (&ls[..ls.len() - 1], ls.last().cloned().unwrap());
             let (r, rs) = (rs[0].clone(), &rs[1..]);
