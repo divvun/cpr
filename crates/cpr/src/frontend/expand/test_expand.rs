@@ -243,5 +243,7 @@ fn test_compliant() {
     exp(&ctx, "STRGZ(   2 + 3        )", r#""2 + 3""#);
     exp(&ctx, "STRGZ2(  foo ,  bar )", r#""foo" "bar""#);
     exp(&ctx, "STRGZ3( foo, bar , baz)", r#""foo" "bar" "baz""#);
-    exp(&ctx, "INC(1,2)", "INC(1,INC(1,2))")
+    exp(&ctx, "INC(1,2)", "INC(1,INC(1,2))");
+
+    exp(&ctx, r#"PASTE(L, "foobar")"#, r#"L"foobar""#);
 }
