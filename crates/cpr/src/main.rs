@@ -90,7 +90,11 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     }
 
-    log::info!("System dirs: {:#?}", system_dirs);
+    log::info!("System dirs:");
+    for sd in &system_dirs {
+        log::info!("{} | {}", sd.pkg, sd.path.display());
+    }
+
     let provider = frontend::FileSourceProvider::new(system_dirs);
 
     let root_file = &args.file;

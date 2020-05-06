@@ -51,7 +51,7 @@ pub(crate) fn get_kits_path() -> Option<PathBuf> {
 
     #[cfg(not(windows))]
     {
-        None
+        std::env::var_os("CPR_KITS_PATH").map(Into::into)
     }
 }
 
@@ -127,6 +127,6 @@ pub(crate) fn get_msvc_path() -> Option<PathBuf> {
 
     #[cfg(not(windows))]
     {
-        None
+        std::env::var_os("CPR_MSVC_PATH").map(Into::into)
     }
 }
