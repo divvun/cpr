@@ -91,7 +91,7 @@ pub fn ts18661_float(binary: bool, width: usize, extended: bool) -> TS18661Float
             (false, false) => TS18661FloatFormat::DecimalInterchange,
             (false, true) => TS18661FloatFormat::DecimalExtended,
         },
-        width: width,
+        width,
     }
 }
 

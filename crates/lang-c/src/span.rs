@@ -12,10 +12,7 @@ pub struct Span {
 impl Span {
     /// Create a new span for a specific location
     pub fn span(start: usize, end: usize) -> Span {
-        Span {
-            start: start,
-            end: end,
-        }
+        Span { start, end }
     }
 
     /// Create a new undefined span that is equal to any other span
@@ -58,9 +55,6 @@ pub struct Node<T> {
 impl<T> Node<T> {
     /// Create new node
     pub fn new(node: T, span: Span) -> Node<T> {
-        Node {
-            node: node,
-            span: span,
-        }
+        Node { node, span }
     }
 }
