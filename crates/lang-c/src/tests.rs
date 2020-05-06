@@ -2567,7 +2567,7 @@ fn test_struct_empty_decl() {
     use crate::ast::Declaration;
     use crate::parser::declaration;
 
-    let core_env = &mut Env::with_core();
+    let mut core_env = Env::with_core();
     let core_env = &core_env.for_parser();
     assert!(declaration("struct foo { } S;", core_env).is_err());
 
@@ -2594,6 +2594,49 @@ fn test_struct_empty_decl() {
                 initializer: None,
             }
             .into()],
+        }
+        .into()
+    );
+}
+
+#[test]
+fn test_typedef_const_ptr() {
+    use crate::ast::Declaration;
+    use crate::ast::DerivedDeclarator::Pointer;
+    use crate::ast::StorageClassSpecifier::Typedef;
+    use crate::ast::TypeQualifier::Const;
+    use crate::ast::TypeSpecifier::Int;
+    use crate::parser::declaration;
+
+    let mut env = Env::new();
+    let env = &env.for_parser();
+
+    assert_eq!(
+        declaration("typedef const int *LPCWCH, *PCWCH;", env).unwrap(),
+        Declaration {
+            specifiers: vec![Typedef.into(), Const.into(), Int.into()],
+            declarators: vec![
+                InitDeclarator {
+                    declarator: Declarator {
+                        kind: ident("LPCWCH"),
+                        derived: vec![Pointer(vec![]).into()],
+                        extensions: vec![],
+                    }
+                    .into(),
+                    initializer: None,
+                }
+                .into(),
+                InitDeclarator {
+                    declarator: Declarator {
+                        kind: ident("PCWCH"),
+                        derived: vec![Pointer(vec![]).into()],
+                        extensions: vec![],
+                    }
+                    .into(),
+                    initializer: None,
+                }
+                .into()
+            ],
         }
         .into()
     );
