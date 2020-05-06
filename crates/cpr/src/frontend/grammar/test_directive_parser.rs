@@ -144,3 +144,9 @@ fn ifdef() {
         ))),
     );
 }
+
+#[test]
+fn define_function_like_no_whitespace() {
+    let res = directive("#define foo()bar()");
+    assert!(res.is_ok());
+}

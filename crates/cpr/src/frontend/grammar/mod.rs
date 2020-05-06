@@ -31,7 +31,7 @@ peg::parser! { pub(crate) grammar rules() for str {
 
     /// Parses line (no CR/LF, no comments, no line continuations) as directive or None
     pub rule directive() -> Option<Directive>
-        = _ d:directive0() { d }
+        = _ d:traced(<directive0()>) { d }
 
     rule directive0() -> Option<Directive>
         = "#" _ d:directive1() { Some(d) }
@@ -84,7 +84,7 @@ peg::parser! { pub(crate) grammar rules() for str {
         / define_object_like()
 
     rule define_function_like() -> Define
-        = name:identifier() "(" _ params:macro_params() _ ")" value:spaced_token_stream()? {
+        = name:identifier() "(" _ params:macro_params() _ ")" _ value:token_stream()? {
             Define::FunctionLike {
                 name,
                 params,
@@ -93,16 +93,12 @@ peg::parser! { pub(crate) grammar rules() for str {
         }
 
     rule define_object_like() -> Define
-        = name:identifier() value:spaced_token_stream()? {
+        = name:identifier() value:(__ ts:token_stream() { ts })? {
             Define::ObjectLike {
                 name,
                 value: value.unwrap_or_else(|| vec![].into()),
             }
         }
-
-    // 1+ whitespace, then a token stream
-    rule spaced_token_stream() -> TokenSeq
-        = __ value:token_stream() { value }
 
     // valid C identifier, also valid macro name
     rule identifier() -> String
@@ -242,6 +238,18 @@ peg::parser! { pub(crate) grammar rules() for str {
 
     pub rule pragma() -> TokenSeq
         = "__pragma" t:token_stream() { t }
+
+
+    rule traced<T>(e: rule<T>) -> T =
+        &(input:$([_]*) {
+            #[cfg(feature = "trace")]
+            println!("[PEG_INPUT_START]\n{}\n[PEG_TRACE_START]", input);
+        })
+        e:e()? {?
+            #[cfg(feature = "trace")]
+            println!("[PEG_TRACE_STOP]");
+            e.ok_or("")
+        }
 }}
 
 pub use rules::*;
