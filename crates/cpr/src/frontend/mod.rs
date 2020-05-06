@@ -352,7 +352,8 @@ pub trait SourceProvider {
 }
 
 impl Parser {
-    const MAX_AGGREGATE_LINES: usize = 150;
+    // previous record: 205 lines, `um/OAIdl.h`
+    const MAX_AGGREGATE_LINES: usize = 512;
 
     /// Builds a new parser starting from the initial file,
     /// parses it and all its dependencies.
