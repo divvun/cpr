@@ -1,4 +1,4 @@
-pub const RESERVED_C11: &'static [&'static str] = &[
+pub const RESERVED_C11: &[&str] = &[
     "auto",
     "break",
     "case",
@@ -59,7 +59,7 @@ pub const RESERVED_C11: &'static [&'static str] = &[
     "_Decimal128x",
 ];
 
-pub const RESERVED_GNU: &'static [&'static str] = &[
+pub const RESERVED_GNU: &[&str] = &[
     "__FUNCTION__",
     "__PRETTY_FUNCTION__",
     "__alignof",
@@ -94,7 +94,7 @@ pub const RESERVED_GNU: &'static [&'static str] = &[
 ];
 
 // Ref: https://clang.llvm.org/docs/AttributeReference.html
-pub const RESERVED_CLANG: &'static [&'static str] = &[
+pub const RESERVED_CLANG: &[&str] = &[
     // Only enabled with -fms-extensions and only affect *-*-win32 targets
     "__single_inheritance",
     "__multiple_inheritance",
