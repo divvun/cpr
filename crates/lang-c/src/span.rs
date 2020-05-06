@@ -1,12 +1,18 @@
 //! Source text location tracking
 use std::usize::MAX;
-use std::{cmp, fmt};
+use std::{cmp, fmt, hash::Hash};
 
 /// Byte offset of a node start and end positions in the input stream
-#[derive(Copy, Clone, Eq, Hash)]
+#[derive(Copy, Clone, Eq)]
 pub struct Span {
     pub start: usize,
     pub end: usize,
+}
+
+impl Hash for Span {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        (self.start, self.end).hash(state)
+    }
 }
 
 impl Span {
