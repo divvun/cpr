@@ -160,13 +160,16 @@ edition = "2018"
             &unit.declarations,
         );
         let pkg_components = file_info.path.pkg_components();
-        let stem = pkg_components.last().unwrap();
+        let stem = std::path::Path::new(pkg_components.last().unwrap())
+            .file_stem()
+            .unwrap()
+            .to_string_lossy();
 
         // TODO: this is all kinds of wrong
         writeln!(top_level, "pub mod {};", stem)?;
         writeln!(top_level, "pub use {}::*;", stem)?;
 
-        let mut out_path = args.output.join("src").join(stem);
+        let mut out_path = args.output.join("src").join(&*stem);
         out_path.set_extension("rs");
 
         fs::create_dir_all(out_path.parent().unwrap())?;
